@@ -9,14 +9,14 @@ pub enum DebugAdapter {
     Database(database::DatabaseAdapter),
 }
 impl DebugAdapter {
-    pub fn send(&self, msg: &str) -> Result<(), ()> {
+    pub fn send(&self, msg: &String) -> Result<(), String> {
         match self {
             DebugAdapter::Console => match println!("{}", msg) {
                 _ => Ok(()),
             },
-            DebugAdapter::FileLog(adapter) => Err(()),
-            DebugAdapter::NetStream => Err(()),
-            DebugAdapter::Database(adapter) => Err(()),
+            DebugAdapter::FileLog(_adapter) => Err("Unimplemented".into()),
+            DebugAdapter::NetStream => Err("Unimplemented".into()),
+            DebugAdapter::Database(_adapter) => Err("Unimplemented".into()),
         }
     }
 }

@@ -1,10 +1,8 @@
-pub struct FilelogAdapter{
-    path:String
+pub struct FilelogAdapter {
+    path: String,
 }
-impl FilelogAdapter{
-    pub fn new(path:String)->Self{
-        FilelogAdapter{
-            path
-        }
+impl FilelogAdapter {
+    pub fn new(path: String) -> Self {
+        FilelogAdapter { path }
     }
 }
