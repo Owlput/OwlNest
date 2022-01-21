@@ -2,7 +2,6 @@ use std::fmt::Display;
 use std::net::SocketAddr;
 use std::str::FromStr;
 
-use serde::{Deserialize, Serialize};
 use tokio::sync::mpsc::Receiver;
 use tokio::task::JoinHandle;
 

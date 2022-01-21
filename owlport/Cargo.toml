@@ -1,0 +1,13 @@
+[package]
+name = "owlport"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+tokio ={version="1",features = ["full"]}
+hyper = {version = "0.14", features = ["full"]}
+tonic = "0.6.2"
+prost = "0.9"
+
+[build-dependencies]
+tonic-build = "0.6"
