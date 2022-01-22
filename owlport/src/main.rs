@@ -1,12 +1,15 @@
 #![cfg_attr(debug_assertions, allow(dead_code, unused_imports))]
 mod utils;
 mod net;
+use tracing::info;
 use utils::*;
 use net::*;
 use tokio::{join, sync::mpsc, time::*};
 
 #[tokio::main]
 async fn main() {
+    tracing_subscriber::fmt::init();
+    info!("Program started");
     let (resource_tx, resource_rx) = mpsc::channel(16);
     let resource_registry = resource_registry::ResourceRegistry::new(resource_rx);
     let api_server =

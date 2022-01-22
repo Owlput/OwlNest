@@ -1,6 +1,7 @@
 use hyper::service::{make_service_fn, service_fn};
 use hyper::{Body, Request, Response, Server};
 use tokio::sync::mpsc::Sender;
+use tracing::info;
 use std::convert::Infallible;
 use std::net::SocketAddr;
 use tokio::task::JoinHandle;
@@ -12,9 +13,11 @@ pub struct APIServer {
 
 impl APIServer {
     pub async fn new(addr:String,path:String,register:Sender<String>) ->Self{
+        let sock_addr = addr.parse().unwrap();
+        info!("An api server has been registered at socket {}",addr);
         register.send(format!("tcp_sock {}",&addr)).await.unwrap();
         APIServer{
-            sock_addr:addr.parse().unwrap(),
+            sock_addr,
             path,
         }
         }

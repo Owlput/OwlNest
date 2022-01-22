@@ -1,27 +1,37 @@
-use tonic::{transport::Server, Request, Response, Status};
+// use hyper::{service::Service, Body};
+// use std::{net::SocketAddr, error::Error};
+// use tonic::{
+//     body::BoxBody,
+//     transport::{NamedService, Server},
+//     Request, Response, Status,
+// };
 
-use hello_world::greeter_server::{Greeter, GreeterServer};
-use hello_world::{HelloReply, HelloRequest};
+// use tokio::task::JoinHandle;
 
-pub mod hello_world {
-    tonic::include_proto!("helloworld");
-}
+// pub struct GrpcServer<T> {
+//     sock: SocketAddr,
+//     services: Vec<T>,
+// }
 
-#[derive(Debug, Default)]
-pub struct MyGreeter {}
+// impl<S> GrpcServer<S>
+// where
+//     S: Service<Request<Body>, Response = Response<BoxBody>> + NamedService + Clone + Send + 'static + hyper::service::Service<hyper::Request<hyper::Body>>,
+//     S::Future: Send + 'static,
+//     S::Error: Into<Box<dyn Error + Send + Sync>> + Send,
+// {
+//     pub fn new(sock: String, services: Vec<S>) -> Self {
+//         GrpcServer {
+//             sock: sock.parse().unwrap(),
+//             services,
+//         }
+//     }
 
-#[tonic::async_trait]
-impl Greeter for MyGreeter {
-    async fn say_hello(
-        &self,
-        request: Request<HelloRequest>, // Accept request of type HelloRequest
-    ) -> Result<Response<HelloReply>, Status> { // Return an instance of type HelloReply
-        println!("Got a request: {:?}", request);
-
-        let reply = hello_world::HelloReply {
-            message: format!("Hello {}!", request.into_inner().name).into(), // We must use .into_inner() as the fields of gRPC requests and responses are private
-        };
-
-        Ok(Response::new(reply)) // Send back our formatted greeting
-    }
-}
+//     pub fn startup(self) -> JoinHandle<()> {
+//         tokio::spawn(async move {
+//             let server = Server::builder();
+//             for svc in self.services {
+//                 server.add_service(svc);
+//             }
+//         })
+//     }
+// }
