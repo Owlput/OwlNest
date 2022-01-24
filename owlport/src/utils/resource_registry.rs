@@ -1,9 +1,10 @@
 use std::fmt::Display;
 use std::net::SocketAddr;
 use std::str::FromStr;
+use std::time::Duration;
 
-use tokio::sync::mpsc::Receiver;
 use tokio::task::JoinHandle;
+use tokio::{sync::mpsc::Receiver, time::sleep};
 use tracing::{info, warn};
 
 pub struct ResourceRegistry {
@@ -27,7 +28,7 @@ impl ResourceRegistry {
             loop {
                 match self.channel.recv().await {
                     Some(msg) => {
-                        info!("Resource regsitration request received: {}",&msg);
+                        info!("Resource regsitration request received: {}", &msg);
                         let req = msg.split_whitespace().collect::<Vec<_>>();
                         if req[0] == "ResReg" {
                             match req[1] {
@@ -42,7 +43,8 @@ impl ResourceRegistry {
                         }
                     }
                     None => {
-                        info!("All resource registration handles have been dropped");
+                        warn!("All resource registration handles have been dropped");
+                        sleep(Duration::from_secs(5)).await
                     }
                 }
             }
