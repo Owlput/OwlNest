@@ -1,6 +1,6 @@
-use tonic::{transport::Server, Request, Response, Status};
+use tonic::{ Request, Response, Status};
 
-use hello_world::greeter_server::{Greeter, GreeterServer};
+use hello_world::greeter_server::Greeter;
 use hello_world::{HelloReply, HelloRequest};
 
 pub mod hello_world {

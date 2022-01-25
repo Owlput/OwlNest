@@ -1,37 +1,21 @@
-// use hyper::{service::Service, Body};
-// use std::{net::SocketAddr, error::Error};
-// use tonic::{
-//     body::BoxBody,
-//     transport::{NamedService, Server},
-//     Request, Response, Status,
-// };
+use tonic::transport::Server;
 
-// use tokio::task::JoinHandle;
+use tokio::{sync::mpsc::Sender, task::JoinHandle};
+use tracing::error;
 
-// pub struct GrpcServer<T> {
-//     sock: SocketAddr,
-//     services: Vec<T>,
-// }
+use super::protos::helloworld::{hello_world::greeter_server::GreeterServer, MyGreeter};
 
-// impl<S> GrpcServer<S>
-// where
-//     S: Service<Request<Body>, Response = Response<BoxBody>> + NamedService + Clone + Send + 'static + hyper::service::Service<hyper::Request<hyper::Body>>,
-//     S::Future: Send + 'static,
-//     S::Error: Into<Box<dyn Error + Send + Sync>> + Send,
-// {
-//     pub fn new(sock: String, services: Vec<S>) -> Self {
-//         GrpcServer {
-//             sock: sock.parse().unwrap(),
-//             services,
-//         }
-//     }
-
-//     pub fn startup(self) -> JoinHandle<()> {
-//         tokio::spawn(async move {
-//             let server = Server::builder();
-//             for svc in self.services {
-//                 server.add_service(svc);
-//             }
-//         })
-//     }
-// }
+pub async fn startup(addr: String, register: Sender<String>) -> JoinHandle<()> {
+    tokio::spawn(async move {
+        register.send(format!("tcp_sock {}", &addr)).await.unwrap();
+        let addr = addr.parse().unwrap();
+        let greeter = MyGreeter::default();
+        if let Err(e) = Server::builder()
+            .add_service(GreeterServer::new(greeter))
+            .serve(addr)
+            .await
+        {
+            error!("{}", e);
+        };
+    })
+}
