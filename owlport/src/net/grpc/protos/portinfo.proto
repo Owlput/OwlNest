@@ -1,0 +1,17 @@
+syntax = "proto3";
+package portinfo;
+
+service PortInfo{
+    rpc GetInfo(InfoRequest)return(Info);
+}
+message InfoRequest{
+    string id = 1;
+}
+message Info{
+    string id = 1;
+    string owner = 2;
+    uint64 uptime = 3;
+    message InfoRequest{
+        string id = 1;
+    };
+}
