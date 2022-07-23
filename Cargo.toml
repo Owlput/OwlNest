@@ -1,0 +1,3 @@
+[workspace]
+members = ["owlport","memcache"]
+default_members = ["owlport"]

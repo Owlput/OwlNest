@@ -9,7 +9,7 @@ pub mod hello_world {
 
 pub fn startup(_addr:String)->JoinHandle<()>{
     tokio::spawn(async move{
-        let mut client = GreeterClient::connect("http://127.0.0.1:20000").await.unwrap();
+        let mut client = GreeterClient::connect("http://127.0.0.1:20001").await.unwrap();
         let request = tonic::Request::new(HelloRequest{
             name:"Tonic".into(),
         });
