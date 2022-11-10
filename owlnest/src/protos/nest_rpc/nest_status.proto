@@ -1,0 +1,10 @@
+syntax = "proto3";
+package nest_rpc;
+
+message HbRequest{
+    int64 rand = 1;
+}
+
+message HbReply{
+    int64 rand = 1;
+}

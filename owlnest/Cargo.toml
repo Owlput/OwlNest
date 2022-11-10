@@ -1,12 +1,12 @@
 [package]
-name = "owlport"
+name = "owlnest"
 version = "0.1.0"
 edition = "2021"
 
 [dependencies]
 tokio ={version="1",features = ["full"]}
 hyper = {version = "0.14.20", features = ["full"]}
-tonic = "0.7.2"
+tonic = {version = "0.7.2", features = ["tls"]}
 tower = { version = "0.4", features = ["full"] }
 tower-service = "0.3.2"
 axum = "0.5"
@@ -17,6 +17,7 @@ regex = "1.6.0"
 libp2p = "0.46.1"
 serde = { version = "1.0.134", features = ["derive"] }
 serde_json = "*"
+rand = "*"
 
 [build-dependencies]
 tonic-build = "0.7.2"
