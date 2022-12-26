@@ -9,10 +9,10 @@ pub mod hello_world {
 }
 
 #[derive(Debug, Default)]
-pub struct MyGreeter {}
+pub struct GreeterRequestHandler {}
 
 #[tonic::async_trait]
-impl Greeter for MyGreeter {
+impl Greeter for GreeterRequestHandler {
     async fn say_hello(
         &self,
         request: Request<HelloRequest>, // Accept request of type HelloRequest
