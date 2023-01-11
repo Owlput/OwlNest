@@ -1,10 +1,32 @@
 syntax = "proto3";
 package nest_rpc;
 
-message HbRequest{
+message Result{
+    bool is_ok = 1;
+    optional string reason = 2;
+}
+message Multiaddr{
+    string multiaddr = 1;
+}
+message PeerId{
+    string peer_id = 1;
+}
+message HeartbeatRequest{
+    string client = 1;
+}
+message HeartbeatReply{
     int64 rand = 1;
 }
-
-message HbReply{
-    int64 rand = 1;
+message ListRequest{
+    string filters = 1;
+    string target_page = 2;
+    string results_per_page = 3;
+}
+message PeersList{
+    repeated Peer peer = 1;
+}
+message Peer{
+    string peer_id = 1;
+    string multiaddr = 2;
+    optional int32 latency = 3;
 }

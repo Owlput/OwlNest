@@ -1,1 +1,2 @@
-//pub mod resource_registry;
+#[allow(dead_code)]
+pub mod resource_registry;

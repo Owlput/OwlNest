@@ -11,8 +11,9 @@ async fn main() {
     info!("Program started");
     let ident = read_ident().await.unwrap();
     let (resource_tx, _resource_rx) = mpsc::channel(16);
-    net::http::server::startup("127.0.0.1:20000".into(), resource_tx.clone()).await;
-    net::grpc::server::startup("127.0.0.1:20001".into(), resource_tx.clone(),ident).await;
+    net::http::server::startup("127.0.0.1:20002".into(), resource_tx.clone()).await;
+    net::grpc::server::startup("127.0.0.1:20003".into(), resource_tx.clone(),ident).await;
+    let _swarm = net::p2p::setup_swarm();
     let _resource_handle_remain = resource_tx.clone(); //Make the register happy in case of None
     tokio::signal::ctrl_c().await.unwrap();
 }

@@ -1,2 +1,2 @@
+pub mod nest_rpc;
 pub mod server;
-pub mod protos;
