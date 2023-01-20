@@ -1,3 +1,3 @@
 [workspace]
-members = ["owlnest","memcache","plugin-messaging"]
+members = ["owlnest","memcache"]
 default_members = ["owlnest"]
