@@ -41,6 +41,12 @@ impl IdentityUnion {
     }
 }
 
+impl Default for IdentityUnion{
+    fn default() -> Self {
+        Self::generate()
+    }
+}
+
 impl From<Keypair> for IdentityUnion{
     fn from(value: Keypair) -> Self {
         let peer_id = PeerId::from(value.public());

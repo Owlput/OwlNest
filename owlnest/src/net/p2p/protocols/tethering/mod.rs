@@ -1,13 +1,15 @@
-use std::{fmt::Display, string::FromUtf8Error, time::Duration};
-use libp2p::PeerId;
+use super::*;
+use std::string::FromUtf8Error;
 
-pub use handler::TetherOps;
 pub use behaviour::Behaviour;
 pub use protocol::PROTOCOL_NAME;
+pub use tether_ops::TetherOps;
+
 
 mod behaviour;
 mod handler;
 mod protocol;
+pub mod tether_ops;
 
 #[derive(Debug, Clone)]
 pub struct Config {
@@ -32,8 +34,8 @@ impl Default for Config {
 
 #[derive(Debug)]
 pub struct InEvent {
-        to:PeerId,
-        inner:TetherOps
+    to: PeerId,
+    inner: TetherOps,
 }
 
 #[derive(Debug)]
@@ -73,5 +75,35 @@ impl Display for Error {
 impl std::error::Error for Error {
     fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
         None
+    }
+}
+
+pub async fn ev_dispatch(ev: OutEvent, _dispatch: &mpsc::Sender<OutEvent>) {
+
+    match ev {
+        OutEvent::IncomingOp { .. } => {
+            println!("Incoming message: {:?}", ev);
+            // match dispatch.send(ev).await {
+            //     Ok(_) => {}
+            //     Err(e) => println!("Failed to send message with error {}", e),
+            // };
+        }
+        OutEvent::SuccessPost(peer, _, rtt) => println!(
+            "Successful posted message to peer {}, estimated roundtrip time {}ms",
+            peer,
+            rtt.as_millis()
+        ),
+        OutEvent::Error(e) => println!("{:#?}", e),
+        OutEvent::Unsupported(peer) => {
+            println!("Peer {} doesn't support /owlput/tethering/0.0.1", peer)
+        }
+        OutEvent::InboundNegotiated(peer) => println!(
+            "Successfully negotiated inbound connection from peer {}",
+            peer
+        ),
+        OutEvent::OutboundNegotiated(peer) => println!(
+            "Successfully negotiated outbound connection to peer {}",
+            peer
+        ),
     }
 }

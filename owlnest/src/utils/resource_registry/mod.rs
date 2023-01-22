@@ -2,7 +2,7 @@ pub mod resources;
 
 use std::collections::HashSet;
 use tokio::sync::{mpsc, oneshot};
-use tracing::{error, info};
+use tracing::error;
 
 use self::resources::Resource;
 
@@ -25,7 +25,9 @@ impl ResourceRegistry {
     fn handle_message(&mut self, msg: RegistryMessage) {
         match msg {
             RegistryMessage::Register(resource, sender) => handle_register(self, resource, sender),
-            RegistryMessage::Unregister(resource, sender) => handle_unregister(self, resource, sender)
+            RegistryMessage::Unregister(resource, sender) => {
+                handle_unregister(self, resource, sender)
+            }
         }
     }
 }
@@ -84,13 +86,13 @@ fn handle_register(
             resource.owner, resource.resource
         );
     } else {
-        info!(
+        println!(
             "{} is trying to register a new resource: {:#?}",
             resource.owner, resource.resource
         );
         match registry.inner.insert(resource.clone()) {
             true => {
-                info!("Successfully registered resource: {:#?}", resource);
+                println!("Successfully registered resource: {:#?}", resource);
                 let _ = sender.send(Ok(()));
                 return;
             }
@@ -111,13 +113,13 @@ fn handle_unregister(
     sender: oneshot::Sender<Result<(), ()>>,
 ) {
     if registry.inner.contains(&resource) {
-        info!(
+        println!(
             "{} is trying to unregister resource: {:#?}",
             resource.owner, resource.resource
         );
         match registry.inner.remove(&resource) {
             true => {
-                info!("Successfully unregistered resource: {:#?}", resource);
+                println!("Successfully unregistered resource: {:#?}", resource);
                 let _ = sender.send(Ok(()));
                 return;
             }

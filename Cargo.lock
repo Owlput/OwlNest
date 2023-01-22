@@ -2848,6 +2848,7 @@ dependencies = [
  "futures-timer",
  "hyper",
  "libp2p",
+ "owlnest-proc",
  "rand 0.7.3",
  "regex",
  "serde",
@@ -2858,6 +2859,15 @@ dependencies = [
  "tracing",
  "tracing-subscriber",
  "xxhash-rust",
+]
+
+[[package]]
+name = "owlnest-proc"
+version = "0.1.0"
+dependencies = [
+ "async-trait",
+ "quote",
+ "syn",
 ]
 
 [[package]]

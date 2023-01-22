@@ -1,37 +1,18 @@
-use libp2p::swarm::NetworkBehaviour;
+use libp2p::{PeerId,Multiaddr};
+use serde::{Serialize, Deserialize};
+use tokio::sync::mpsc;
+use std::fmt::Display;
+use std::time::Duration;
 
+#[cfg(feature = "messaging")]
 pub mod messaging;
+
+#[cfg(feature = "tethering")]
 pub mod tethering;
 
-#[derive(NetworkBehaviour)]
-#[behaviour(out_event = OutEvent)]
-pub struct Behaviour{
-    pub messaging:messaging::Behaviour,
-    pub tethering:tethering::Behaviour
-}
-impl Behaviour{
-    pub fn send_message(&mut self,msg:messaging::Message){
-        self.messaging.push_event(messaging::InEvent::PostMessage(msg))
-    }
-    pub fn tether_op_exec(&mut self,op:tethering::InEvent){
-        self.tethering.push_op(op)
-    }
-}
+#[cfg(feature="relay-client")]
+pub mod relay_client;
 
+#[cfg(feature="relay-server")]
+pub mod relay_server;
 
-#[derive(Debug)]
-pub enum OutEvent{
-    Messaging(messaging::OutEvent),
-    Tethering(tethering::OutEvent)
-}
-
-impl From<messaging::OutEvent> for OutEvent{
-    fn from(value: messaging::OutEvent) -> Self {
-            OutEvent::Messaging(value)
-    }
-}
-impl From<tethering::OutEvent> for OutEvent{
-    fn from(value: tethering::OutEvent) -> Self {
-            OutEvent::Tethering(value)
-    }
-}

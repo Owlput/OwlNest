@@ -22,3 +22,11 @@ rand = "*"
 xxhash-rust = {version="0.8.6",features=["xxh3"]}
 futures = "0.3"
 futures-timer = "3"
+owlnest-proc = {path="../owlnest-proc"}
+
+[features]
+full=["messaging","tethering","relay-client","relay-server"]
+messaging = []
+tethering = []
+relay-server=[]
+relay-client=[]

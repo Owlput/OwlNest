@@ -1,16 +1,16 @@
-use libp2p::PeerId;
-use serde::{Deserialize, Serialize};
-use std::{fmt::Display, string::FromUtf8Error, time::Duration};
+use super::*;
+use std::{string::FromUtf8Error, time::SystemTime};
 
 pub mod behaviour;
 mod handler;
 #[allow(dead_code)]
 mod inbox;
-mod protocol;
+pub mod protocol;
 
 pub use behaviour::Behaviour;
 
-#[derive(Debug, Serialize, Deserialize)]
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Message {
     time: u128,
     from: PeerId,
@@ -18,6 +18,17 @@ pub struct Message {
     msg: String,
 }
 impl Message {
+    pub fn new(from: &PeerId, to: &PeerId, msg: String) -> Self {
+        Self {
+            time: SystemTime::now()
+                .duration_since(SystemTime::UNIX_EPOCH)
+                .unwrap()
+                .as_millis(),
+            from: from.clone(),
+            to: to.clone(),
+            msg,
+        }
+    }
     #[inline]
     pub fn as_bytes(&self) -> Vec<u8> {
         serde_json::to_vec(self).unwrap()
@@ -45,6 +56,7 @@ impl Default for Config {
     }
 }
 
+#[derive(Debug)]
 pub enum InEvent {
     PostMessage(Message),
 }
@@ -93,5 +105,35 @@ impl std::error::Error for Error {
             Error::IO(e) => e.source(),
             _ => None,
         }
+    }
+}
+
+pub async fn ev_dispatch(ev: OutEvent, _dispatch: &mpsc::Sender<OutEvent>) {
+
+    match ev {
+        OutEvent::IncomingMessage { .. } => {
+            println!("Incoming message: {:?}", ev);
+            // match dispatch.send(ev).await {
+            //     Ok(_) => {}
+            //     Err(e) => println!("Failed to send message with error {}", e),
+            // };
+        }
+        OutEvent::SuccessPost(peer, _, rtt) => println!(
+            "Successful posted message to peer {}, estimated roundtrip time {}ms",
+            peer,
+            rtt.as_millis()
+        ),
+        OutEvent::Error(e) => println!("{:#?}", e),
+        OutEvent::Unsupported(peer) => {
+            println!("Peer {} doesn't support /owlput/messaging/0.0.1", peer)
+        }
+        OutEvent::InboundNegotiated(peer) => println!(
+            "Successfully negotiated inbound connection from peer {}",
+            peer
+        ),
+        OutEvent::OutboundNegotiated(peer) => println!(
+            "Successfully negotiated outbound connection to peer {}",
+            peer
+        ),
     }
 }
