@@ -1,5 +1,9 @@
-use libp2p::relay::v2::relay;
+use libp2p::{relay::v2::relay, Multiaddr};
 
+#[derive(Debug)]
+pub enum InEvent{
+    AddExternalAddress(Multiaddr)
+}
 
 pub fn ev_dispatch(ev: relay::Event) {
     match ev {

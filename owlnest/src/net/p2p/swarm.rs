@@ -1,5 +1,5 @@
 use super::*;
-use libp2p::swarm::DialError;
+use libp2p::swarm::{DialError, AddressScore};
 use libp2p::TransportError;
 use std::fmt::Debug;
 
@@ -71,6 +71,8 @@ pub enum Op {
     },
     #[cfg(feature = "messaging")]
     Messaging(messaging::InEvent),
+    #[cfg(feature = "relay-server")]
+    RelayServer(relay_server::InEvent),
 }
 
 #[derive(Debug)]
@@ -173,6 +175,10 @@ impl Builder {
                         }
                         #[cfg(feature = "messaging")]
                         Op::Messaging(op) => swarm.behaviour_mut().message_op_exec(op),
+                        #[cfg(feature="relay-server")]
+                        Op::RelayServer(ev)=>{ if let relay_server::InEvent::AddExternalAddress(addr) = ev{
+                            swarm.add_external_address(addr, AddressScore::Infinite);
+                        }}
                     }
                 }
                 swarm_event = swarm.select_next_some() =>{

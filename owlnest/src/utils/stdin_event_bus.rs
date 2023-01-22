@@ -10,6 +10,8 @@ pub enum StdinEvent {
     Listen(Multiaddr),
     #[cfg(feature = "messaging")]
     Messaging(crate::net::p2p::messaging::InEvent),
+    #[cfg(feature = "relay-server")]
+    RelayServer(crate::net::p2p::relay_server::InEvent),
 }
 
 pub fn setup_bus(local_peer: PeerId) -> mpsc::UnboundedReceiver<StdinEvent> {
@@ -58,6 +60,27 @@ pub fn setup_bus(local_peer: PeerId) -> mpsc::UnboundedReceiver<StdinEvent> {
                             }
                         };
                         match tx.send(StdinEvent::Listen(addr)) {
+                            Ok(_) => {}
+                            Err(e) => {
+                                println!("Failed to send your command: {}", e)
+                            }
+                        }
+                    }
+                    #[cfg(feature="relay-server")]
+                    "reserve" => {
+                        if command.len() < 2 {
+                            println!("Error: Missing required argument <address>, syntax: `reserve <address>`");
+                            continue;
+                        }
+
+                        let addr = match command[1].parse::<Multiaddr>() {
+                            Ok(addr) => addr,
+                            Err(e) => {
+                                println!("Error: Failed parsing address `{}`: {}", command[1], e);
+                                continue;
+                            }
+                        };
+                        match tx.send(StdinEvent::RelayServer(crate::net::p2p::protocols::relay_server::InEvent::AddExternalAddress(addr))) {
                             Ok(_) => {}
                             Err(e) => {
                                 println!("Failed to send your command: {}", e)
@@ -113,7 +136,9 @@ pub fn setup_distributor(mut center: mpsc::UnboundedReceiver<StdinEvent>,swarm_m
                 StdinEvent::Dial(addr) => swarm_mgr.dial(addr).await,
                 StdinEvent::Listen(addr) => swarm_mgr.listen(addr).await,
                 #[cfg(feature="messaging")]
-                StdinEvent::Messaging(msg) => swarm_mgr.execute(swarm::Op::Messaging(msg)).await,
+                StdinEvent::Messaging(ev) => swarm_mgr.execute(swarm::Op::Messaging(ev)).await,
+                #[cfg(feature = "relay-server")]
+                StdinEvent::RelayServer(ev)=>swarm_mgr.execute(swarm::Op::RelayServer(ev)).await
             };
         }
     });
@@ -130,6 +155,8 @@ pub fn setup_distributor_relayed(mut center: mpsc::UnboundedReceiver<StdinEvent>
                 StdinEvent::Listen(addr) => swarm_mgr.listen(addr).await,
                 #[cfg(feature="messaging")]
                 StdinEvent::Messaging(msg) => swarm_mgr.execute(relayed_swarm::Op::Messaging(msg)).await,
+                #[cfg(feature = "relay-server")]
+                StdinEvent::RelayServer(ev)=>swarm_mgr.execute(relayed_swarm::Op::RelayServer(ev)).await
             };
             println!("{:#?}",res)
         }
@@ -148,6 +175,5 @@ const HELP_MESSAGE:&str = r#"
                             Send message using `/owlput/messaging/0.0.1` protocol
                             to the given peer, identified by peer ID.
                             Peer ID needs to be supplied in `/p2p/<peer ID>` format.
-        relay
-              connect       
+        reserve <address>   Reserve the given address, in Multiaddr format.       
 "#;

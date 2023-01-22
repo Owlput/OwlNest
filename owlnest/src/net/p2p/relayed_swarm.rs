@@ -3,8 +3,8 @@ use libp2p::{
     core::{muxing::StreamMuxerBox, transport::Boxed},
     identity::PublicKey,
     relay::v2::client::transport::ClientTransport,
-    swarm::DialError,
-    TransportError
+    swarm::{AddressScore, DialError},
+    TransportError,
 };
 
 #[derive(NetworkBehaviour)]
@@ -63,6 +63,8 @@ pub enum Op {
     },
     #[cfg(feature = "messaging")]
     Messaging(messaging::InEvent),
+    #[cfg(feature = "relay-server")]
+    RelayServer(relay_server::InEvent),
 }
 
 #[derive(Debug)]
@@ -161,6 +163,11 @@ impl Builder {
                         }
                         #[cfg(feature = "messaging")]
                         Op::Messaging(ev) => swarm.behaviour_mut().message_op_exec(ev),
+                        #[cfg(feature="relay-server")]
+                        Op::RelayServer(ev)=>{ if let relay_server::InEvent::AddExternalAddress(addr) = ev{
+                            swarm.add_external_address(addr, AddressScore::Infinite);
+                        }
+                            }
                     }
                 }
                 Some(swarm_event) = swarm.next() =>{
@@ -222,7 +229,4 @@ where
         .boxed()
 }
 
-async fn poll_swarm<S:futures::Stream>(swarm:S){
-    
-
-}
+async fn poll_swarm<S: futures::Stream>(swarm: S) {}

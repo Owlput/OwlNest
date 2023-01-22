@@ -201,6 +201,7 @@ impl ConnectionHandler for Handler {
                     }
                     None => {
                         self.outbound = Some(OutboundState::Idle(stream));
+                        break;
                     }
                 },
                 // Outbound is waiting for a stream to open
