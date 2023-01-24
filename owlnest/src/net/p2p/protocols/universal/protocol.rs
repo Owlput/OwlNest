@@ -3,13 +3,13 @@ use std::io;
 use std::time::{Duration, Instant};
 use xxhash_rust::xxh3::xxh3_128;
 
-pub const PROTOCOL_NAME: &[u8] = b"/owlput/messaging/0.0.1";
+/// Universal protocol for sending bytes
 
 // Send and receive operation are performed in different negoticated substreams
 //      send()<--Outbound-->|<--Inbound-->recv()
 //      recv()<--Inbound-->|<--Outbound-->send()
 //              Peer A          Peer B
-pub async fn send<S>(mut stream: S,msg_bytes: Vec<u8>,stamp:u128) -> io::Result<(S,u128,Duration)>
+pub async fn send<S>(mut stream: S,msg_bytes: Vec<u8>) -> io::Result<(S,Duration)>
 where
     S: AsyncRead + AsyncWrite + Unpin,
 {   
@@ -32,7 +32,7 @@ where
     let mut verf_read = [0u8;16];
     stream.read_exact(&mut verf_read).await?;
     if verf_read == verf.to_be_bytes(){
-        return Ok((stream,stamp,now.elapsed()))
+        return Ok((stream,now.elapsed()))
     }
     Err(std::io::Error::new(io::ErrorKind::InvalidData, "Verifier mismatch"))
 }

@@ -1,5 +1,6 @@
+use super::*;
+
 use std::{collections::VecDeque, io, task::Poll, time::Duration};
-use super::Error;
 
 use futures::{future::BoxFuture, FutureExt};
 use futures_timer::Delay;
@@ -13,21 +14,20 @@ use libp2p::swarm::{
     SubstreamProtocol,
 };
 
-
-use super::{inbox::*, protocol::PROTOCOL_NAME, Config, Message};
+use super::{protocol::PROTOCOL_NAME, Config, Message};
 
 #[derive(Debug)]
 pub enum InEvent {
-    PostMessage(Message),
+    PostMessage(Message, oneshot::Sender<CallbackResult>),
 }
 #[derive(Debug)]
 pub enum OutEvent {
     IncomingMessage(Vec<u8>),
-    SuccessPost(u128, Duration),
     InboundNegotiated,
     OutboundNegotiated,
     Error(Error),
     Unsupported,
+    Dummy,
 }
 
 pub enum State {
@@ -37,8 +37,8 @@ pub enum State {
 
 pub struct Handler {
     state: State,
-    inbox: Inbox,
-    pending_events:VecDeque<OutEvent>,
+    inbox: VecDeque<InEvent>,
+    pending_events: VecDeque<OutEvent>,
     timeout: Duration,
     inbound: Option<PendingVerf>,
     outbound: Option<OutboundState>,
@@ -48,7 +48,7 @@ impl Handler {
     pub fn new(config: Config) -> Self {
         Self {
             state: State::Active,
-            inbox: Inbox::new(),
+            inbox: VecDeque::new(),
             pending_events: VecDeque::new(),
             timeout: config.timeout,
             inbound: None,
@@ -83,7 +83,7 @@ impl Handler {
 impl ConnectionHandler for Handler {
     type InEvent = InEvent;
     type OutEvent = OutEvent;
-    type Error =  Error;
+    type Error = Error;
     type InboundProtocol = ReadyUpgrade<&'static [u8]>;
     type OutboundProtocol = ReadyUpgrade<&'static [u8]>;
     type InboundOpenInfo = ();
@@ -94,9 +94,7 @@ impl ConnectionHandler for Handler {
         SubstreamProtocol::new(ReadyUpgrade::new(PROTOCOL_NAME), ())
     }
     fn on_behaviour_event(&mut self, event: Self::InEvent) {
-        match event {
-            InEvent::PostMessage(msg) => self.inbox.push(msg),
-        }
+        self.inbox.push_front(event)
     }
     fn connection_keep_alive(&self) -> libp2p::swarm::KeepAlive {
         libp2p::swarm::KeepAlive::Yes
@@ -138,12 +136,13 @@ impl ConnectionHandler for Handler {
                 }
                 // The incoming future resolves to an error
                 Poll::Ready(Err(e)) => {
-                    self.pending_events.push_front(OutEvent::Error(Error::IO(e)));
+                    self.pending_events
+                        .push_front(OutEvent::Error(Error::IO(e)));
                     // Free the inbound because there's no stream present
                     self.inbound = None;
                 }
                 // The incoming message is ready and resolves to the stream and message sent by the remote
-                Poll::Ready(Ok((stream,bytes))) => {
+                Poll::Ready(Ok((stream, bytes))) => {
                     // Keep trying to receive from remote
                     self.inbound = Some(super::protocol::recv(stream).boxed());
                     // Resolve the handler to an incoming message
@@ -163,59 +162,60 @@ impl ConnectionHandler for Handler {
             // Check whether the outbound is ready
             match self.outbound.take() {
                 // Outbound is waiting for send operation
-                Some(OutboundState::Busy(mut task, stamp,mut timer)) => match task.poll_unpin(cx) {
-                    // Not ready
-                    Poll::Pending => {
-                        if timer.poll_unpin(cx).is_ready() {
-                            // Timeout reached, put the timeout error in queue for emitting
-                            self.pending_events.push_front(OutEvent::Error(Error::Timeout(stamp)))
-                        } else {
-                            // Put the future back
-                            self.outbound = Some(OutboundState::Busy(task, stamp, timer));
-                            // Might as well spit out a event
-                            if let Some(ev) = self.pending_events.pop_back(){
-                                return Poll::Ready(ConnectionHandlerEvent::Custom(ev))
+                Some(OutboundState::Busy(mut task, callback, mut timer)) => {
+                    match task.poll_unpin(cx) {
+                        // Not ready
+                        Poll::Pending => {
+                            if timer.poll_unpin(cx).is_ready() {
+                                match callback.send(CallbackResult::Error(Error::Timeout)){
+                                    Ok(_)=>{},
+                                    Err(res)=> println!("Failed to send callback {:?}",res)
+                                };
+                            } else {
+                                // Put the future back
+                                self.outbound = Some(OutboundState::Busy(task, callback, timer));
+                                // End the loop because the outbound is busy
+                                break;
                             }
-                            // End the loop because the outbound is busy
-                            break;
+                        }
+                        // Ready
+                        Poll::Ready(Ok((stream, rtt))) => {
+                            // Free the outbound
+                            self.outbound = Some(OutboundState::Idle(stream));
+                            match callback.send(CallbackResult::SuccessfulPost(rtt)){
+                                Ok(_)=>{},
+                                Err(res)=> println!("Failed to send callback {:?}",res)
+                            };
+                            return Poll::Ready(ConnectionHandlerEvent::Custom(OutEvent::Dummy));
+                            // This poll is over, waiting for the next call
+                        }
+                        // Ready but resolved to an error
+                        Poll::Ready(Err(e)) => {
+                            print!("{}", e);
+                            self.pending_events
+                                .push_front(OutEvent::Error(Error::IO(e)))
                         }
                     }
-                    // Ready
-                    Poll::Ready(Ok((stream,stamp,rtt))) => {
-                        // Free the outbound
-                        self.outbound = Some(OutboundState::Idle(stream));
-                        // Resolve the handler with a success
-                        return Poll::Ready(ConnectionHandlerEvent::Custom(OutEvent::SuccessPost(
-                            stamp, rtt,
-                        )));
-                        // This poll is over, waiting for the next call
-                    }
-                    // Ready but resolved to an error
-                    Poll::Ready(Err(e)) => {
-                        print!("{}", e);
-                        self.pending_events.push_front(OutEvent::Error(Error::IO(e)))
-                    }
-                },
+                }
                 // Outbound is free, get the next message sent
-                Some(OutboundState::Idle(stream)) => match self.inbox.take_next() {
+                Some(OutboundState::Idle(stream)) => match self.inbox.pop_back() {
                     // Unsent message found
-                    Ok(msg) => {
-                        // Put Outbound into send state
-                        self.outbound = Some(OutboundState::Busy(
-                            super::protocol::send(stream, msg.as_bytes(), msg.time).boxed(),
-                            msg.time,
-                            Delay::new(self.timeout)
-                        ))
+                    Some(ev) => {
+                        match ev {
+                            InEvent::PostMessage(msg, callback) => {
+                                // Put Outbound into send state
+                                self.outbound = Some(OutboundState::Busy(
+                                    protocol::send(stream, msg.as_bytes()).boxed(),
+                                    callback,
+                                    Delay::new(self.timeout),
+                                ))
+                            }
+                        }
                     }
-                    // No unsent message
-                    Err(InboxActionError::EmptyQueue) => {
+                    None => {
                         // Put Outbound into idle state
                         self.outbound = Some(OutboundState::Idle(stream));
                         break;
-                    }
-                    // An entry in queue is found but the actual message is missing
-                    Err(InboxActionError::NotFound(stamp)) => {
-                        self.pending_events.push_front(OutEvent::Error(Error::DroppedMessage(stamp)))
                     }
                 },
                 // Outbound is waiting for a stream to open
@@ -252,13 +252,13 @@ impl ConnectionHandler for Handler {
             ConnectionEvent::FullyNegotiatedInbound(FullyNegotiatedInbound {
                 protocol: stream,
                 ..
-            }) => {self.inbound = Some(super::protocol::recv(stream).boxed());},
+            }) => {
+                self.inbound = Some(super::protocol::recv(stream).boxed());
+            }
             ConnectionEvent::FullyNegotiatedOutbound(FullyNegotiatedOutbound {
                 protocol: stream,
                 ..
-            }) => {
-                self.outbound = Some(OutboundState::Idle(stream))
-            }
+            }) => self.outbound = Some(OutboundState::Idle(stream)),
             ConnectionEvent::DialUpgradeError(e) => {
                 self.on_dial_upgrade_error(e);
             }
@@ -267,8 +267,17 @@ impl ConnectionHandler for Handler {
     }
 }
 
-type PendingVerf = BoxFuture<'static, Result<(NegotiatedSubstream,Vec<u8>), io::Error>>;
-type PendingSend = BoxFuture<'static, Result<(NegotiatedSubstream,u128,Duration), io::Error>>;
+type PendingVerf = BoxFuture<'static, Result<(NegotiatedSubstream, Vec<u8>), io::Error>>;
+type PendingSend = BoxFuture<
+    'static,
+    Result<
+        (
+            NegotiatedSubstream,
+            Duration,
+        ),
+        io::Error,
+    >,
+>;
 
 enum OutboundState {
     /// A new substream is being negotiated for the messaging protocol.
@@ -276,6 +285,5 @@ enum OutboundState {
     /// The substream is idle, waiting for next message.
     Idle(NegotiatedSubstream),
     /// A message is being sent and the response awaited.
-    Busy(PendingSend, u128,Delay),
+    Busy(PendingSend, oneshot::Sender<CallbackResult>, Delay),
 }
-

@@ -1,8 +1,11 @@
 use libp2p::relay::v2::client;
 
+pub type Behaviour = libp2p::relay::v2::client::Client;
+pub type OutEvent = libp2p::relay::v2::client::Event;
 
 
-pub async fn ev_dispatch(ev:client::Event){
+
+pub fn ev_dispatch(ev:client::Event){
     match ev{
         client::Event::ReservationReqAccepted { relay_peer_id, renewal, limit } => println!("Reservation sent to relay {} has been accepted. IsRenewal:{}, limit:{:?}",relay_peer_id,renewal,limit),
         client::Event::ReservationReqFailed { relay_peer_id, renewal, error } => println!("Reservation sent to relay {} has failed, IsRenewal:{}, error:{:?}",relay_peer_id,renewal,error),

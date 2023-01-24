@@ -52,9 +52,6 @@ impl NetworkBehaviour for Behaviour {
                     )),
                 }
             }
-            handler::OutEvent::SuccessPost(stamp, rtt) => self
-                .out_events
-                .push_front(OutEvent::SuccessPost(peer_id, stamp, rtt)),
             handler::OutEvent::Error(e) => self.out_events.push_front(OutEvent::Error(e)),
             handler::OutEvent::Unsupported => self
                 .out_events
@@ -65,6 +62,7 @@ impl NetworkBehaviour for Behaviour {
             handler::OutEvent::OutboundNegotiated => self
                 .out_events
                 .push_front(OutEvent::OutboundNegotiated(peer_id)),
+            handler::OutEvent::Dummy => {},
         }
     }
     fn poll(
@@ -79,11 +77,11 @@ impl NetworkBehaviour for Behaviour {
         }
         if let Some(ev) = self.in_events.pop_back() {
             match ev {
-                InEvent::PostMessage(msg)=> {
+                InEvent::PostMessage(target,msg,callback)=> {
                     return Poll::Ready(NetworkBehaviourAction::NotifyHandler {
-                        peer_id: msg.to,
+                        peer_id: target,
                         handler: NotifyHandler::Any,
-                        event: handler::InEvent::PostMessage(msg),
+                        event: handler::InEvent::PostMessage(msg,callback),
                     })
                 }
             }

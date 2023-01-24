@@ -3,10 +3,6 @@ use std::{string::FromUtf8Error, time::SystemTime};
 
 pub mod behaviour;
 mod handler;
-#[allow(dead_code)]
-mod inbox;
-pub mod protocol;
-
 pub use behaviour::Behaviour;
 
 
@@ -58,13 +54,18 @@ impl Default for Config {
 
 #[derive(Debug)]
 pub enum InEvent {
-    PostMessage(Message),
+    PostMessage(PeerId,Message,oneshot::Sender<CallbackResult>),
+}
+
+#[derive(Debug)]
+pub enum CallbackResult{
+    SuccessfulPost(Duration),
+    Error(Error)
 }
 
 #[derive(Debug)]
 pub enum OutEvent {
     IncomingMessage { from: PeerId, msg: Message },
-    SuccessPost(PeerId, u128, Duration),
     Error(Error),
     Unsupported(PeerId),
     InboundNegotiated(PeerId),
@@ -74,9 +75,8 @@ pub enum OutEvent {
 #[derive(Debug)]
 pub enum Error {
     ConnectionClosed,
-    VerifierMismatch(u128),
-    Timeout(u128),
-    DroppedMessage(u128),
+    VerifierMismatch,
+    Timeout,
     UnrecognizedMessage(serde_json::Error, Result<String, FromUtf8Error>),
     IO(std::io::Error),
 }
@@ -84,13 +84,10 @@ impl Display for Error {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Self::ConnectionClosed => f.write_str("Connection Closed"),
-            Self::VerifierMismatch(stamp) => {
-                f.write_str(&format!("Message verifier mismatch with stamp: {}", stamp))
+            Self::VerifierMismatch => {
+                f.write_str("Message verifier mismatch")
             }
-            Self::Timeout(stamp) => f.write_str(&format!("Message timeout for stamp: {}", stamp)),
-            Self::DroppedMessage(stamp) => {
-                f.write_str(&format!("Message dropped with stamp: {}", stamp))
-            }
+            Self::Timeout => f.write_str("Message timed out"),
             Self::UnrecognizedMessage(e, broken_msg) => f.write_str(&format!(
                 "Failed to deserialize message with error: {}, possible raw data: {:?}",
                 e, broken_msg
@@ -118,11 +115,6 @@ pub async fn ev_dispatch(ev: OutEvent, _dispatch: &mpsc::Sender<OutEvent>) {
             //     Err(e) => println!("Failed to send message with error {}", e),
             // };
         }
-        OutEvent::SuccessPost(peer, _, rtt) => println!(
-            "Successful posted message to peer {}, estimated roundtrip time {}ms",
-            peer,
-            rtt.as_millis()
-        ),
         OutEvent::Error(e) => println!("{:#?}", e),
         OutEvent::Unsupported(peer) => {
             println!("Peer {} doesn't support /owlput/messaging/0.0.1", peer)
@@ -136,4 +128,9 @@ pub async fn ev_dispatch(ev: OutEvent, _dispatch: &mpsc::Sender<OutEvent>) {
             peer
         ),
     }
+}
+
+mod protocol{
+    pub const PROTOCOL_NAME: &[u8] = b"/owlput/messaging/0.0.1";
+    pub use crate::net::p2p::protocols::universal::protocol::{send,recv};
 }

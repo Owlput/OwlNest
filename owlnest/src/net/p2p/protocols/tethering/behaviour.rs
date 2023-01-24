@@ -66,9 +66,6 @@ impl NetworkBehaviour for Behaviour {
                     }
                 }
             }
-            handler::OutEvent::SuccessPost(stamp, rtt) => self
-                .out_events
-                .push_front(OutEvent::SuccessPost(peer_id, stamp, rtt)),
             handler::OutEvent::Error(e) => self.out_events.push_front(OutEvent::Error(e)),
             handler::OutEvent::Unsupported => self
                 .out_events
@@ -79,6 +76,7 @@ impl NetworkBehaviour for Behaviour {
             handler::OutEvent::OutboundNegotiated => self
                 .out_events
                 .push_front(OutEvent::OutboundNegotiated(peer_id)),
+            handler::OutEvent::Dummy =>{}
         }
     }
     fn poll(
@@ -91,14 +89,24 @@ impl NetworkBehaviour for Behaviour {
         if let Some(ev) = self.out_events.pop_back() {
             return Poll::Ready(NetworkBehaviourAction::GenerateEvent(ev));
         }
-        if let Some(ev) = self.in_events.pop_back() {
-            return Poll::Ready(NetworkBehaviourAction::NotifyHandler {
-                peer_id: ev.to,
-                handler: NotifyHandler::Any,
-                event: ev.inner,
-            });
+        if let Some(InEvent{to,op,callback}) = self.in_events.pop_back() {
+            match to{
+                Some(peer)=> {return Poll::Ready(NetworkBehaviourAction::NotifyHandler {
+                    peer_id: peer,
+                    handler: NotifyHandler::Any,
+                    event: handler::InEvent{op,callback},
+                })}
+                None =>{
+                    match op{
+                        TetherOps::Trust(_) => todo!(),
+                        _ => match callback.send(CallbackResult::Error(Error::NotApplicableOnLocalNode)){
+                            Ok(_)=>{},
+                            Err(res)=> println!("Failed to send callback {:?}",res)
+                        },
+                    }
+                }
+            }
         }
-
         Poll::Pending
     }
 }
