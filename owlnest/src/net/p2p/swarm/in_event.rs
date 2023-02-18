@@ -1,38 +1,19 @@
 use super::*;
-use libp2p::{
-    swarm::{AddressScore, DialError},
-    TransportError,
-};
+use libp2p::{swarm::DialError, TransportError};
+use serde::{Serialize,Deserialize};
 
 #[derive(Debug)]
-pub enum InEvent {
-    Swarm(swarm::InEvent),
-    #[cfg(feature = "tethering")]
-    Tethering(tethering::InEvent),
-    #[cfg(feature = "messaging")]
-    Messaging(messaging::InEvent),
+pub struct InEvent{
+    pub op:Op,
+    pub callback:oneshot::Sender<OpResult>
 }
 
-pub mod swarm {
-    use super::*;
-    #[derive(Debug)]
-    pub enum InEvent {
-        Dial {
-            addr: Multiaddr,
-            callback_tx: oneshot::Sender<OpResult>,
-        },
-        Listen {
-            addr: Multiaddr,
-            callback_tx: oneshot::Sender<OpResult>,
-        },
-        AddExternalAddress {
-            addr: Multiaddr,
-            score: AddressScore,
-            callback_tx: oneshot::Sender<OpResult>,
-        },
+#[derive(Debug, Serialize, Deserialize)]
+    pub enum Op {
+        Dial(Multiaddr),
+        Listen(Multiaddr),
+        AddExternalAddress(Multiaddr, String), // Should be AddressScore but it can't be serialzied, which is disappointing
     }
-}
-
 #[derive(Debug)]
 pub enum OpResult {
     DialOk,

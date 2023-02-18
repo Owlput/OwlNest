@@ -1,0 +1,126 @@
+{
+  "$schema": "https://aka.ms/codetour-schema",
+  "title": "cli_entered_messaging",
+  "steps": [
+    {
+      "file": "owlnest/src/utils/stdin_event_bus.rs",
+      "description": "Start from here.",
+      "line": 156
+    },
+    {
+      "file": "owlnest/src/utils/stdin_event_bus.rs",
+      "description": "Check the total number of arguments separated by space in case of index out of bound.",
+      "line": 157
+    },
+    {
+      "file": "owlnest/src/utils/stdin_event_bus.rs",
+      "description": "Parse the given multiaddr for extracting peer id",
+      "line": 161
+    },
+    {
+      "file": "owlnest/src/utils/stdin_event_bus.rs",
+      "description": "Parse peer ID from multiaddr.",
+      "line": 169
+    },
+    {
+      "file": "owlnest/src/utils/stdin_event_bus.rs",
+      "description": "Create a pair of sender and receiver for message passing",
+      "line": 177
+    },
+    {
+      "file": "owlnest/src/utils/stdin_event_bus.rs",
+      "description": "Construct the message.",
+      "line": 178
+    },
+    {
+      "file": "owlnest/src/utils/stdin_event_bus.rs",
+      "description": "Send the message to tokio runtime.",
+      "line": 180
+    },
+    {
+      "file": "owlnest/src/utils/stdin_event_bus.rs",
+      "description": "The bridge between synchronous code and asynchronous code",
+      "line": 201
+    },
+    {
+      "file": "owlnest/src/utils/stdin_event_bus.rs",
+      "description": "Inform of the swarm manager.",
+      "line": 211
+    },
+    {
+      "file": "owlnest/src/net/p2p/swarm/mod.rs",
+      "description": "Messaging events enters the inbox of the behaviour here.",
+      "line": 63
+    },
+    {
+      "file": "owlnest/src/net/p2p/swarm/behaviour.rs",
+      "description": "Call to here.",
+      "line": 67
+    },
+    {
+      "file": "owlnest/src/net/p2p/protocols/messaging/behaviour.rs",
+      "description": "Then here.",
+      "line": 22
+    },
+    {
+      "file": "owlnest/src/net/p2p/protocols/messaging/behaviour.rs",
+      "description": "Then enters the inbox of the behaviour.",
+      "line": 9
+    },
+    {
+      "file": "owlnest/src/net/p2p/protocols/messaging/behaviour.rs",
+      "description": "The behaviour takes out the event to process.",
+      "line": 78
+    },
+    {
+      "file": "owlnest/src/net/p2p/protocols/messaging/behaviour.rs",
+      "description": "Destruct the event.",
+      "line": 80
+    },
+    {
+      "file": "owlnest/src/net/p2p/protocols/messaging/behaviour.rs",
+      "description": "Determin what to do with the event.",
+      "line": 79
+    },
+    {
+      "file": "owlnest/src/net/p2p/protocols/messaging/behaviour.rs",
+      "description": "Wakes up any of the handler responsible for communicating with the give peer with handler InEvent.",
+      "line": 81
+    },
+    {
+      "file": "owlnest/src/net/p2p/protocols/messaging/handler.rs",
+      "description": "The message goes here.",
+      "line": 96
+    },
+    {
+      "file": "owlnest/src/net/p2p/protocols/messaging/handler.rs",
+      "description": "Then here.",
+      "line": 40
+    },
+    {
+      "file": "owlnest/src/net/p2p/protocols/messaging/handler.rs",
+      "description": "Now the outbound is at idle, take out the message.",
+      "line": 201
+    },
+    {
+      "file": "owlnest/src/net/p2p/protocols/messaging/handler.rs",
+      "description": "Make outbound busy.",
+      "line": 207
+    },
+    {
+      "file": "owlnest/src/net/p2p/protocols/messaging/handler.rs",
+      "description": "Poll the outbound for progress.",
+      "line": 166
+    },
+    {
+      "file": "owlnest/src/net/p2p/protocols/messaging/handler.rs",
+      "description": "Message successfully sent with verified hash returned.",
+      "line": 182
+    },
+    {
+      "file": "owlnest/src/net/p2p/protocols/messaging/handler.rs",
+      "description": "Send the round trip time back via the provided sender.",
+      "line": 185
+    }
+  ]
+}

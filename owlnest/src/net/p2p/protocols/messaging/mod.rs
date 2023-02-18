@@ -1,10 +1,10 @@
 use super::*;
-use std::{string::FromUtf8Error, time::SystemTime};
+use std::time::SystemTime;
 
 pub mod behaviour;
 mod handler;
 pub use behaviour::Behaviour;
-
+use tracing::{debug, info, warn};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Message {
@@ -53,14 +53,20 @@ impl Default for Config {
 }
 
 #[derive(Debug)]
-pub enum InEvent {
-    PostMessage(PeerId,Message,oneshot::Sender<CallbackResult>),
+pub struct InEvent {
+    pub op: Op,
+    pub callback: oneshot::Sender<OpResult>,
 }
 
-#[derive(Debug)]
-pub enum CallbackResult{
+#[derive(Debug, Serialize, Deserialize)]
+pub enum Op {
+    SendMessage(PeerId, Message),
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub enum OpResult {
     SuccessfulPost(Duration),
-    Error(Error)
+    Error(Error),
 }
 
 #[derive(Debug)]
@@ -72,41 +78,32 @@ pub enum OutEvent {
     OutboundNegotiated(PeerId),
 }
 
-#[derive(Debug)]
+#[derive(Debug, Serialize, Deserialize)]
 pub enum Error {
     ConnectionClosed,
     VerifierMismatch,
     Timeout,
-    UnrecognizedMessage(serde_json::Error, Result<String, FromUtf8Error>),
-    IO(std::io::Error),
+    UnrecognizedMessage(String), // Serialzied not available on the original type
+    IO(String), // Serialize not available on the original type
 }
 impl Display for Error {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Self::ConnectionClosed => f.write_str("Connection Closed"),
-            Self::VerifierMismatch => {
-                f.write_str("Message verifier mismatch")
-            }
+            Self::VerifierMismatch => f.write_str("Message verifier mismatch"),
             Self::Timeout => f.write_str("Message timed out"),
-            Self::UnrecognizedMessage(e, broken_msg) => f.write_str(&format!(
-                "Failed to deserialize message with error: {}, possible raw data: {:?}",
-                e, broken_msg
-            )),
-            Self::IO(e) => f.write_str(&format!("IO error: {}", e)),
+            Self::UnrecognizedMessage(msg) => f.write_str(msg),
+            Self::IO(msg) => f.write_str(msg),
         }
     }
 }
 impl std::error::Error for Error {
     fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
-        match self {
-            Error::IO(e) => e.source(),
-            _ => None,
-        }
+        None
     }
 }
 
 pub async fn ev_dispatch(ev: OutEvent, _dispatch: &mpsc::Sender<OutEvent>) {
-
     match ev {
         OutEvent::IncomingMessage { .. } => {
             println!("Incoming message: {:?}", ev);
@@ -115,22 +112,22 @@ pub async fn ev_dispatch(ev: OutEvent, _dispatch: &mpsc::Sender<OutEvent>) {
             //     Err(e) => println!("Failed to send message with error {}", e),
             // };
         }
-        OutEvent::Error(e) => println!("{:#?}", e),
+        OutEvent::Error(e) => warn!("{:#?}", e),
         OutEvent::Unsupported(peer) => {
-            println!("Peer {} doesn't support /owlput/messaging/0.0.1", peer)
+            info!("Peer {} doesn't support /owlput/messaging/0.0.1", peer)
         }
-        OutEvent::InboundNegotiated(peer) => println!(
+        OutEvent::InboundNegotiated(peer) => debug!(
             "Successfully negotiated inbound connection from peer {}",
             peer
         ),
-        OutEvent::OutboundNegotiated(peer) => println!(
+        OutEvent::OutboundNegotiated(peer) => debug!(
             "Successfully negotiated outbound connection to peer {}",
             peer
         ),
     }
 }
 
-mod protocol{
-    pub const PROTOCOL_NAME: &[u8] = b"/owlput/messaging/0.0.1";
-    pub use crate::net::p2p::protocols::universal::protocol::{send,recv};
+mod protocol {
+    pub const PROTOCOL_NAME: &[u8] = b"/owlnest/messaging/0.0.1";
+    pub use crate::net::p2p::protocols::universal::protocol::{recv, send};
 }

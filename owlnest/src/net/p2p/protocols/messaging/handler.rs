@@ -18,7 +18,7 @@ use super::{protocol::PROTOCOL_NAME, Config, Message};
 
 #[derive(Debug)]
 pub enum InEvent {
-    PostMessage(Message, oneshot::Sender<CallbackResult>),
+    PostMessage(Message, oneshot::Sender<OpResult>),
 }
 #[derive(Debug)]
 pub enum OutEvent {
@@ -70,7 +70,7 @@ impl Handler {
                 return;
             }
             e => {
-                println!(
+                warn!(
                     "Error occurred when negotiating protocol {}: {:?}",
                     String::from_utf8(PROTOCOL_NAME.to_vec()).unwrap(),
                     e
@@ -137,7 +137,7 @@ impl ConnectionHandler for Handler {
                 // The incoming future resolves to an error
                 Poll::Ready(Err(e)) => {
                     self.pending_events
-                        .push_front(OutEvent::Error(Error::IO(e)));
+                        .push_front(OutEvent::Error(Error::IO(format!("IO Error: {:?}",e))));
                     // Free the inbound because there's no stream present
                     self.inbound = None;
                 }
@@ -167,9 +167,9 @@ impl ConnectionHandler for Handler {
                         // Not ready
                         Poll::Pending => {
                             if timer.poll_unpin(cx).is_ready() {
-                                match callback.send(CallbackResult::Error(Error::Timeout)){
+                                match callback.send(OpResult::Error(Error::Timeout)){
                                     Ok(_)=>{},
-                                    Err(res)=> println!("Failed to send callback {:?}",res)
+                                    Err(res)=> warn!("Failed to send callback {:?}",res)
                                 };
                             } else {
                                 // Put the future back
@@ -182,18 +182,19 @@ impl ConnectionHandler for Handler {
                         Poll::Ready(Ok((stream, rtt))) => {
                             // Free the outbound
                             self.outbound = Some(OutboundState::Idle(stream));
-                            match callback.send(CallbackResult::SuccessfulPost(rtt)){
+                            match callback.send(OpResult::SuccessfulPost(rtt)){
                                 Ok(_)=>{},
-                                Err(res)=> println!("Failed to send callback {:?}",res)
+                                Err(res)=> warn!("Failed to send callback {:?}",res)
                             };
                             return Poll::Ready(ConnectionHandlerEvent::Custom(OutEvent::Dummy));
                             // This poll is over, waiting for the next call
                         }
                         // Ready but resolved to an error
                         Poll::Ready(Err(e)) => {
-                            print!("{}", e);
-                            self.pending_events
-                                .push_front(OutEvent::Error(Error::IO(e)))
+                            match callback.send(OpResult::Error(messaging::Error::IO(format!("IO Error: {:?}",e)))){
+                                Ok(_)=>{}
+                                Err(res)=>warn!("Failed to send result to callback: {:?}",res)
+                            }
                         }
                     }
                 }
@@ -251,7 +252,8 @@ impl ConnectionHandler for Handler {
         match event {
             ConnectionEvent::FullyNegotiatedInbound(FullyNegotiatedInbound {
                 protocol: stream,
-                ..
+                info
+                
             }) => {
                 self.inbound = Some(super::protocol::recv(stream).boxed());
             }
@@ -285,5 +287,5 @@ enum OutboundState {
     /// The substream is idle, waiting for next message.
     Idle(NegotiatedSubstream),
     /// A message is being sent and the response awaited.
-    Busy(PendingSend, oneshot::Sender<CallbackResult>, Delay),
+    Busy(PendingSend, oneshot::Sender<OpResult>, Delay),
 }

@@ -44,6 +44,9 @@ where
     let mut buf = [0u8;8];
     stream.read_exact(&mut buf).await?;
     let chunks_to_read = usize::from_be_bytes(buf);
+    if chunks_to_read > 100{
+        return io::Result::Err(io::Error::new(io::ErrorKind::ConnectionAborted, "Stream too long. Terminating."))
+    }
     drop(buf);
     let mut msg_buf:Vec<u8> = Vec::new();
     for _ in 0..chunks_to_read{

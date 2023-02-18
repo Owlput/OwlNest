@@ -7,12 +7,11 @@ use crate::net::p2p::protocols::tethering;
 use crate::net::p2p::swarm;
 use libp2p::{Multiaddr, PeerId};
 use tokio::sync::{mpsc, oneshot};
-
-type SwarmEvent = swarm::in_event::swarm::InEvent;
+use tracing::warn;
 
 #[derive(Debug)]
 pub enum StdinEvent {
-    Swarm(SwarmEvent),
+    Swarm(swarm::InEvent),
     #[cfg(feature = "tethering")]
     Tethering(tethering::InEvent),
     #[cfg(feature = "messaging")]
@@ -47,7 +46,12 @@ pub fn setup_bus(local_peer: PeerId) -> mpsc::UnboundedReceiver<StdinEvent> {
                             }
                         };
                         let (callback_tx, callback_rx) = oneshot::channel();
-                        match tx.send(StdinEvent::Swarm(SwarmEvent::Dial { addr, callback_tx })) {
+                        match tx.send(StdinEvent::Swarm(
+                            swarm::InEvent {
+                                op: swarm::Op::Dial(addr),
+                                callback: callback_tx,
+                            },
+                        )) {
                             Ok(_) => {}
                             Err(e) => {
                                 println!("Failed to send your command: {}", e)
@@ -69,7 +73,12 @@ pub fn setup_bus(local_peer: PeerId) -> mpsc::UnboundedReceiver<StdinEvent> {
                             }
                         };
                         let (callback_tx, callback_rx) = oneshot::channel();
-                        match tx.send(StdinEvent::Swarm(SwarmEvent::Listen { addr, callback_tx })) {
+                        match tx.send(StdinEvent::Swarm(
+                            swarm::InEvent {
+                                op: swarm::Op::Listen(addr),
+                                callback: callback_tx,
+                            },
+                        )) {
                             Ok(_) => {}
                             Err(e) => {
                                 println!("Failed to send your command: {}", e)
@@ -103,9 +112,8 @@ pub fn setup_bus(local_peer: PeerId) -> mpsc::UnboundedReceiver<StdinEvent> {
                             }
                         };
                         let (callback_tx, callback_rx) = oneshot::channel();
-                        match tx.send(StdinEvent::Tethering(tethering::InEvent::new(
-                            None,
-                            tethering::TetherOps::Trust(peer_to_trust),
+                        match tx.send(StdinEvent::Tethering(tethering::InEvent::LocalExec(
+                            tethering::Op::Trust(peer_to_trust),
                             callback_tx,
                         ))) {
                             Ok(_) => {}
@@ -113,10 +121,7 @@ pub fn setup_bus(local_peer: PeerId) -> mpsc::UnboundedReceiver<StdinEvent> {
                                 println!("Failed to send your command: {}", e)
                             }
                         }
-                        match callback_rx.blocking_recv() {
-                            Ok(res) => println!("{:?}", res),
-                            Err(e) => println!("Failed to receive callback: {}", e),
-                        }
+                        handle_callback_rx(callback_rx)
                     }
                     #[cfg(feature = "relay-server")]
                     "reserve" => {
@@ -131,7 +136,7 @@ pub fn setup_bus(local_peer: PeerId) -> mpsc::UnboundedReceiver<StdinEvent> {
                                 continue;
                             }
                         };
-                        let score = match command[2] {
+                        let _score = match command[2] {
                             "INF" => libp2p::swarm::AddressScore::Infinite,
                             v => match v.parse::<u32>() {
                                 Ok(num) => libp2p::swarm::AddressScore::Finite(num),
@@ -142,21 +147,19 @@ pub fn setup_bus(local_peer: PeerId) -> mpsc::UnboundedReceiver<StdinEvent> {
                             },
                         };
                         let (callback_tx, callback_rx) = oneshot::channel();
-                        match tx.send(StdinEvent::Swarm(SwarmEvent::AddExternalAddress {
-                            addr,
-                            score,
-                            callback_tx,
+                        match tx.send(StdinEvent::Swarm(swarm::InEvent {
+                            op:swarm::Op::AddExternalAddress(addr, command[2].into()),
+                            callback:callback_tx
                         })) {
                             Ok(_) => {}
                             Err(e) => {
-                                println!("Failed to send your command: {}", e)
+                                warn!("Failed to send your command: {}", e)
                             }
                         }
                         handle_callback_rx(callback_rx);
                     }
                     #[cfg(feature = "messaging")]
                     "msg" => {
-                        let (callback_tx, callback_rx) = oneshot::channel();
                         if command.len() < 3 {
                             println!("Error: Missing required argument(s), syntax: `msg <peer id> <message>`");
                             continue;
@@ -177,13 +180,13 @@ pub fn setup_bus(local_peer: PeerId) -> mpsc::UnboundedReceiver<StdinEvent> {
                                 continue;
                             }
                         };
+                        let (callback_tx, callback_rx) = oneshot::channel();
                         let message =
                             messaging::Message::new(&local_peer, &target_peer, command[2].into());
-                        match tx.send(StdinEvent::Messaging(messaging::InEvent::PostMessage(
-                            target_peer,
-                            message,
-                            callback_tx,
-                        ))) {
+                        match tx.send(StdinEvent::Messaging(messaging::InEvent{
+                            op:messaging::Op::SendMessage(target_peer, message),
+                            callback:callback_tx
+                        })) {
                             Ok(_) => {}
                             Err(e) => {
                                 println!("Failed to send your command: {}", e)
@@ -207,11 +210,11 @@ pub fn setup_distributor(
     tokio::spawn(async move {
         while let Some(ev) = center.recv().await {
             let _ = match ev {
-                StdinEvent::Swarm(ev) => swarm_mgr.execute(swarm::InEvent::Swarm(ev)).await,
+                StdinEvent::Swarm(ev) => swarm_mgr.swarm_send(ev).await.unwrap(),
                 #[cfg(feature = "tethering")]
-                StdinEvent::Tethering(ev) => swarm_mgr.execute(swarm::InEvent::Tethering(ev)).await,
+                StdinEvent::Tethering(ev) => swarm_mgr.tethering_send(ev).await.unwrap(),
                 #[cfg(feature = "messaging")]
-                StdinEvent::Messaging(ev) => swarm_mgr.execute(swarm::InEvent::Messaging(ev)).await,
+                StdinEvent::Messaging(ev) => swarm_mgr.messaging_send(ev).await.unwrap(),
             };
         }
     });
@@ -242,6 +245,6 @@ where
 {
     match callback_rx.blocking_recv() {
         Ok(res) => println!("{:?}", res),
-        Err(e) => println!("Failed to receive from callback: {}", e),
+        Err(e) => warn!("Failed to receive from callback: {}", e),
     }
 }

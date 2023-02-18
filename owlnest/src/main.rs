@@ -1,12 +1,10 @@
 use owlnest::{*, net::p2p::{identity::IdentityUnion, swarm::OutEventBundle}};
+use tracing::Level;
 
 #[tokio::main]
 async fn main() {
-    tracing_subscriber::fmt::init();
-    #[cfg(feature="full")]
+    tracing_subscriber::fmt::fmt().with_max_level(Level::DEBUG).init();
     setup_peer();
-    #[cfg(not(feature="full"))]
-    println!("Won't start if not with full feature");
     let _ = tokio::signal::ctrl_c().await;
 }
 
@@ -16,6 +14,7 @@ fn setup_peer(){
     let (mgr,out_bundle) = net::p2p::swarm::Builder::new(swarm_config).build(8);
     let stdin = utils::stdin_event_bus::setup_bus(local_ident.get_peer_id());
     utils::stdin_event_bus::setup_distributor(stdin, mgr);
+    #[cfg(feature = "messaging")]
     tokio::spawn(async move{
         let OutEventBundle{
             mut messaging_rx,..

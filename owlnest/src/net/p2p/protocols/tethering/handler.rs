@@ -1,11 +1,16 @@
-use super::*;
-use std::{collections::VecDeque, io, task::Poll, time::Duration};
+use super::{*, op_result::RemoteOpResult};
+use std::{
+    collections::{HashMap, VecDeque},
+    io,
+    task::Poll,
+    time::Duration,
+};
 
 use futures::{future::BoxFuture, FutureExt};
 use futures_timer::Delay;
 use libp2p::core::{
     upgrade::{NegotiationError, ReadyUpgrade},
-     UpgradeError,
+    UpgradeError,
 };
 
 use libp2p::swarm::{
@@ -15,14 +20,28 @@ use libp2p::swarm::{
 };
 
 #[derive(Debug)]
-pub struct InEvent{
-    pub op:TetherOps,
-    pub callback:oneshot::Sender<CallbackResult>
+pub struct InEvent {
+    pub kind: InEventKind,
+    pub callback: oneshot::Sender<OpResult>,
+}
+impl InEvent {
+    pub fn unwrap_to_bytes(self) -> (Vec<u8>, oneshot::Sender<OpResult>) {
+        (serde_json::to_vec(&self.kind).unwrap(), self.callback)
+    }
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub enum InEventKind {
+    Op(RemoteOp),
+    Push(PushEvent),
+    Callback(RemoteOpResult)
 }
 
 #[derive(Debug)]
 pub enum OutEvent {
-    IncomingOp(Vec<u8>),
+    IncomingOp(RemoteOp),
+    IncomingPush(PushEvent),
+    Callback(RemoteOpResult),
     InboundNegotiated,
     OutboundNegotiated,
     Error(Error),
@@ -39,7 +58,7 @@ pub struct Handler {
     config: Config,
     state: State,
     inbox: VecDeque<InEvent>,
-    pending_events: VecDeque<OutEvent>,
+    pending_out_events: VecDeque<OutEvent>,
     inbound: Option<PendingVerf>,
     outbound: Option<OutboundState>,
 }
@@ -50,7 +69,7 @@ impl Handler {
             config,
             state: State::Active,
             inbox: VecDeque::new(),
-            pending_events: VecDeque::new(),
+            pending_out_events: VecDeque::new(),
             inbound: None,
             outbound: None,
         }
@@ -70,7 +89,7 @@ impl Handler {
                 return;
             }
             e => {
-                println!(
+                warn!(
                     "Error occurred when negotiating protocol {}: {}",
                     String::from_utf8(PROTOCOL_NAME.to_vec()).unwrap(),
                     e
@@ -136,19 +155,39 @@ impl ConnectionHandler for Handler {
                 }
                 // The incoming future resolves to an error
                 Poll::Ready(Err(e)) => {
-                    self.pending_events
+                    self.pending_out_events
                         .push_front(OutEvent::Error(Error::IO(e)));
                     // Free the inbound because there's no stream present
                     self.inbound = None;
                 }
                 // The incoming message is ready and resolves to the stream and message sent by the remote
                 Poll::Ready(Ok((stream, bytes))) => {
+                    let kind = match serde_json::from_slice::<InEventKind>(&bytes) {
+                        Ok(kind) => kind,
+                        Err(e) => {
+                            return Poll::Ready(ConnectionHandlerEvent::Custom(OutEvent::Error(
+                                tethering::Error::UnrecognizedOp(e, String::from_utf8(bytes)),
+                            )))
+                        }
+                    };
                     // Keep trying to receive from remote
                     self.inbound = Some(protocol::recv(stream).boxed());
                     // Resolve the handler to an incoming message
-                    return Poll::Ready(ConnectionHandlerEvent::Custom(OutEvent::IncomingOp(
-                        bytes,
-                    )));
+                    match kind {
+                        InEventKind::Op(op) => 
+                            return Poll::Ready(ConnectionHandlerEvent::Custom(
+                                OutEvent::IncomingOp(op),
+                            )),
+                        
+                        InEventKind::Push(ev) => return Poll::Ready(ConnectionHandlerEvent::Custom(
+                            OutEvent::IncomingPush(ev),
+                        )),
+                            
+                        
+                        InEventKind::Callback(msg) => return Poll::Ready(ConnectionHandlerEvent::Custom(
+                            OutEvent::Callback(msg),
+                        )),
+                    }
                     // This poll is over, waiting for the next call
                 }
             }
@@ -156,21 +195,20 @@ impl ConnectionHandler for Handler {
         // Incoming message has been processed, now for outgoing message
         loop {
             // Flushing the error queue
-            if let Some(ev) = self.pending_events.pop_back() {
+            if let Some(ev) = self.pending_out_events.pop_back() {
                 return Poll::Ready(ConnectionHandlerEvent::Custom(ev));
             }
             // Check whether the outbound is ready
             match self.outbound.take() {
                 // Outbound is waiting for send operation
-                Some(OutboundState::Busy(mut task,callback, mut timer)) => {
+                Some(OutboundState::Busy(mut task, callback, mut timer)) => {
                     match task.poll_unpin(cx) {
                         // Not ready
                         Poll::Pending => {
                             if timer.poll_unpin(cx).is_ready() {
-
                             } else {
                                 // Put the future back
-                                self.outbound = Some(OutboundState::Busy(task, callback,timer));
+                                self.outbound = Some(OutboundState::Busy(task, callback, timer));
                                 // End the loop because the outbound is busy
                                 break;
                             }
@@ -179,19 +217,17 @@ impl ConnectionHandler for Handler {
                         Poll::Ready(Ok((stream, rtt))) => {
                             // Free the outbound
                             self.outbound = Some(OutboundState::Idle(stream));
-                            match callback.send(CallbackResult::SuccessfulPost(rtt)) {
-                                Ok(_)=>{},
-                                Err(res)=> println!("Failed to send callback {:?}",res)
+                            match callback.send(OpResult::SuccessfulPost(rtt)) {
+                                Ok(_) => {}
+                                Err(res) => warn!("Failed to send callback {:?}", res),
                             };
-                            return Poll::Ready(ConnectionHandlerEvent::Custom(
-                                OutEvent::Dummy
-                            ));
+                            return Poll::Ready(ConnectionHandlerEvent::Custom(OutEvent::Dummy));
                             // This poll is over, waiting for the next call
                         }
                         // Ready but resolved to an error
                         Poll::Ready(Err(e)) => {
                             print!("{}", e);
-                            self.pending_events
+                            self.pending_out_events
                                 .push_front(OutEvent::Error(Error::IO(e)))
                         }
                     }
@@ -199,10 +235,11 @@ impl ConnectionHandler for Handler {
                 // Outbound is free, get the next message sent
                 Some(OutboundState::Idle(stream)) => match self.inbox.pop_back() {
                     // Unsent message found
-                    Some(InEvent{op,callback}) => {
+                    Some(ev) => {
+                        let (bytes, callback) = ev.unwrap_to_bytes();
                         // Put Outbound into send state
                         self.outbound = Some(OutboundState::Busy(
-                            protocol::send(stream, op.as_bytes()).boxed(),
+                            protocol::send(stream, bytes).boxed(),
                             callback,
                             Delay::new(self.config.timeout),
                         ))
@@ -270,5 +307,5 @@ enum OutboundState {
     /// The substream is idle, waiting for next message.
     Idle(NegotiatedSubstream),
     /// A message is being sent and the response awaited.
-    Busy(PendingSend,oneshot::Sender<CallbackResult>,Delay),
+    Busy(PendingSend, oneshot::Sender<OpResult>, Delay),
 }

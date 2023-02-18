@@ -1,4 +1,4 @@
-use super::{handler, Config, Error, Message,InEvent,OutEvent};
+use super::{handler, Config, Error, Message,InEvent,OutEvent, Op};
 use libp2p::swarm::{NetworkBehaviour, NetworkBehaviourAction, NotifyHandler};
 use libp2p::PeerId;
 use std::{collections::VecDeque, task::Poll};
@@ -48,8 +48,8 @@ impl NetworkBehaviour for Behaviour {
                             msg,
                         }),
                     Err(e) => self.out_events.push_front(OutEvent::Error(
-                        Error::UnrecognizedMessage(e, String::from_utf8(bytes)),
-                    )),
+                        Error::UnrecognizedMessage(format!("Unrecognized message: {}, raw data: {}",e,String::from_utf8_lossy(&bytes)),
+                    ))),
                 }
             }
             handler::OutEvent::Error(e) => self.out_events.push_front(OutEvent::Error(e)),
@@ -76,8 +76,9 @@ impl NetworkBehaviour for Behaviour {
             return Poll::Ready(NetworkBehaviourAction::GenerateEvent(ev));
         }
         if let Some(ev) = self.in_events.pop_back() {
-            match ev {
-                InEvent::PostMessage(target,msg,callback)=> {
+            let InEvent{op,callback} = ev;
+            match op {
+                Op::SendMessage(target,msg)=> {
                     return Poll::Ready(NetworkBehaviourAction::NotifyHandler {
                         peer_id: target,
                         handler: NotifyHandler::Any,

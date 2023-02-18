@@ -1,16 +1,23 @@
 use super::*;
 
 mod behaviour;
-mod handler;
-pub mod tether_ops;
-pub mod callback_result;
 pub mod error;
+mod handler;
+pub mod op_result;
+pub mod push_handles;
+
+/// Protocol `/owlnest/tethering` is divided into two subprotocols.
+/// `/owlnest/tethering/exec` for operation execution,
+/// `/owlnest/tethering/push` for notification pushing.
+/// Both subprotocols will perform a handshake in TCP style(aka three-way handshake).
+pub mod subprotocols;
 
 pub use behaviour::Behaviour;
-pub use protocol::PROTOCOL_NAME;
-pub use tether_ops::TetherOps;
-pub use callback_result::CallbackResult;
 pub use error::Error;
+pub use op_result::{LocalOpResult, OpResult};
+pub use protocol::PROTOCOL_NAME;
+pub use tether_ops::{Op, PushEvent, RemoteOp};
+use tracing::{debug, info, warn};
 
 #[derive(Debug, Clone)]
 pub struct Config {
@@ -34,20 +41,16 @@ impl Default for Config {
 }
 
 #[derive(Debug)]
-pub struct InEvent {
-    to: Option<PeerId>,
-    op: TetherOps,
-    callback:oneshot::Sender<CallbackResult>
-}
-impl InEvent{
-    pub fn new(to:Option<PeerId>,op:TetherOps,callback:oneshot::Sender<CallbackResult>)->Self{
-        Self { to, op,callback }
-    }
+pub enum InEvent {
+    LocalExec(Op, oneshot::Sender<OpResult>),
+    RemoteExec(PeerId, Op, oneshot::Sender<OpResult>),
+    Push(PeerId, PushEvent, oneshot::Sender<OpResult>),
 }
 
 #[derive(Debug)]
 pub enum OutEvent {
-    IncomingOp { from: PeerId, inner: TetherOps },
+    IncomingOp(RemoteOp),
+    IncomingPush(PushEvent),
     Error(Error),
     Unsupported(PeerId),
     InboundNegotiated(PeerId),
@@ -55,31 +58,29 @@ pub enum OutEvent {
 }
 
 pub async fn ev_dispatch(ev: OutEvent, _dispatch: &mpsc::Sender<OutEvent>) {
-
     match ev {
         OutEvent::IncomingOp { .. } => {
             println!("Incoming message: {:?}", ev);
-            // match dispatch.send(ev).await {
-            //     Ok(_) => {}
-            //     Err(e) => println!("Failed to send message with error {}", e),
-            // };
         }
-        OutEvent::Error(e) => println!("{:#?}", e),
+        OutEvent::IncomingPush { .. } => {
+            println!("Incoming message: {:?}", ev);
+        }
+        OutEvent::Error(e) => warn!("{:#?}", e),
         OutEvent::Unsupported(peer) => {
-            println!("Peer {} doesn't support /owlput/tethering/0.0.1", peer)
+            info!("Peer {} doesn't support /owlput/tethering/0.0.1", peer)
         }
-        OutEvent::InboundNegotiated(peer) => println!(
+        OutEvent::InboundNegotiated(peer) => debug!(
             "Successfully negotiated inbound connection from peer {}",
             peer
         ),
-        OutEvent::OutboundNegotiated(peer) => println!(
+        OutEvent::OutboundNegotiated(peer) => debug!(
             "Successfully negotiated outbound connection to peer {}",
             peer
         ),
     }
 }
 
-mod protocol{
-    pub const PROTOCOL_NAME:&[u8] = b"/owlput/tethering/0.0.1";
-    pub use crate::net::p2p::protocols::universal::protocol::{recv,send};
+mod protocol {
+    pub const PROTOCOL_NAME: &[u8] = b"/owlput/tethering/0.0.1";
+    pub use crate::net::p2p::protocols::universal::protocol::{recv, send};
 }
