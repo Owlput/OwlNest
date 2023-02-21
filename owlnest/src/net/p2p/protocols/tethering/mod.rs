@@ -80,4 +80,4 @@ pub enum TetheringOpError{
     NotFound
 }
 
-pub async fn ev_dispatch(_ev: OutEvent, _dispatch: &mpsc::Sender<OutEvent>) {}
+pub fn ev_dispatch(_ev: OutEvent) {}

@@ -110,7 +110,7 @@ impl std::error::Error for Error {
     }
 }
 
-pub async fn ev_dispatch(ev: OutEvent, _dispatch: &mpsc::Sender<OutEvent>) {
+pub fn ev_dispatch(ev: OutEvent) {
     match ev {
         OutEvent::IncomingMessage { .. } => {
             println!("Incoming message: {:?}", ev);
