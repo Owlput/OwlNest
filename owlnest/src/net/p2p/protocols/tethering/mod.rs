@@ -1,86 +1,83 @@
+use self::{
+    subprotocols::{
+        exec::{self, result::HandleResult, Op},
+        push,
+    },
+};
+use std::fmt::Debug;
+
 use super::*;
 
-mod behaviour;
 pub mod error;
-mod handler;
-pub mod op_result;
-pub mod push_handles;
+pub mod result;
+pub mod behaviour;
 
 /// Protocol `/owlnest/tethering` is divided into two subprotocols.
 /// `/owlnest/tethering/exec` for operation execution,
 /// `/owlnest/tethering/push` for notification pushing.
 /// Both subprotocols will perform a handshake in TCP style(aka three-way handshake).
 pub mod subprotocols;
-
-pub use behaviour::Behaviour;
 pub use error::Error;
-pub use op_result::{LocalOpResult, OpResult};
-pub use protocol::PROTOCOL_NAME;
-pub use tether_ops::{Op, PushEvent, RemoteOp};
-use tracing::{debug, info, warn};
+pub use result::OpResult;
+pub use behaviour::Behaviour;
 
-#[derive(Debug, Clone)]
-pub struct Config {
-    timeout: Duration,
-}
-impl Config {
-    pub fn new() -> Self {
-        Self {
-            timeout: Duration::from_secs(60),
-        }
-    }
-    pub fn with_timeout(mut self, timeout: Duration) -> Self {
-        self.timeout = timeout;
-        self
-    }
-}
-impl Default for Config {
-    fn default() -> Self {
-        Self::new()
-    }
-}
+/// A placeholder struct waiting to be used for interface consistency.
+#[derive(Debug,Default)]
+pub struct Config;
 
 #[derive(Debug)]
 pub enum InEvent {
-    LocalExec(Op, oneshot::Sender<OpResult>),
-    RemoteExec(PeerId, Op, oneshot::Sender<OpResult>),
-    Push(PeerId, PushEvent, oneshot::Sender<OpResult>),
+    RemoteExec(
+        PeerId,
+        exec::Op,
+        oneshot::Sender<exec::result::HandleResult>,
+        oneshot::Sender<exec::result::OpResult>,
+    ),
+    RemoteCallback(
+        PeerId,
+        u128,
+        exec::result::OpResult,
+        oneshot::Sender<HandleResult>,
+    ),
+    LocalExec(TetheringOp, oneshot::Sender<TetheringOpResult>),
+    Push(
+        PeerId,
+        push::PushType,
+        oneshot::Sender<push::result::OpResult>,
+    ),
 }
 
 #[derive(Debug)]
 pub enum OutEvent {
-    IncomingOp(RemoteOp),
-    IncomingPush(PushEvent),
-    Error(Error),
-    Unsupported(PeerId),
-    InboundNegotiated(PeerId),
-    OutboundNegotiated(PeerId),
+    Exec(Op,u128),
+    IncomingNotification(String),
+    ExecError(exec::handler::Error),
+    PushError(push::handler::Error),
+    Unsupported(PeerId,Subprotocol)
 }
 
-pub async fn ev_dispatch(ev: OutEvent, _dispatch: &mpsc::Sender<OutEvent>) {
-    match ev {
-        OutEvent::IncomingOp { .. } => {
-            println!("Incoming message: {:?}", ev);
-        }
-        OutEvent::IncomingPush { .. } => {
-            println!("Incoming message: {:?}", ev);
-        }
-        OutEvent::Error(e) => warn!("{:#?}", e),
-        OutEvent::Unsupported(peer) => {
-            info!("Peer {} doesn't support /owlput/tethering/0.0.1", peer)
-        }
-        OutEvent::InboundNegotiated(peer) => debug!(
-            "Successfully negotiated inbound connection from peer {}",
-            peer
-        ),
-        OutEvent::OutboundNegotiated(peer) => debug!(
-            "Successfully negotiated outbound connection to peer {}",
-            peer
-        ),
-    }
+#[derive(Debug)]
+pub enum Subprotocol{
+    Exec,
+    Push
 }
 
-mod protocol {
-    pub const PROTOCOL_NAME: &[u8] = b"/owlput/tethering/0.0.1";
-    pub use crate::net::p2p::protocols::universal::protocol::{recv, send};
+#[derive(Debug, Serialize, Deserialize)]
+pub enum TetheringOp {
+    Trust(PeerId),
+    Untrust(PeerId),
 }
+
+#[derive(Debug)]
+pub enum TetheringOpResult{
+    Ok,
+    AlreadyTrusted,
+    Err(TetheringOpError),
+}
+
+#[derive(Debug)]
+pub enum TetheringOpError{
+    NotFound
+}
+
+pub async fn ev_dispatch(_ev: OutEvent, _dispatch: &mpsc::Sender<OutEvent>) {}

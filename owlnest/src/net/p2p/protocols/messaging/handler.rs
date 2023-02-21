@@ -180,14 +180,12 @@ impl ConnectionHandler for Handler {
                         }
                         // Ready
                         Poll::Ready(Ok((stream, rtt))) => {
-                            // Free the outbound
-                            self.outbound = Some(OutboundState::Idle(stream));
                             match callback.send(OpResult::SuccessfulPost(rtt)){
                                 Ok(_)=>{},
                                 Err(res)=> warn!("Failed to send callback {:?}",res)
                             };
-                            return Poll::Ready(ConnectionHandlerEvent::Custom(OutEvent::Dummy));
-                            // This poll is over, waiting for the next call
+                            // Free the outbound
+                            self.outbound = Some(OutboundState::Idle(stream));
                         }
                         // Ready but resolved to an error
                         Poll::Ready(Err(e)) => {
@@ -252,7 +250,7 @@ impl ConnectionHandler for Handler {
         match event {
             ConnectionEvent::FullyNegotiatedInbound(FullyNegotiatedInbound {
                 protocol: stream,
-                info
+                info:()
                 
             }) => {
                 self.inbound = Some(super::protocol::recv(stream).boxed());

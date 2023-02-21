@@ -54,8 +54,13 @@ impl Default for Config {
 
 #[derive(Debug)]
 pub struct InEvent {
-    pub op: Op,
-    pub callback: oneshot::Sender<OpResult>,
+    op: Op,
+    callback: oneshot::Sender<OpResult>,
+}
+impl InEvent{
+    pub fn new(op:Op,callback:oneshot::Sender<OpResult>)->Self{
+        Self { op, callback }
+    }
 }
 
 #[derive(Debug, Serialize, Deserialize)]

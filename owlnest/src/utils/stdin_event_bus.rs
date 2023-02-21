@@ -1,25 +1,11 @@
-use std::fmt::Debug;
-
 #[cfg(feature = "messaging")]
 use crate::net::p2p::protocols::messaging;
 #[cfg(feature = "tethering")]
 use crate::net::p2p::protocols::tethering;
 use crate::net::p2p::swarm;
 use libp2p::{Multiaddr, PeerId};
-use tokio::sync::{mpsc, oneshot};
-use tracing::warn;
 
-#[derive(Debug)]
-pub enum StdinEvent {
-    Swarm(swarm::InEvent),
-    #[cfg(feature = "tethering")]
-    Tethering(tethering::InEvent),
-    #[cfg(feature = "messaging")]
-    Messaging(messaging::InEvent),
-}
-
-pub fn setup_bus(local_peer: PeerId) -> mpsc::UnboundedReceiver<StdinEvent> {
-    let (tx, rx) = mpsc::unbounded_channel();
+pub fn setup_bus(local_peer: PeerId, manager: swarm::Manager) {
     std::thread::spawn(move || {
         let mut iter = std::io::stdin().lines();
         println!(
@@ -45,19 +31,10 @@ pub fn setup_bus(local_peer: PeerId) -> mpsc::UnboundedReceiver<StdinEvent> {
                                 continue;
                             }
                         };
-                        let (callback_tx, callback_rx) = oneshot::channel();
-                        match tx.send(StdinEvent::Swarm(
-                            swarm::InEvent {
-                                op: swarm::Op::Dial(addr),
-                                callback: callback_tx,
-                            },
-                        )) {
-                            Ok(_) => {}
-                            Err(e) => {
-                                println!("Failed to send your command: {}", e)
-                            }
+                        match manager.blocking_dial(&addr) {
+                            Ok(_) => println!("Successfully dialed {}", addr),
+                            Err(e) => println!("Failed to dial {} with error: {}", addr, e),
                         }
-                        handle_callback_rx(callback_rx);
                     }
                     "listen" => {
                         if command.len() < 2 {
@@ -72,19 +49,13 @@ pub fn setup_bus(local_peer: PeerId) -> mpsc::UnboundedReceiver<StdinEvent> {
                                 continue;
                             }
                         };
-                        let (callback_tx, callback_rx) = oneshot::channel();
-                        match tx.send(StdinEvent::Swarm(
-                            swarm::InEvent {
-                                op: swarm::Op::Listen(addr),
-                                callback: callback_tx,
-                            },
-                        )) {
-                            Ok(_) => {}
-                            Err(e) => {
-                                println!("Failed to send your command: {}", e)
-                            }
+                        match manager.blocking_listen(&addr) {
+                            Ok(listener_id) => println!(
+                                "Successfully listening on {} with listener ID {:?}",
+                                addr, listener_id
+                            ),
+                            Err(e) => println!("Failed to listen on {} with error: {}", addr, e),
                         }
-                        handle_callback_rx(callback_rx);
                     }
                     #[cfg(feature = "tethering")]
                     "trust" => {
@@ -111,52 +82,19 @@ pub fn setup_bus(local_peer: PeerId) -> mpsc::UnboundedReceiver<StdinEvent> {
                                 continue;
                             }
                         };
-                        let (callback_tx, callback_rx) = oneshot::channel();
-                        match tx.send(StdinEvent::Tethering(tethering::InEvent::LocalExec(
-                            tethering::Op::Trust(peer_to_trust),
-                            callback_tx,
-                        ))) {
-                            Ok(_) => {}
-                            Err(e) => {
-                                println!("Failed to send your command: {}", e)
-                            }
-                        }
-                        handle_callback_rx(callback_rx)
-                    }
-                    #[cfg(feature = "relay-server")]
-                    "reserve" => {
-                        if command.len() < 3 {
-                            println!("Error: Missing required argument(s), syntax: `reserve <address> <score>`");
-                            continue;
-                        }
-                        let addr = match command[1].parse::<Multiaddr>() {
-                            Ok(addr) => addr,
-                            Err(e) => {
-                                println!("Error: Failed parsing address `{}`: {}", command[1], e);
-                                continue;
-                            }
-                        };
-                        let _score = match command[2] {
-                            "INF" => libp2p::swarm::AddressScore::Infinite,
-                            v => match v.parse::<u32>() {
-                                Ok(num) => libp2p::swarm::AddressScore::Finite(num),
-                                Err(_) => {
-                                    println!("Failed to parse score from {}, accepting `INF` or a valid 32-bit integer.",command[2]);
-                                    continue;
-                                }
+                        match manager.blocking_tethering_local_exec(tethering::TetheringOp::Trust(
+                            peer_to_trust.clone(),
+                        )){
+                            tethering::TetheringOpResult::Ok => {
+                                println!("Successfully trusted peer {}",peer_to_trust)
                             },
-                        };
-                        let (callback_tx, callback_rx) = oneshot::channel();
-                        match tx.send(StdinEvent::Swarm(swarm::InEvent {
-                            op:swarm::Op::AddExternalAddress(addr, command[2].into()),
-                            callback:callback_tx
-                        })) {
-                            Ok(_) => {}
-                            Err(e) => {
-                                warn!("Failed to send your command: {}", e)
-                            }
+                            tethering::TetheringOpResult::AlreadyTrusted => {
+                                println!("Peer {} is already in trust list",peer_to_trust)
+                            },
+                            tethering::TetheringOpResult::Err(e) => {
+                                println!("Failed to trust peer {}: {:?}",peer_to_trust,e)
+                            },
                         }
-                        handle_callback_rx(callback_rx);
                     }
                     #[cfg(feature = "messaging")]
                     "msg" => {
@@ -180,41 +118,14 @@ pub fn setup_bus(local_peer: PeerId) -> mpsc::UnboundedReceiver<StdinEvent> {
                                 continue;
                             }
                         };
-                        let (callback_tx, callback_rx) = oneshot::channel();
-                        let message =
-                            messaging::Message::new(&local_peer, &target_peer, command[2].into());
-                        match tx.send(StdinEvent::Messaging(messaging::InEvent{
-                            op:messaging::Op::SendMessage(target_peer, message),
-                            callback:callback_tx
-                        })) {
-                            Ok(_) => {}
-                            Err(e) => {
-                                println!("Failed to send your command: {}", e)
-                            }
+                        match manager.blocking_messaging_exec(messaging::Op::SendMessage(target_peer.clone(), messaging::Message::new(&local_peer, &target_peer, command[2].into()))){
+                            messaging::OpResult::SuccessfulPost(rtt) => println!("Message successfully sent, estimated round trip time {}ms",rtt.as_millis()),
+                            messaging::OpResult::Error(e) => println!("Failed to send message: {}",e),
                         }
-                        handle_callback_rx(callback_rx);
                     }
                     "" => {}
                     _ => println!("Unrecognized command"),
                 }
-            };
-        }
-    });
-    rx
-}
-
-pub fn setup_distributor(
-    mut center: mpsc::UnboundedReceiver<StdinEvent>,
-    swarm_mgr: swarm::Manager,
-) {
-    tokio::spawn(async move {
-        while let Some(ev) = center.recv().await {
-            let _ = match ev {
-                StdinEvent::Swarm(ev) => swarm_mgr.swarm_send(ev).await.unwrap(),
-                #[cfg(feature = "tethering")]
-                StdinEvent::Tethering(ev) => swarm_mgr.tethering_send(ev).await.unwrap(),
-                #[cfg(feature = "messaging")]
-                StdinEvent::Messaging(ev) => swarm_mgr.messaging_send(ev).await.unwrap(),
             };
         }
     });
@@ -238,13 +149,3 @@ const HELP_MESSAGE: &str = r#"
                             Note that this command can't be used to make relay
                             reservations, but to occupy the supplied address.   
 "#;
-
-fn handle_callback_rx<T>(callback_rx: oneshot::Receiver<T>)
-where
-    T: Debug,
-{
-    match callback_rx.blocking_recv() {
-        Ok(res) => println!("{:?}", res),
-        Err(e) => warn!("Failed to receive from callback: {}", e),
-    }
-}

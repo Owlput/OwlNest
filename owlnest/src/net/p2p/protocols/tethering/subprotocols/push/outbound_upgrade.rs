@@ -1,4 +1,4 @@
-use super::EXEC_PROTOCOL_NAME;
+use super::PUSH_PROTOCOL_NAME;
 use futures::{future::BoxFuture, AsyncReadExt, AsyncWriteExt, FutureExt};
 use libp2p::{core::upgrade, swarm::NegotiatedSubstream};
 
@@ -9,7 +9,7 @@ impl upgrade::UpgradeInfo for Upgrade {
     type InfoIter = core::iter::Once<Self::Info>;
 
     fn protocol_info(&self) -> Self::InfoIter {
-        core::iter::once(EXEC_PROTOCOL_NAME)
+        core::iter::once(PUSH_PROTOCOL_NAME)
     }
 }
 
@@ -18,10 +18,9 @@ impl upgrade::OutboundUpgrade<NegotiatedSubstream> for Upgrade {
     type Error = UpgradeError;
     type Future = BoxFuture<'static, Result<Self::Output, Self::Error>>;
 
-    fn upgrade_outbound(self, socket: NegotiatedSubstream, info: Self::Info) -> Self::Future {
+    fn upgrade_outbound(self,mut socket: NegotiatedSubstream, _info: Self::Info) -> Self::Future {
         // Initialize a TCP style handshake
         async move {
-            // Send SYN
             let syn = rand::random::<u64>();
             socket
                 .write_all(&syn.to_be_bytes())
@@ -31,10 +30,9 @@ impl upgrade::OutboundUpgrade<NegotiatedSubstream> for Upgrade {
                 .flush()
                 .await
                 .map_err(|e| UpgradeError::StreamError(e.to_string()))?;
-            // Receive ACK
             let mut ack = [0u8; 8];
             socket
-                .read_exact(&ack)
+                .read_exact(&mut ack)
                 .await
                 .map_err(|e| UpgradeError::StreamError(e.to_string()))?;
             let ack = u64::from_be_bytes(ack);
@@ -48,7 +46,7 @@ impl upgrade::OutboundUpgrade<NegotiatedSubstream> for Upgrade {
                     Ok(_) => u64::from_be_bytes(syn_recv),
                     Err(e) => return Err(UpgradeError::StreamError(e.to_string())),
                 };
-            // Send ACK
+
             socket
                 .write_all(&(syn_recv.wrapping_add(1)).to_be_bytes())
                 .await

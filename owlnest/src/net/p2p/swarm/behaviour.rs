@@ -63,17 +63,6 @@ impl Behaviour {
     }
 }
 
-impl Behaviour {
-    #[cfg(feature = "messaging")]
-    pub fn message_op_exec(&mut self, op: messaging::InEvent) {
-        self.messaging.push_event(op)
-    }
-    #[cfg(feature = "tethering")]
-    pub fn tether_op_exec(&mut self, op: tethering::InEvent) {
-        self.tethering.push_op(op)
-    }
-}
-
 #[cfg(feature="relay-client")]
 fn upgrade_transport<StreamSink>(
     transport: Boxed<StreamSink>,

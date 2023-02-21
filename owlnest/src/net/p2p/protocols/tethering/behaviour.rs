@@ -1,14 +1,16 @@
-use crate::net::p2p::swarm;
-
 use super::*;
-use libp2p::swarm::{NetworkBehaviour, NetworkBehaviourAction, NotifyHandler};
+use libp2p::swarm::{
+    derive_prelude::EitherOutput, ConnectionHandler, ConnectionHandlerSelect, NetworkBehaviour,
+    NetworkBehaviourAction, NotifyHandler,
+};
 use std::{
     collections::{HashSet, VecDeque},
     task::Poll,
 };
 
 pub struct Behaviour {
-    config: Config,
+    #[allow(unused)]
+    config:Config,
     trusted_peer: HashSet<PeerId>,
     out_events: VecDeque<OutEvent>,
     in_events: VecDeque<InEvent>,
@@ -16,7 +18,7 @@ pub struct Behaviour {
 
 impl Behaviour {
     #[inline]
-    pub fn new(config: Config) -> Self {
+    pub fn new(config:Config) -> Self {
         Self {
             config,
             trusted_peer: HashSet::new(),
@@ -31,11 +33,12 @@ impl Behaviour {
 }
 
 impl NetworkBehaviour for Behaviour {
-    type ConnectionHandler = handler::Handler;
+    type ConnectionHandler =
+        ConnectionHandlerSelect<exec::handler::ExecHandler, push::handler::PushHandler>;
     type OutEvent = OutEvent;
 
     fn new_handler(&mut self) -> Self::ConnectionHandler {
-        handler::Handler::new(self.config.clone())
+        exec::handler::ExecHandler::default().select(push::handler::PushHandler::default())
     }
     fn on_connection_handler_event(
         &mut self,
@@ -44,35 +47,11 @@ impl NetworkBehaviour for Behaviour {
         event: <<Self::ConnectionHandler as libp2p::swarm::IntoConnectionHandler>::Handler as
             libp2p::swarm::ConnectionHandler>::OutEvent,
     ) {
-        match event {
-            handler::OutEvent::IncomingOp(op) => {
-                    if let Some(_peer) = self.trusted_peer.get(&peer_id) {
-                        self.out_events.push_front(OutEvent::IncomingOp(op))
-                    }
-                }
-            handler::OutEvent::IncomingPush(ev) => {
-                if let Some(_peer) = self.trusted_peer.get(&peer_id) {
-                    self.out_events.push_front(OutEvent::IncomingPush(ev))
-                }
-            }
-            handler::OutEvent::Callback(msg) => {
-                if let Some(_peer) = self.trusted_peer.get(&peer_id) {
-                    self.out_events.push_front(OutEvent::IncomingPush(ev))
-                }
-            }
-            handler::OutEvent::Error(e) => self.out_events.push_front(OutEvent::Error(e)),
-            handler::OutEvent::Unsupported => {
-                self.out_events.push_front(OutEvent::Unsupported(peer_id))
-            }
-            handler::OutEvent::InboundNegotiated => self
-                .out_events
-                .push_front(OutEvent::InboundNegotiated(peer_id)),
-            handler::OutEvent::OutboundNegotiated => self
-                .out_events
-                .push_front(OutEvent::OutboundNegotiated(peer_id)),
-            handler::OutEvent::Dummy => {}
-            
-        }
+        let out_event = match event {
+            EitherOutput::First(ev) => map_exec_out_event(peer_id, ev),
+            EitherOutput::Second(ev) => map_push_out_event(peer_id, ev),
+        };
+        self.out_events.push_front(out_event);
     }
     fn poll(
         &mut self,
@@ -87,46 +66,50 @@ impl NetworkBehaviour for Behaviour {
         if let Some(ev) = self.in_events.pop_back() {
             match ev {
                 InEvent::LocalExec(op, callback) => match op {
-                    Op::Trust(peer) => match self.trusted_peer.insert(peer) {
-                        true => {
-                            let send_res = callback.send(OpResult::Local(LocalOpResult::Ok));
-                            handle_send_res(send_res);
+                    TetheringOp::Trust(peer) => {
+                        if self.trusted_peer.insert(peer) {
+                            callback.send(TetheringOpResult::Ok).unwrap();
+                        } else {
+                            callback.send(TetheringOpResult::AlreadyTrusted).unwrap()
                         }
-                        false => {
-                            let send_res =
-                                callback.send(OpResult::Local(LocalOpResult::AlreadyTrusted));
-                            handle_send_res(send_res);
+                    }
+                    TetheringOp::Untrust(peer) => {
+                        if self.trusted_peer.remove(&peer) {
+                            callback.send(TetheringOpResult::Ok).unwrap()
+                        } else {
+                            callback
+                                .send(TetheringOpResult::Err(TetheringOpError::NotFound))
+                                .unwrap()
                         }
-                    },
-                    Op::Untrust(peer) => match self.trusted_peer.remove(&peer) {
-                        true => {
-                            let send_res = callback.send(OpResult::Local(LocalOpResult::Ok));
-                            handle_send_res(send_res);
-                        }
-                        false => {
-                            let send_res = callback.send(OpResult::Local(LocalOpResult::NotFound));
-                            handle_send_res(send_res);
-                        }
-                    },
+                    }
                 },
-                InEvent::RemoteExec(to, op, callback) => {
+                InEvent::RemoteExec(peer_id, op, handle_callback, result_callback) => {
                     return Poll::Ready(NetworkBehaviourAction::NotifyHandler {
-                        peer_id: to,
+                        peer_id,
                         handler: NotifyHandler::Any,
-                        event: handler::InEvent{
-                            kind: handler::InEventKind::Op(op),
-                            callback,
-                        },
+                        event: EitherOutput::First(exec::InEvent::new_exec(
+                            op,
+                            handle_callback,
+                            result_callback,
+                        )),
                     })
                 }
-                InEvent::Push(to,ev,callback)=>{
+                InEvent::RemoteCallback(peer_id, stamp, result, handle_callback) => {
+                    return Poll::Ready(NetworkBehaviourAction::NotifyHandler {
+                        peer_id,
+                        handler: NotifyHandler::Any,
+                        event: EitherOutput::First(exec::InEvent::new_callback(
+                            stamp,
+                            result,
+                            handle_callback,
+                        )),
+                    })
+                }
+                InEvent::Push(to, push_type, callback) => {
                     return Poll::Ready(NetworkBehaviourAction::NotifyHandler {
                         peer_id: to,
                         handler: NotifyHandler::Any,
-                        event: handler::InEvent{
-                            kind: handler::InEventKind::Push(ev),
-                            callback,
-                        },
+                        event: EitherOutput::Second(push::InEvent::new(push_type, callback)),
                     })
                 }
             }
@@ -134,10 +117,22 @@ impl NetworkBehaviour for Behaviour {
         Poll::Pending
     }
 }
-#[inline]
-fn handle_send_res(send_res: Result<(), OpResult>) {
-    match send_res {
-        Ok(_) => {}
-        Err(op_res) => warn!("Failed to send callback {:?}", op_res),
+
+fn map_exec_out_event(peer_id: PeerId, ev: exec::OutEvent) -> behaviour::OutEvent {
+    match ev {
+        exec::OutEvent::Exec(op, stamp) => behaviour::OutEvent::Exec(op, stamp),
+        exec::OutEvent::Error(e) => behaviour::OutEvent::ExecError(e),
+        exec::OutEvent::Unsupported => {
+            behaviour::OutEvent::Unsupported(peer_id, behaviour::Subprotocol::Exec)
+        }
+    }
+}
+fn map_push_out_event(peer_id: PeerId, ev: push::OutEvent) -> behaviour::OutEvent {
+    match ev {
+        push::OutEvent::Message(msg) => behaviour::OutEvent::IncomingNotification(msg),
+        push::OutEvent::Error(e) => behaviour::OutEvent::PushError(e),
+        push::OutEvent::Unsupported => {
+            behaviour::OutEvent::Unsupported(peer_id, behaviour::Subprotocol::Push)
+        }
     }
 }

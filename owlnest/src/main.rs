@@ -12,8 +12,7 @@ fn setup_peer(){
     let local_ident = IdentityUnion::generate();
     let swarm_config = net::p2p::SwarmConfig::default();
     let (mgr,out_bundle) = net::p2p::swarm::Builder::new(swarm_config).build(8);
-    let stdin = utils::stdin_event_bus::setup_bus(local_ident.get_peer_id());
-    utils::stdin_event_bus::setup_distributor(stdin, mgr);
+    utils::stdin_event_bus::setup_bus(local_ident.get_peer_id(),mgr.clone());
     #[cfg(feature = "messaging")]
     tokio::spawn(async move{
         let OutEventBundle{

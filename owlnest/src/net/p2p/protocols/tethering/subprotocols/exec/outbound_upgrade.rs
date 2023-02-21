@@ -1,3 +1,5 @@
+use std::fmt::Display;
+
 use super::EXEC_PROTOCOL_NAME;
 use futures::{future::BoxFuture, AsyncReadExt, AsyncWriteExt, FutureExt};
 use libp2p::{core::upgrade, swarm::NegotiatedSubstream};
@@ -18,9 +20,10 @@ impl upgrade::OutboundUpgrade<NegotiatedSubstream> for Upgrade {
     type Error = UpgradeError;
     type Future = BoxFuture<'static, Result<Self::Output, Self::Error>>;
 
-    fn upgrade_outbound(self, socket: NegotiatedSubstream, info: Self::Info) -> Self::Future {
+    fn upgrade_outbound(self, mut socket: NegotiatedSubstream, _info: Self::Info) -> Self::Future {
         // Initialize a TCP style handshake
         async move {
+            // Send SYN
             let syn = rand::random::<u64>();
             socket
                 .write_all(&syn.to_be_bytes())
@@ -30,9 +33,10 @@ impl upgrade::OutboundUpgrade<NegotiatedSubstream> for Upgrade {
                 .flush()
                 .await
                 .map_err(|e| UpgradeError::StreamError(e.to_string()))?;
+            // Receive ACK
             let mut ack = [0u8; 8];
             socket
-                .read_exact(&ack)
+                .read_exact(&mut ack)
                 .await
                 .map_err(|e| UpgradeError::StreamError(e.to_string()))?;
             let ack = u64::from_be_bytes(ack);
@@ -40,13 +44,11 @@ impl upgrade::OutboundUpgrade<NegotiatedSubstream> for Upgrade {
                 return Err(UpgradeError::UnexpectedACK(syn, ack));
             }
             let mut syn_recv = [0u8; 8];
-            let syn_recv = match socket
-                .read_exact(&mut syn_recv)
-                .await{
-                    Ok(_) => u64::from_be_bytes(syn_recv),
-                    Err(e) => return Err(UpgradeError::StreamError(e.to_string())),
-                };
-
+            let syn_recv = match socket.read_exact(&mut syn_recv).await {
+                Ok(_) => u64::from_be_bytes(syn_recv),
+                Err(e) => return Err(UpgradeError::StreamError(e.to_string())),
+            };
+            // Send ACK
             socket
                 .write_all(&(syn_recv.wrapping_add(1)).to_be_bytes())
                 .await
@@ -65,4 +67,20 @@ impl upgrade::OutboundUpgrade<NegotiatedSubstream> for Upgrade {
 pub enum UpgradeError {
     StreamError(String),
     UnexpectedACK(u64, u64),
+}
+impl Display for UpgradeError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::StreamError(e) => f.write_str(&format!("Stream error: {}", e)),
+            UpgradeError::UnexpectedACK(expected, received) => f.write_str(&format!(
+                "ACK mismatch, expected: {}, got: {}",
+                expected, received
+            )),
+        }
+    }
+}
+impl std::error::Error for UpgradeError {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        None
+    }
 }
