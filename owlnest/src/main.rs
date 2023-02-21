@@ -10,7 +10,12 @@ async fn main() {
 
 fn setup_peer(){
     let local_ident = IdentityUnion::generate();
-    let swarm_config = net::p2p::SwarmConfig::default();
+    let swarm_config = net::p2p::SwarmConfig{
+        local_ident:local_ident.clone(),
+        messaging: net::p2p::protocols::messaging::Config::default(),
+        tethering: net::p2p::protocols::tethering::Config::default(),
+        relay_server: net::p2p::protocols::relay_server::Config::default(),
+    };
     let (mgr,out_bundle) = net::p2p::swarm::Builder::new(swarm_config).build(8);
     utils::stdin_event_bus::setup_bus(local_ident.get_peer_id(),mgr.clone());
     #[cfg(feature = "messaging")]

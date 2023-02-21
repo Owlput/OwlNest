@@ -1,5 +1,6 @@
 use tracing::{debug,info};
 
+pub use libp2p::relay::v2::relay::Config;
 pub type Behaviour = libp2p::relay::v2::relay::Relay;
 pub type OutEvent = libp2p::relay::v2::relay::Event;
 

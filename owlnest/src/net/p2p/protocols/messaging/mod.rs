@@ -87,6 +87,7 @@ pub enum OutEvent {
 pub enum Error {
     ConnectionClosed,
     VerifierMismatch,
+    PeerNotFound(PeerId),
     Timeout,
     UnrecognizedMessage(String), // Serialzied not available on the original type
     IO(String), // Serialize not available on the original type
@@ -97,6 +98,7 @@ impl Display for Error {
             Self::ConnectionClosed => f.write_str("Connection Closed"),
             Self::VerifierMismatch => f.write_str("Message verifier mismatch"),
             Self::Timeout => f.write_str("Message timed out"),
+            Self::PeerNotFound(peer)=>f.write_str(&format!("Peer {} not connected",peer)),
             Self::UnrecognizedMessage(msg) => f.write_str(msg),
             Self::IO(msg) => f.write_str(msg),
         }

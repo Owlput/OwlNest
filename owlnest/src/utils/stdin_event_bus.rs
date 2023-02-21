@@ -145,7 +145,5 @@ const HELP_MESSAGE: &str = r#"
                             Peer ID needs to be supplied in `/p2p/<peer ID>` format.
         trust <peer id>     Allow the specified peer to use tethering protocol
                             to control the behaviour of this peer.
-        reserve <address>   Reserve the given address, in Multiaddr format.
-                            Note that this command can't be used to make relay
-                            reservations, but to occupy the supplied address.   
+        untrust <peer id>   Remove the specified peer from trust list.
 "#;

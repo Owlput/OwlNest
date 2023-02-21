@@ -23,11 +23,10 @@ pub enum InEvent {
 #[derive(Debug)]
 pub enum OutEvent {
     IncomingMessage(Vec<u8>),
-    InboundNegotiated,
-    OutboundNegotiated,
     Error(Error),
     Unsupported,
-    Dummy,
+    InboundNegotiated,
+    OutboundNegotiated
 }
 
 pub enum State {
@@ -37,8 +36,8 @@ pub enum State {
 
 pub struct Handler {
     state: State,
-    inbox: VecDeque<InEvent>,
-    pending_events: VecDeque<OutEvent>,
+    pending_in_events: VecDeque<InEvent>,
+    pending_out_events: VecDeque<OutEvent>,
     timeout: Duration,
     inbound: Option<PendingVerf>,
     outbound: Option<OutboundState>,
@@ -48,8 +47,8 @@ impl Handler {
     pub fn new(config: Config) -> Self {
         Self {
             state: State::Active,
-            inbox: VecDeque::new(),
-            pending_events: VecDeque::new(),
+            pending_in_events: VecDeque::new(),
+            pending_out_events: VecDeque::new(),
             timeout: config.timeout,
             inbound: None,
             outbound: None,
@@ -94,7 +93,8 @@ impl ConnectionHandler for Handler {
         SubstreamProtocol::new(ReadyUpgrade::new(PROTOCOL_NAME), ())
     }
     fn on_behaviour_event(&mut self, event: Self::InEvent) {
-        self.inbox.push_front(event)
+        debug!("Received event {:#?}",event);
+        self.pending_in_events.push_front(event)
     }
     fn connection_keep_alive(&self) -> libp2p::swarm::KeepAlive {
         libp2p::swarm::KeepAlive::Yes
@@ -136,7 +136,7 @@ impl ConnectionHandler for Handler {
                 }
                 // The incoming future resolves to an error
                 Poll::Ready(Err(e)) => {
-                    self.pending_events
+                    self.pending_out_events
                         .push_front(OutEvent::Error(Error::IO(format!("IO Error: {:?}",e))));
                     // Free the inbound because there's no stream present
                     self.inbound = None;
@@ -156,7 +156,7 @@ impl ConnectionHandler for Handler {
         // Incoming message has been processed, now for outgoing message
         loop {
             // Flushing the error queue
-            if let Some(ev) = self.pending_events.pop_back() {
+            if let Some(ev) = self.pending_out_events.pop_back() {
                 return Poll::Ready(ConnectionHandlerEvent::Custom(ev));
             }
             // Check whether the outbound is ready
@@ -197,7 +197,7 @@ impl ConnectionHandler for Handler {
                     }
                 }
                 // Outbound is free, get the next message sent
-                Some(OutboundState::Idle(stream)) => match self.inbox.pop_back() {
+                Some(OutboundState::Idle(stream)) => match self.pending_in_events.pop_back() {
                     // Unsent message found
                     Some(ev) => {
                         match ev {
@@ -253,12 +253,16 @@ impl ConnectionHandler for Handler {
                 info:()
                 
             }) => {
+                self.pending_out_events.push_front(OutEvent::InboundNegotiated);
                 self.inbound = Some(super::protocol::recv(stream).boxed());
             }
             ConnectionEvent::FullyNegotiatedOutbound(FullyNegotiatedOutbound {
                 protocol: stream,
                 ..
-            }) => self.outbound = Some(OutboundState::Idle(stream)),
+            }) => {
+                self.pending_out_events.push_front(OutEvent::OutboundNegotiated);
+                self.outbound = Some(OutboundState::Idle(stream));
+            }
             ConnectionEvent::DialUpgradeError(e) => {
                 self.on_dial_upgrade_error(e);
             }

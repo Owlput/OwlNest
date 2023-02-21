@@ -1,12 +1,17 @@
+use crate::net::p2p::protocols::messaging::OpResult;
+
 use super::{handler, Config, Error, Message,InEvent,OutEvent, Op};
 use libp2p::swarm::{NetworkBehaviour, NetworkBehaviourAction, NotifyHandler};
 use libp2p::PeerId;
+use tracing::debug;
+use std::collections::HashSet;
 use std::{collections::VecDeque, task::Poll};
 
 pub struct Behaviour {
     config: Config,
     out_events: VecDeque<OutEvent>,
     in_events: VecDeque<InEvent>,
+    connected_peers:HashSet<PeerId>,
 }
 
 impl Behaviour {
@@ -16,6 +21,7 @@ impl Behaviour {
             config,
             out_events: VecDeque::new(),
             in_events: VecDeque::new(),
+            connected_peers:HashSet::new(),
         }
     }
     #[inline]
@@ -59,10 +65,11 @@ impl NetworkBehaviour for Behaviour {
             handler::OutEvent::InboundNegotiated => self
                 .out_events
                 .push_front(OutEvent::InboundNegotiated(peer_id)),
-            handler::OutEvent::OutboundNegotiated => self
+            handler::OutEvent::OutboundNegotiated => {self
                 .out_events
-                .push_front(OutEvent::OutboundNegotiated(peer_id)),
-            handler::OutEvent::Dummy => {},
+                .push_front(OutEvent::OutboundNegotiated(peer_id.clone()));
+                self.connected_peers.insert(peer_id);
+            }
         }
     }
     fn poll(
@@ -76,14 +83,19 @@ impl NetworkBehaviour for Behaviour {
             return Poll::Ready(NetworkBehaviourAction::GenerateEvent(ev));
         }
         if let Some(ev) = self.in_events.pop_back() {
+            debug!("Received event {:#?}",ev);
             let InEvent{op,callback} = ev;
+            
             match op {
                 Op::SendMessage(target,msg)=> {
+                    if self.connected_peers.contains(&target){
                     return Poll::Ready(NetworkBehaviourAction::NotifyHandler {
                         peer_id: target,
                         handler: NotifyHandler::Any,
                         event: handler::InEvent::PostMessage(msg,callback),
-                    })
+                    })}else{
+                        callback.send(OpResult::Error(Error::PeerNotFound(target))).unwrap();
+                    }
                 }
             }
         }
