@@ -59,6 +59,9 @@ impl Builder {
 
                             SwarmEvent::Behaviour(event)=>{
                                 match event {
+                                    BehaviourEvent::Kad(ev)=>{kad::ev_dispatch(ev)}
+                                    BehaviourEvent::Identify(ev)=>{identify::ev_dispatch(ev)}
+                                    BehaviourEvent::Mdns(ev)=>{mdns::ev_dispatch(ev)}
                                     #[cfg(feature="messaging")]
                                     BehaviourEvent::Messaging(ev)=>{messaging::ev_dispatch(ev,&messaging_dispatch).await;}
                                     #[cfg(feature="tethering")]
@@ -124,7 +127,7 @@ fn map_protocol_ev(swarm: &mut Swarm<behaviour::Behaviour>, ev: ProtocolInEvent)
         },
         #[cfg(feature = "tethering")]
         ProtocolInEvent::Tethering(ev) => {
-            swarm.behaviour_mut().tethering.push_op(ev)
+            swarm.behaviour_mut().tethering.push_event(ev)
         },
     }
 }

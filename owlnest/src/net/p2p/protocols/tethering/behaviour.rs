@@ -10,7 +10,7 @@ use std::{
 
 pub struct Behaviour {
     #[allow(unused)]
-    config:Config,
+    config: Config,
     trusted_peer: HashSet<PeerId>,
     out_events: VecDeque<OutEvent>,
     in_events: VecDeque<InEvent>,
@@ -18,7 +18,7 @@ pub struct Behaviour {
 
 impl Behaviour {
     #[inline]
-    pub fn new(config:Config) -> Self {
+    pub fn new(config: Config) -> Self {
         Self {
             config,
             trusted_peer: HashSet::new(),
@@ -26,9 +26,22 @@ impl Behaviour {
             in_events: VecDeque::new(),
         }
     }
-    #[inline]
-    pub fn push_op(&mut self, op: InEvent) {
-        self.in_events.push_front(op)
+    pub fn push_event(&mut self,ev:InEvent){
+        self.in_events.push_front(ev)
+    }
+    pub fn trust(&mut self, peer_id: PeerId) -> TetheringOpResult {
+        if self.trusted_peer.insert(peer_id) {
+            TetheringOpResult::Ok
+        } else {
+            TetheringOpResult::AlreadyTrusted
+        }
+    }
+    pub fn untrust(&mut self, peer_id: PeerId) -> TetheringOpResult {
+        if self.trusted_peer.remove(&peer_id) {
+            TetheringOpResult::Ok
+        } else {
+            TetheringOpResult::Err(TetheringOpError::NotFound)
+        }
     }
 }
 
@@ -65,24 +78,6 @@ impl NetworkBehaviour for Behaviour {
         }
         if let Some(ev) = self.in_events.pop_back() {
             match ev {
-                InEvent::LocalExec(op, callback) => match op {
-                    TetheringOp::Trust(peer) => {
-                        if self.trusted_peer.insert(peer) {
-                            callback.send(TetheringOpResult::Ok).unwrap();
-                        } else {
-                            callback.send(TetheringOpResult::AlreadyTrusted).unwrap()
-                        }
-                    }
-                    TetheringOp::Untrust(peer) => {
-                        if self.trusted_peer.remove(&peer) {
-                            callback.send(TetheringOpResult::Ok).unwrap()
-                        } else {
-                            callback
-                                .send(TetheringOpResult::Err(TetheringOpError::NotFound))
-                                .unwrap()
-                        }
-                    }
-                },
                 InEvent::RemoteExec(peer_id, op, handle_callback, result_callback) => {
                     return Poll::Ready(NetworkBehaviourAction::NotifyHandler {
                         peer_id,
@@ -112,6 +107,13 @@ impl NetworkBehaviour for Behaviour {
                         event: EitherOutput::Second(push::InEvent::new(push_type, callback)),
                     })
                 }
+                InEvent::LocalExec(op, callback) => {
+                    let result = match op{
+                        TetheringOp::Trust(peer_id) => self.trust(peer_id),
+                        TetheringOp::Untrust(peer_id) => self.untrust(peer_id),
+                    };
+                    callback.send(result).unwrap();
+                },
             }
         }
         Poll::Pending

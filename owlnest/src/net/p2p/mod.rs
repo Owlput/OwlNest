@@ -20,6 +20,9 @@ use tokio::sync::{mpsc, oneshot};
 
 pub struct SwarmConfig {
     pub local_ident: IdentityUnion,
+    pub kad: kad::Config,
+    pub identify: identify::Config,
+    pub mdns: mdns::Config,
     #[cfg(feature = "messaging")]
     pub messaging: messaging::Config,
     #[cfg(feature = "tethering")]

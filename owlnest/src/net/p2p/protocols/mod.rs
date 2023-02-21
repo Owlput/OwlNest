@@ -5,6 +5,9 @@ use std::time::Duration;
 use tokio::sync::{mpsc, oneshot};
 
 mod universal;
+pub mod kad;
+pub mod identify;
+pub mod mdns;
 
 #[cfg(feature = "messaging")]
 pub mod messaging;

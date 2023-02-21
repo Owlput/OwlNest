@@ -15,6 +15,9 @@ pub struct Behaviour {
     pub relay_server: relay_server::Behaviour,
     #[cfg(feature = "relay-client")]
     pub relay_client: relay_client::Behaviour,
+    pub kad: kad::Behaviour,
+    pub identify: identify::Behaviour,
+    pub mdns: mdns::Behaviour,
     pub keep_alive: libp2p::swarm::keep_alive::Behaviour,
 }
 impl Behaviour {
@@ -38,10 +41,16 @@ impl Behaviour {
     }
     #[cfg(feature = "relay-client")]
     pub fn new(config: SwarmConfig) -> (Self, super::SwarmTransport) {
+        use libp2p::kad::store::MemoryStore;
+
         let ident = config.ident();
+        let kad_store = MemoryStore::new(ident.get_peer_id());
         let (relayed_transport, relay_client) =
             libp2p::relay::v2::client::Client::new_transport_and_behaviour(ident.get_peer_id());
         let behav = Self {
+            kad:kad::Behaviour::new(ident.get_peer_id(), kad_store),
+            mdns:mdns::Behaviour::new(config.mdns).unwrap(),
+            identify:identify::Behaviour::new(config.identify),
             #[cfg(feature = "messaging")]
             messaging: messaging::Behaviour::new(config.messaging),
             #[cfg(feature = "tethering")]
