@@ -1,5 +1,5 @@
+use std::time::Duration;
 use serde::{Deserialize, Serialize};
-
 use crate::net::p2p::protocols::*;
 
 /// Operation result for sending to the peer who sends the request.

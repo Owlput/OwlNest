@@ -1,7 +1,4 @@
-use super::*;
-
 use std::{collections::VecDeque, io, task::Poll, time::Duration};
-
 use futures::{future::BoxFuture, FutureExt};
 use futures_timer::Delay;
 use libp2p::core::{
@@ -13,8 +10,8 @@ use libp2p::swarm::{
     ConnectionHandler, ConnectionHandlerEvent, ConnectionHandlerUpgrErr, NegotiatedSubstream,
     SubstreamProtocol,
 };
-
-use super::{protocol::PROTOCOL_NAME, Config, Message};
+use tracing::warn;
+use super::*;
 
 #[derive(Debug)]
 pub enum InEvent {
@@ -26,7 +23,7 @@ pub enum OutEvent {
     Error(Error),
     Unsupported,
     InboundNegotiated,
-    OutboundNegotiated
+    OutboundNegotiated,
 }
 
 pub enum State {
@@ -71,7 +68,7 @@ impl Handler {
             e => {
                 warn!(
                     "Error occurred when negotiating protocol {}: {:?}",
-                    String::from_utf8(PROTOCOL_NAME.to_vec()).unwrap(),
+                    String::from_utf8(protocol::PROTOCOL_NAME.to_vec()).unwrap(),
                     e
                 )
             }
@@ -90,10 +87,10 @@ impl ConnectionHandler for Handler {
     fn listen_protocol(
         &self,
     ) -> libp2p::swarm::SubstreamProtocol<Self::InboundProtocol, Self::InboundOpenInfo> {
-        SubstreamProtocol::new(ReadyUpgrade::new(PROTOCOL_NAME), ())
+        SubstreamProtocol::new(ReadyUpgrade::new(protocol::PROTOCOL_NAME), ())
     }
     fn on_behaviour_event(&mut self, event: Self::InEvent) {
-        debug!("Received event {:#?}",event);
+        debug!("Received event {:#?}", event);
         self.pending_in_events.push_front(event)
     }
     fn connection_keep_alive(&self) -> libp2p::swarm::KeepAlive {
@@ -137,7 +134,7 @@ impl ConnectionHandler for Handler {
                 // The incoming future resolves to an error
                 Poll::Ready(Err(e)) => {
                     self.pending_out_events
-                        .push_front(OutEvent::Error(Error::IO(format!("IO Error: {:?}",e))));
+                        .push_front(OutEvent::Error(Error::IO(format!("IO Error: {:?}", e))));
                     // Free the inbound because there's no stream present
                     self.inbound = None;
                 }
@@ -167,9 +164,9 @@ impl ConnectionHandler for Handler {
                         // Not ready
                         Poll::Pending => {
                             if timer.poll_unpin(cx).is_ready() {
-                                match callback.send(OpResult::Error(Error::Timeout)){
-                                    Ok(_)=>{},
-                                    Err(res)=> warn!("Failed to send callback {:?}",res)
+                                match callback.send(OpResult::Error(Error::Timeout)) {
+                                    Ok(_) => {}
+                                    Err(res) => warn!("Failed to send callback {:?}", res),
                                 };
                             } else {
                                 // Put the future back
@@ -180,18 +177,20 @@ impl ConnectionHandler for Handler {
                         }
                         // Ready
                         Poll::Ready(Ok((stream, rtt))) => {
-                            match callback.send(OpResult::SuccessfulPost(rtt)){
-                                Ok(_)=>{},
-                                Err(res)=> warn!("Failed to send callback {:?}",res)
+                            match callback.send(OpResult::SuccessfulPost(rtt)) {
+                                Ok(_) => {}
+                                Err(res) => warn!("Failed to send callback {:?}", res),
                             };
                             // Free the outbound
                             self.outbound = Some(OutboundState::Idle(stream));
                         }
                         // Ready but resolved to an error
                         Poll::Ready(Err(e)) => {
-                            match callback.send(OpResult::Error(messaging::Error::IO(format!("IO Error: {:?}",e)))){
-                                Ok(_)=>{}
-                                Err(res)=>warn!("Failed to send result to callback: {:?}",res)
+                            match callback
+                                .send(OpResult::Error(Error::IO(format!("IO Error: {:?}", e))))
+                            {
+                                Ok(_) => {}
+                                Err(res) => warn!("Failed to send result to callback: {:?}", res),
                             }
                         }
                     }
@@ -228,7 +227,7 @@ impl ConnectionHandler for Handler {
                     // Put outbound into waiting state
                     self.outbound = Some(OutboundState::OpenStream);
                     // construct a handshake
-                    let protocol = SubstreamProtocol::new(ReadyUpgrade::new(PROTOCOL_NAME), ());
+                    let protocol = SubstreamProtocol::new(ReadyUpgrade::new(protocol::PROTOCOL_NAME), ());
                     // Send the handshake requesting for negotiation
                     return Poll::Ready(ConnectionHandlerEvent::OutboundSubstreamRequest {
                         protocol,
@@ -250,17 +249,18 @@ impl ConnectionHandler for Handler {
         match event {
             ConnectionEvent::FullyNegotiatedInbound(FullyNegotiatedInbound {
                 protocol: stream,
-                info:()
-                
+                info: (),
             }) => {
-                self.pending_out_events.push_front(OutEvent::InboundNegotiated);
+                self.pending_out_events
+                    .push_front(OutEvent::InboundNegotiated);
                 self.inbound = Some(super::protocol::recv(stream).boxed());
             }
             ConnectionEvent::FullyNegotiatedOutbound(FullyNegotiatedOutbound {
                 protocol: stream,
                 ..
             }) => {
-                self.pending_out_events.push_front(OutEvent::OutboundNegotiated);
+                self.pending_out_events
+                    .push_front(OutEvent::OutboundNegotiated);
                 self.outbound = Some(OutboundState::Idle(stream));
             }
             ConnectionEvent::DialUpgradeError(e) => {
@@ -272,16 +272,7 @@ impl ConnectionHandler for Handler {
 }
 
 type PendingVerf = BoxFuture<'static, Result<(NegotiatedSubstream, Vec<u8>), io::Error>>;
-type PendingSend = BoxFuture<
-    'static,
-    Result<
-        (
-            NegotiatedSubstream,
-            Duration,
-        ),
-        io::Error,
-    >,
->;
+type PendingSend = BoxFuture<'static, Result<(NegotiatedSubstream, Duration), io::Error>>;
 
 enum OutboundState {
     /// A new substream is being negotiated for the messaging protocol.

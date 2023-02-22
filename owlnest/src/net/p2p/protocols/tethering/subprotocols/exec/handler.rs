@@ -1,8 +1,4 @@
-use super::{
-    inbound_upgrade, outbound_upgrade, protocol,
-    result::{HandleResult, OpResult},
-    Op,
-};
+use super::*;
 use crate::net::p2p::protocols::tethering::subprotocols::EXEC_PROTOCOL_NAME;
 use futures::{future::BoxFuture, FutureExt};
 use libp2p::{

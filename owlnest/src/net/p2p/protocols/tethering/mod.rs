@@ -1,28 +1,26 @@
-use self::{
-    subprotocols::{
-        exec::{self, result::HandleResult, Op},
-        push,
-    },
-};
+use libp2p::PeerId;
+use serde::{Deserialize, Serialize};
 use std::fmt::Debug;
+use subprotocols::*;
+use tokio::sync::oneshot;
 
-use super::*;
-
+mod behaviour;
+/// Errors produced by this behaviour.
 pub mod error;
-pub mod result;
-pub mod behaviour;
-
+/// Results produced by this behaviour.
+mod result;
 /// Protocol `/owlnest/tethering` is divided into two subprotocols.
 /// `/owlnest/tethering/exec` for operation execution,
 /// `/owlnest/tethering/push` for notification pushing.
 /// Both subprotocols will perform a handshake in TCP style(aka three-way handshake).
 pub mod subprotocols;
+
+pub use behaviour::Behaviour;
 pub use error::Error;
 pub use result::OpResult;
-pub use behaviour::Behaviour;
 
 /// A placeholder struct waiting to be used for interface consistency.
-#[derive(Debug,Default)]
+#[derive(Debug, Default)]
 pub struct Config;
 
 #[derive(Debug)]
@@ -37,7 +35,7 @@ pub enum InEvent {
         PeerId,
         u128,
         exec::result::OpResult,
-        oneshot::Sender<HandleResult>,
+        oneshot::Sender<exec::result::HandleResult>,
     ),
     LocalExec(TetheringOp, oneshot::Sender<TetheringOpResult>),
     Push(
@@ -49,17 +47,17 @@ pub enum InEvent {
 
 #[derive(Debug)]
 pub enum OutEvent {
-    Exec(Op,u128),
+    Exec(exec::Op, u128),
     IncomingNotification(String),
     ExecError(exec::handler::Error),
     PushError(push::handler::Error),
-    Unsupported(PeerId,Subprotocol)
+    Unsupported(PeerId, Subprotocol),
 }
 
 #[derive(Debug)]
-pub enum Subprotocol{
+pub enum Subprotocol {
     Exec,
-    Push
+    Push,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -69,15 +67,15 @@ pub enum TetheringOp {
 }
 
 #[derive(Debug)]
-pub enum TetheringOpResult{
+pub enum TetheringOpResult {
     Ok,
     AlreadyTrusted,
     Err(TetheringOpError),
 }
 
 #[derive(Debug)]
-pub enum TetheringOpError{
-    NotFound
+pub enum TetheringOpError {
+    NotFound,
 }
 
 pub fn ev_dispatch(_ev: OutEvent) {}

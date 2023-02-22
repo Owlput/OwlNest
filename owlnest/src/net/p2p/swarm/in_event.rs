@@ -8,8 +8,6 @@ pub enum InEvent {
     Listen(Multiaddr,oneshot::Sender<Result<ListenerId,TransportError<std::io::Error>>>),
 }
 
-
-
 #[derive(Debug, Serialize, Deserialize)]
 pub enum Op {
     Dial(Multiaddr),

@@ -1,5 +1,5 @@
 use owlnest::{
-    net::p2p::{identity::IdentityUnion, protocols, swarm::OutEventBundle},
+    net::p2p::{identity::IdentityUnion, protocols},
     *,
 };
 use tracing::Level;
@@ -24,17 +24,6 @@ fn setup_peer() {
         tethering: protocols::tethering::Config::default(),
         relay_server: protocols::relay_server::Config::default(),
     };
-    let (mgr, out_bundle) = net::p2p::swarm::Builder::new(swarm_config).build(8);
+    let mgr = net::p2p::swarm::Builder::new(swarm_config).build(8);
     utils::stdin_event_bus::setup_bus(local_ident.get_peer_id(), mgr.clone());
-    #[cfg(feature = "messaging")]
-    tokio::spawn(async move {
-        let OutEventBundle {
-            mut messaging_rx, ..
-        } = out_bundle;
-        loop {
-            if let Some(ev) = messaging_rx.recv().await {
-                println!("{:#?}", ev)
-            }
-        }
-    });
 }

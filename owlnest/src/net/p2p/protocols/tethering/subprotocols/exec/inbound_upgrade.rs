@@ -1,8 +1,6 @@
-use std::fmt::Display;
-
-use super::EXEC_PROTOCOL_NAME;
-use futures::{future::BoxFuture, AsyncReadExt, AsyncWriteExt, FutureExt};
+use super::*;
 use libp2p::{core::upgrade, swarm::NegotiatedSubstream};
+use std::fmt::Display;
 
 pub struct Upgrade;
 
@@ -52,8 +50,8 @@ impl upgrade::InboundUpgrade<NegotiatedSubstream> for Upgrade {
                 Ok(_) => u64::from_be_bytes(ack_recv),
                 Err(e) => return Err(UpgradeError::StreamError(e.to_string())),
             };
-            if ack_recv.wrapping_sub(1) != syn{
-                return Err(UpgradeError::UnexpectedACK(syn,ack_recv))
+            if ack_recv.wrapping_sub(1) != syn {
+                return Err(UpgradeError::UnexpectedACK(syn, ack_recv));
             }
             Ok(socket)
         }
@@ -64,7 +62,7 @@ impl upgrade::InboundUpgrade<NegotiatedSubstream> for Upgrade {
 #[derive(Debug)]
 pub enum UpgradeError {
     StreamError(String),
-    UnexpectedACK(u64,u64)
+    UnexpectedACK(u64, u64),
 }
 impl Display for UpgradeError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {

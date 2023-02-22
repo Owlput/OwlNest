@@ -15,7 +15,7 @@ pub mod manager;
 pub mod out_event;
 use in_event::InEvent;
 
-pub use in_event::{Op, ProtocolInEvent};
+pub use in_event::{Op as SwarmOp, ProtocolInEvent};
 pub use manager::Manager;
 pub use out_event::{OutEvent, OutEventBundle};
 use tracing::{debug, info};

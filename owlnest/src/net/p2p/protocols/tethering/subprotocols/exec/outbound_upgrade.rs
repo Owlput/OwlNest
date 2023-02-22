@@ -1,8 +1,6 @@
 use std::fmt::Display;
-
-use super::EXEC_PROTOCOL_NAME;
-use futures::{future::BoxFuture, AsyncReadExt, AsyncWriteExt, FutureExt};
 use libp2p::{core::upgrade, swarm::NegotiatedSubstream};
+use super::*;
 
 pub struct Upgrade;
 
