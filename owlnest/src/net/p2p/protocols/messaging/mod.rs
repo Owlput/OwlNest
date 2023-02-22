@@ -6,6 +6,7 @@ use tracing::{debug, info, warn};
 
 mod behaviour;
 mod handler;
+mod cli;
 
 pub use behaviour::Behaviour;
 #[derive(Debug, Clone, Serialize, Deserialize)]

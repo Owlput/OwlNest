@@ -17,7 +17,10 @@ rand = "*"
 xxhash-rust = {version="0.8.6",features=["xxh3"]}
 futures = "0.3"
 futures-timer = "3"
+rustyline = "11"
+chrono = "0.4"
 owlnest-proc = {path="../owlnest-proc"}
+
 
 [features]
 full=["messaging","tethering","relay-client","relay-server"]

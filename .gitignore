@@ -12,3 +12,4 @@ owlport/Cargo.lock
 target
 certs
 .vscode
+logs
