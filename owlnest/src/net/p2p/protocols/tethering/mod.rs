@@ -14,6 +14,7 @@ mod result;
 /// `/owlnest/tethering/push` for notification pushing.
 /// Both subprotocols will perform a handshake in TCP style(aka three-way handshake).
 pub mod subprotocols;
+pub mod cli;
 
 pub use behaviour::Behaviour;
 pub use error::Error;

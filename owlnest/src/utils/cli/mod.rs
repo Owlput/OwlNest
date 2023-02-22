@@ -4,19 +4,19 @@ use crate::net::p2p::protocols::messaging;
 use crate::net::p2p::protocols::tethering;
 use crate::net::p2p::{
     identity::IdentityUnion,
-    swarm::{self, cli::*},
+    swarm
 };
 use libp2p::{Multiaddr, PeerId};
 use rustyline::{error::ReadlineError, DefaultEditor};
 
 pub fn setup_interactive_shell(ident: IdentityUnion, manager: swarm::Manager) {
     std::thread::spawn(move || {
-        println!("OwlNest is now running in interactive mode, type \"help\" for more information.");
+        println!("{}OwlNest is now running in interactive mode, type \"help\" for more information.",termion::clear::All);
         let manager = manager.clone();
         let mut rl = DefaultEditor::new().unwrap();
         let mut retry_times = 0u32;
         loop {
-            let line_read = rl.readline(">> ");
+            let line_read = rl.readline(&format!("{}>> {}",termion::color::LightYellow.fg_str(),termion::color::Reset.fg_str()));
             match line_read {
                 Ok(line) => {
                     rl.add_history_entry(line.as_str()).unwrap();
@@ -36,51 +36,11 @@ fn handle_command(line: String, manager: &swarm::Manager, ident: &IdentityUnion)
         "help" => {
             println!("{}", HELP_MESSAGE)
         }
-        "dial" => handle_dial(manager, command),
-        "listen" => handle_listen(manager, command),
+        "clear"=>println!("{}",termion::clear::BeforeCursor),
+        "dial" => swarm::cli::handle_dial(manager, command),
+        "listen" => swarm::cli::handle_listen(manager, command),
         #[cfg(feature = "tethering")]
-        "trust" => {
-            if command.len() < 2 {
-                println!("Error: Missing required argument <address>, syntax: `trust <peer id>`");
-                return;
-            }
-            let addr = match command[1].parse::<Multiaddr>() {
-                Ok(addr) => addr,
-                Err(e) => {
-                    println!("Error: Failed parsing address `{}`: {}", command[1], e);
-                    println!(
-                        "Hint: You should use `/p2p/<peer id>` for the moment to supply peer IDs."
-                    );
-                    return;
-                }
-            };
-            let peer_to_trust = match PeerId::try_from_multiaddr(&addr) {
-                Some(id) => id,
-                None => {
-                    println!(
-                        "Error: Failed parsing peer id from `{}`: No peer ID present.",
-                        command[1]
-                    );
-                    println!(
-                        "Hint: You should use `/p2p/<peer id>` for the moment to supply peer IDs."
-                    );
-                    return;
-                }
-            };
-            match manager
-                .blocking_tethering_local_exec(tethering::TetheringOp::Trust(peer_to_trust.clone()))
-            {
-                tethering::TetheringOpResult::Ok => {
-                    println!("Successfully trusted peer {}", peer_to_trust)
-                }
-                tethering::TetheringOpResult::AlreadyTrusted => {
-                    println!("Peer {} is already in trust list", peer_to_trust)
-                }
-                tethering::TetheringOpResult::Err(e) => {
-                    println!("Failed to trust peer {}: {:?}", peer_to_trust, e)
-                }
-            }
-        }
+        "tethering" => tethering::cli::handle_tethering(manager, command),
         #[cfg(feature = "messaging")]
         "msg" => {
             if command.len() < 3 {
