@@ -11,6 +11,7 @@ use libp2p::{
 
 mod behaviour;
 mod in_event;
+pub mod cli;
 pub mod manager;
 pub mod out_event;
 use in_event::InEvent;

@@ -13,3 +13,4 @@ target
 certs
 .vscode
 logs
+*.keypair

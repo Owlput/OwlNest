@@ -9,18 +9,18 @@ use tracing::Level;
 #[tokio::main]
 async fn main() {
     setup_logging();
-    setup_peer();
+    let ident = get_ident();
+    setup_peer(ident);
     let _ = tokio::signal::ctrl_c().await;
 }
 
-fn setup_peer() {
-    let local_ident = IdentityUnion::generate();
+fn setup_peer(ident:IdentityUnion) {
     let swarm_config = net::p2p::SwarmConfig {
-        local_ident: local_ident.clone(),
+        local_ident: ident.clone(),
         kad: protocols::kad::Config::default(),
         identify: protocols::identify::Config::new(
             "/owlnest/0.0.1".into(),
-            local_ident.get_pubkey(),
+            ident.get_pubkey(),
         ),
         mdns: protocols::mdns::Config::default(),
         messaging: protocols::messaging::Config::default(),
@@ -28,7 +28,7 @@ fn setup_peer() {
         relay_server: protocols::relay_server::Config::default(),
     };
     let mgr = net::p2p::swarm::Builder::new(swarm_config).build(8);
-    utils::cli::setup_interactive_shell(local_ident.clone(), mgr.clone());
+    utils::cli::setup_interactive_shell(ident.clone(), mgr.clone());
 }
 
 fn setup_logging() {
@@ -49,4 +49,16 @@ fn setup_logging() {
         .with_ansi(false)
         .with_writer(Mutex::new(log_file_handle))
         .init();
+}
+
+fn get_ident()->IdentityUnion{
+    match IdentityUnion::from_file_protobuf_encoding("./id.keypair"){
+        Ok(ident) => ident,
+        Err(e) => {
+            println!("Failed to read keypair: {:?}",e);
+            let ident = IdentityUnion::generate();
+            ident.export_keypair(".", "id").unwrap();
+            ident
+        },
+    }
 }

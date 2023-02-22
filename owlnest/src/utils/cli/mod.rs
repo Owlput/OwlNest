@@ -1,16 +1,20 @@
-use rustyline::DefaultEditor;
 #[cfg(feature = "messaging")]
 use crate::net::p2p::protocols::messaging;
 #[cfg(feature = "tethering")]
 use crate::net::p2p::protocols::tethering;
-use crate::net::p2p::{swarm, identity::IdentityUnion};
-use libp2p::{Multiaddr, PeerId, TransportError};
+use crate::net::p2p::{
+    identity::IdentityUnion,
+    swarm::{self, cli::*},
+};
+use libp2p::{Multiaddr, PeerId};
+use rustyline::{error::ReadlineError, DefaultEditor};
 
-pub fn setup_interactive_shell(ident:IdentityUnion,manager:swarm::Manager) {
+pub fn setup_interactive_shell(ident: IdentityUnion, manager: swarm::Manager) {
     std::thread::spawn(move || {
         println!("OwlNest is now running in interactive mode, type \"help\" for more information.");
         let manager = manager.clone();
         let mut rl = DefaultEditor::new().unwrap();
+        let mut retry_times = 0u32;
         loop {
             let line_read = rl.readline(">> ");
             match line_read {
@@ -18,61 +22,22 @@ pub fn setup_interactive_shell(ident:IdentityUnion,manager:swarm::Manager) {
                     rl.add_history_entry(line.as_str()).unwrap();
                     handle_command(line, &manager, &ident)
                 }
-                Err(_) => todo!(),
+                Err(e) => if handle_err(e, &mut retry_times){
+                    break;
+                },
             }
         }
     });
 }
 
-fn handle_command(line: String,manager:&swarm::Manager,ident:&IdentityUnion) {
+fn handle_command(line: String, manager: &swarm::Manager, ident: &IdentityUnion) {
     let command: Vec<&str> = line.split(' ').collect();
     match command[0] {
         "help" => {
             println!("{}", HELP_MESSAGE)
         }
-        "dial" => {
-            if command.len() < 2 {
-                println!("Error: Missing required argument <address>, syntax: `dial <address>`");
-                return;
-            }
-
-            let addr = match command[1].parse::<Multiaddr>() {
-                Ok(addr) => addr,
-                Err(e) => {
-                    println!("Error: Failed parsing address `{}`: {}", command[1], e);
-                    return;
-                }
-            };
-            match manager.blocking_dial(&addr) {
-                Ok(_) => println!("Now dialing {}", addr),
-                Err(e) => println!("Failed to initiate dial {} with error: {}", addr, e),
-            }
-        }
-        "listen" => {
-            if command.len() < 2 {
-                println!("Error: Missing required argument <address>, syntax: `listen <address>`");
-                return;
-            }
-
-            let addr = match command[1].parse::<Multiaddr>() {
-                Ok(addr) => addr,
-                Err(e) => {
-                    println!("Error: Failed parsing address `{}`: {}", command[1], e);
-                    return;
-                }
-            };
-            match manager.blocking_listen(&addr) {
-                Ok(listener_id) => println!(
-                    "Successfully listening on {} with listener ID {:?}",
-                    addr, listener_id
-                ),
-                Err(e) => println!(
-                    "Failed to listen on {} with error: {}",
-                    addr,
-                    format_transport_error(e)
-                ),
-            }
-        }
+        "dial" => handle_dial(manager, command),
+        "listen" => handle_listen(manager, command),
         #[cfg(feature = "tethering")]
         "trust" => {
             if command.len() < 2 {
@@ -158,6 +123,42 @@ fn handle_command(line: String,manager:&swarm::Manager,ident:&IdentityUnion) {
     }
 }
 
+fn handle_err(e: ReadlineError, retry_times: &mut u32) -> bool {
+    match e {
+        ReadlineError::Io(e) => {
+            println!("Failed to read input with IO error: {:?}", e);
+            should_exit(retry_times, 5)
+        }
+        ReadlineError::Eof => {
+            println!("Failed to read input: Unexpected EOF");
+            should_exit(retry_times, 5)
+        }
+        ReadlineError::Interrupted => {
+            println!("Interrupt signal received, exiting interactive shell");
+            true
+        }
+        ReadlineError::Errno(e) => {
+            println!("Unix signal received: {:?}, exiting interactive shell", e);
+            true
+        }
+        ReadlineError::WindowResized => false,
+        _ => {
+            println!("Unknown error occurred");
+            should_exit(retry_times, 5)
+        }
+    }
+}
+
+fn should_exit(retry_times: &mut u32, max_retry_times: u32) -> bool {
+    *retry_times += 1;
+    if *retry_times >= max_retry_times {
+        println!("Maximum retry attempts reached, exiting interactive shell");
+        true
+    } else {
+        false
+    }
+}
+
 const HELP_MESSAGE: &str = r#"
     OwlNest 0.0.1 Interactive Mode
     Interactive shell version 0.0.0
@@ -174,18 +175,3 @@ const HELP_MESSAGE: &str = r#"
                             to control the behaviour of this peer.
         untrust <peer id>   Remove the specified peer from trust list.
 "#;
-
-fn format_transport_error(e: TransportError<std::io::Error>) -> String {
-    match e {
-        TransportError::MultiaddrNotSupported(addr) => {
-            format!("Requested address {} is not supported.", addr)
-        }
-        TransportError::Other(e) => {
-            let error_string = format!("{:?}", e);
-            if error_string.contains("AddrNotAvailable") {
-                return "Local interface associated with the given address does not exist".into();
-            }
-            error_string
-        }
-    }
-}
