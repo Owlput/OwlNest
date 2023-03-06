@@ -1,5 +1,5 @@
 use super::*;
-use crate::net::p2p::protocols::tethering::subprotocols::EXEC_PROTOCOL_NAME;
+use crate::net::p2p::{protocols::tethering::{self, subprotocols::EXEC_PROTOCOL_NAME}, swarm::BehaviourOpResult};
 use futures::{future::BoxFuture, FutureExt};
 use libp2p::{
     core::{upgrade::NegotiationError, UpgradeError},
@@ -25,12 +25,12 @@ use tracing::warn;
 #[derive(Debug)]
 pub struct InEvent {
     inner: Inner,
-    handle_callback: oneshot::Sender<HandleResult>,
+    handle_callback: oneshot::Sender<BehaviourOpResult>,
 }
 impl InEvent {
     pub fn new_exec(
         op: Op,
-        handle_callback: oneshot::Sender<HandleResult>,
+        handle_callback: oneshot::Sender<BehaviourOpResult>,
         result_callback: oneshot::Sender<OpResult>,
     ) -> Self {
         InEvent {
@@ -41,14 +41,14 @@ impl InEvent {
     pub fn new_callback(
         stamp: u128,
         result: OpResult,
-        handle_callback: oneshot::Sender<HandleResult>,
+        handle_callback: oneshot::Sender<BehaviourOpResult>,
     ) -> Self {
         InEvent {
             inner: Inner::Callback(stamp, result),
             handle_callback,
         }
     }
-    pub fn into_inner(self) -> (Inner, oneshot::Sender<super::result::HandleResult>) {
+    pub fn into_inner(self) -> (Inner, oneshot::Sender<BehaviourOpResult>) {
         (self.inner, self.handle_callback)
     }
 }
@@ -251,7 +251,8 @@ impl ConnectionHandler for ExecHandler {
                         break;
                     }
                     Poll::Ready(Ok((stream, rtt))) => {
-                        callback.send(HandleResult::Ok(rtt)).unwrap();
+                        let result = BehaviourOpResult::Tethering(Ok(tethering::HandleOk::RemoteExec(rtt)));
+                        callback.send(result).unwrap();
                         self.outbound = Some(OutboundState::Idle(stream));
                     }
                     Poll::Ready(Err(e)) => {
@@ -336,5 +337,8 @@ type PendingSend = BoxFuture<'static, Result<(NegotiatedSubstream, Duration), io
 enum OutboundState {
     OpenStream,
     Idle(NegotiatedSubstream),
-    Busy(PendingSend, oneshot::Sender<super::result::HandleResult>),
+    Busy(
+        PendingSend,
+        oneshot::Sender<BehaviourOpResult>,
+    ),
 }

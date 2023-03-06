@@ -1,19 +1,16 @@
 use super::*;
-use futures::{AsyncRead, AsyncWrite};
-use libp2p::core::transport::{OrTransport, Boxed,Transport};
+
+use libp2p::core::transport::{Boxed, OrTransport, Transport};
 use libp2p::core::upgrade;
 use libp2p::swarm::NetworkBehaviour;
 
+/// Combined behaviour for libp2p swarm.
 #[derive(NetworkBehaviour)]
 #[behaviour(out_event = OutEvent)]
 pub struct Behaviour {
-    #[cfg(feature = "messaging")]
     pub messaging: messaging::Behaviour,
-    #[cfg(feature = "tethering")]
     pub tethering: tethering::Behaviour,
-    #[cfg(feature = "relay-server")]
     pub relay_server: relay_server::Behaviour,
-    #[cfg(feature = "relay-client")]
     pub relay_client: relay_client::Behaviour,
     pub kad: kad::Behaviour,
     pub identify: identify::Behaviour,
@@ -21,58 +18,41 @@ pub struct Behaviour {
     pub keep_alive: libp2p::swarm::keep_alive::Behaviour,
 }
 impl Behaviour {
-    #[cfg(not(feature = "relay-client"))]
     pub fn new(config: SwarmConfig) -> (Self, SwarmTransport) {
-        let ident = config.ident();
-        let behav = Self {
-            #[cfg(feature = "messaging")]
-            messaging: messaging::Behaviour::new(config.messaging),
-            #[cfg(feature = "tethering")]
-            tethering: tethering::Behaviour::new(config.tethering),
-            #[cfg(feature = "relay-server")]
-            relay_server: libp2p::relay::v2::relay::Relay::new(
-                ident.get_peer_id(),
-                config.relay_server,
-            ),
-            keep_alive: libp2p::swarm::keep_alive::Behaviour::default(),
-        };
-        let transport = libp2p::tokio_development_transport(ident.get_keypair()).unwrap();
-        (behav, transport)
-    }
-    #[cfg(feature = "relay-client")]
-    pub fn new(config: SwarmConfig) -> (Self, super::SwarmTransport) {
         use libp2p::kad::store::MemoryStore;
 
         let ident = config.ident();
         let kad_store = MemoryStore::new(ident.get_peer_id());
-        let (relayed_transport, relay_client) =
-            libp2p::relay::v2::client::Client::new_transport_and_behaviour(ident.get_peer_id());
+        let (relayed_transport, relay_client) = libp2p::relay::client::new(ident.get_peer_id());
         let behav = Self {
-            kad:kad::Behaviour::new(ident.get_peer_id(), kad_store),
-            mdns:mdns::Behaviour::new(config.mdns).unwrap(),
-            identify:identify::Behaviour::new(config.identify),
-            #[cfg(feature = "messaging")]
+            kad: kad::Behaviour::new(ident.get_peer_id(), kad_store),
+            mdns: mdns::Behaviour::new(config.mdns, ident.get_peer_id()).unwrap(),
+            identify: identify::Behaviour::new(config.identify),
             messaging: messaging::Behaviour::new(config.messaging),
-            #[cfg(feature = "tethering")]
             tethering: tethering::Behaviour::new(config.tethering),
-            #[cfg(feature = "relay-server")]
-            relay_server: libp2p::relay::v2::relay::Relay::new(
+            relay_server: libp2p::relay::Behaviour::new(
                 config.local_ident.get_peer_id(),
                 config.relay_server,
             ),
-            #[cfg(feature = "relay-client")]
+            
             relay_client,
             keep_alive: libp2p::swarm::keep_alive::Behaviour::default(),
         };
+        
         let transport = upgrade_transport(
             OrTransport::new(libp2p::tcp::tokio::Transport::default(), relayed_transport).boxed(),
             &ident,
         );
+        #[cfg(not(feature = "relay-client"))]
+        let transport = libp2p::tokio_development_transport(ident.get_keypair()).unwrap();
+
         (behav, transport)
     }
 }
 
-#[cfg(feature="relay-client")]
+
+use futures::{AsyncRead, AsyncWrite};
+
 fn upgrade_transport<StreamSink>(
     transport: Boxed<StreamSink>,
     ident: &IdentityUnion,

@@ -1,11 +1,16 @@
-use super::{inbound_upgrade, outbound_upgrade, protocol, result::OpResult};
-use crate::net::p2p::protocols::tethering::subprotocols::PUSH_PROTOCOL_NAME;
+use super::{inbound_upgrade, outbound_upgrade, protocol};
+use crate::net::p2p::{
+    protocols::tethering::subprotocols::PUSH_PROTOCOL_NAME, swarm::BehaviourOpResult,
+};
 use futures::{future::BoxFuture, FutureExt};
 use libp2p::{
     core::{upgrade::NegotiationError, UpgradeError},
     swarm::{
-        handler::{DialUpgradeError, ConnectionEvent, FullyNegotiatedInbound, FullyNegotiatedOutbound}, ConnectionHandler, ConnectionHandlerEvent,
-        ConnectionHandlerUpgrErr, KeepAlive, NegotiatedSubstream, SubstreamProtocol,
+        handler::{
+            ConnectionEvent, DialUpgradeError, FullyNegotiatedInbound, FullyNegotiatedOutbound,
+        },
+        ConnectionHandler, ConnectionHandlerEvent, ConnectionHandlerUpgrErr, KeepAlive,
+        NegotiatedSubstream, SubstreamProtocol,
     },
 };
 use serde::{Deserialize, Serialize};
@@ -17,13 +22,16 @@ use tracing::warn;
 #[derive(Debug)]
 pub struct InEvent {
     push_type: PushType,
-    callback: oneshot::Sender<OpResult>,
+    callback: oneshot::Sender<BehaviourOpResult>,
 }
 impl InEvent {
-    pub fn new(push_type:PushType,callback:oneshot::Sender<OpResult>)->Self{
-        InEvent { push_type, callback }
+    pub fn new(push_type: PushType, callback: oneshot::Sender<BehaviourOpResult>) -> Self {
+        InEvent {
+            push_type,
+            callback,
+        }
     }
-    pub fn into_inner(self) -> (PushType, oneshot::Sender<OpResult>) {
+    pub fn into_inner(self) -> (PushType, oneshot::Sender<BehaviourOpResult>) {
         (self.push_type, self.callback)
     }
 }
@@ -71,6 +79,9 @@ impl std::error::Error for Error {
         }
     }
 }
+
+#[derive(Debug)]
+pub enum HandleError {}
 
 enum State {
     Inactive { reported: bool },
@@ -276,5 +287,5 @@ type PendingSend = BoxFuture<'static, Result<(NegotiatedSubstream, Duration), io
 enum OutboundState {
     OpenStream,
     Idle(NegotiatedSubstream),
-    Busy(PendingSend, oneshot::Sender<OpResult>),
+    Busy(PendingSend, oneshot::Sender<BehaviourOpResult>),
 }

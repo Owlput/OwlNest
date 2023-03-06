@@ -1,7 +1,7 @@
 use super::*;
 use libp2p::swarm::{
-    derive_prelude::EitherOutput, ConnectionHandler, ConnectionHandlerSelect, NetworkBehaviour,
-    NetworkBehaviourAction, NotifyHandler,
+    derive_prelude::Either, ConnectionHandler, ConnectionHandlerSelect, ConnectionId,
+    NetworkBehaviour, NetworkBehaviourAction, NotifyHandler,
 };
 use std::{
     collections::{HashSet, VecDeque},
@@ -26,21 +26,21 @@ impl Behaviour {
             in_events: VecDeque::new(),
         }
     }
-    pub fn push_event(&mut self,ev:InEvent){
+    pub fn push_event(&mut self, ev: InEvent) {
         self.in_events.push_front(ev)
     }
-    pub fn trust(&mut self, peer_id: PeerId) -> TetheringOpResult {
+    pub fn trust(&mut self, peer_id: PeerId) -> Result<(), HandleError> {
         if self.trusted_peer.insert(peer_id) {
-            TetheringOpResult::Ok
+            Ok(())
         } else {
-            TetheringOpResult::AlreadyTrusted
+            Err(HandleError::LocalExec(TetheringOpError::AlreadyTrusted))
         }
     }
-    pub fn untrust(&mut self, peer_id: PeerId) -> TetheringOpResult {
+    pub fn untrust(&mut self, peer_id: PeerId) -> Result<(), HandleError> {
         if self.trusted_peer.remove(&peer_id) {
-            TetheringOpResult::Ok
+            Ok(())
         } else {
-            TetheringOpResult::Err(TetheringOpError::NotFound)
+            Err(HandleError::LocalExec(TetheringOpError::NotFound))
         }
     }
 }
@@ -56,13 +56,12 @@ impl NetworkBehaviour for Behaviour {
     fn on_connection_handler_event(
         &mut self,
         peer_id: PeerId,
-        _connection_id: libp2p::core::connection::ConnectionId,
-        event: <<Self::ConnectionHandler as libp2p::swarm::IntoConnectionHandler>::Handler as
-            libp2p::swarm::ConnectionHandler>::OutEvent,
+        _connection_id: ConnectionId,
+        event: <Self::ConnectionHandler as libp2p::swarm::ConnectionHandler>::OutEvent,
     ) {
         let out_event = match event {
-            EitherOutput::First(ev) => map_exec_out_event(peer_id, ev),
-            EitherOutput::Second(ev) => map_push_out_event(peer_id, ev),
+            Either::Left(ev) => map_exec_out_event(peer_id, ev),
+            Either::Right(ev) => map_push_out_event(peer_id, ev),
         };
         self.out_events.push_front(out_event);
     }
@@ -70,54 +69,60 @@ impl NetworkBehaviour for Behaviour {
         &mut self,
         _cx: &mut std::task::Context<'_>,
         _params: &mut impl libp2p::swarm::PollParameters,
-    ) -> std::task::Poll<
-        libp2p::swarm::NetworkBehaviourAction<Self::OutEvent, Self::ConnectionHandler>,
+    ) -> Poll<
+        NetworkBehaviourAction<
+            OutEvent,
+            Either<subprotocols::exec::handler::InEvent, subprotocols::push::handler::InEvent>,
+        >,
     > {
         if let Some(ev) = self.out_events.pop_back() {
             return Poll::Ready(NetworkBehaviourAction::GenerateEvent(ev));
         }
         if let Some(ev) = self.in_events.pop_back() {
-            match ev {
-                InEvent::RemoteExec(peer_id, op, handle_callback, result_callback) => {
+            let (op, handle_callback) = ev.into_inner();
+            match op {
+                Op::RemoteExec(peer_id, op, result_callback) => {
                     return Poll::Ready(NetworkBehaviourAction::NotifyHandler {
                         peer_id,
                         handler: NotifyHandler::Any,
-                        event: EitherOutput::First(exec::InEvent::new_exec(
+                        event: Either::Left(exec::InEvent::new_exec(
                             op,
                             handle_callback,
                             result_callback,
                         )),
                     })
                 }
-                InEvent::RemoteCallback(peer_id, stamp, result, handle_callback) => {
+                Op::RemoteCallback(peer_id, stamp, result) => {
                     return Poll::Ready(NetworkBehaviourAction::NotifyHandler {
                         peer_id,
                         handler: NotifyHandler::Any,
-                        event: EitherOutput::First(exec::InEvent::new_callback(
+                        event: Either::Left(exec::InEvent::new_callback(
                             stamp,
                             result,
                             handle_callback,
                         )),
                     })
                 }
-                InEvent::Push(to, push_type, callback) => {
+                Op::Push(to, push_type) => {
                     return Poll::Ready(NetworkBehaviourAction::NotifyHandler {
                         peer_id: to,
                         handler: NotifyHandler::Any,
-                        event: EitherOutput::Second(push::InEvent::new(push_type, callback)),
+                        event: Either::Right(push::InEvent::new(push_type, handle_callback)),
                     })
                 }
-                InEvent::LocalExec(op, callback) => {
-                    let result = match op{
+                Op::LocalExec(op) => {
+                    let result = match op {
                         TetheringOp::Trust(peer_id) => self.trust(peer_id),
                         TetheringOp::Untrust(peer_id) => self.untrust(peer_id),
                     };
-                    callback.send(result).unwrap();
-                },
+                    handle_callback.send(BehaviourOpResult::Tethering(result.map(|_|HandleOk::LocalExec(())))).unwrap();
+                }
             }
         }
         Poll::Pending
     }
+
+    fn on_swarm_event(&mut self, event: libp2p::swarm::FromSwarm<Self::ConnectionHandler>) {}
 }
 
 fn map_exec_out_event(peer_id: PeerId, ev: exec::OutEvent) -> behaviour::OutEvent {
@@ -138,3 +143,4 @@ fn map_push_out_event(peer_id: PeerId, ev: push::OutEvent) -> behaviour::OutEven
         }
     }
 }
+

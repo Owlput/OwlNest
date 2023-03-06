@@ -3,8 +3,8 @@ use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Serialize, Deserialize)]
 pub enum Op {
-    Swarm(swarm::SwarmOp),
+    Swarm(swarm::Op),
     Tethering(tethering::TetheringOp),
-    #[cfg(feature = "messaging")]
+    
     Messaging(messaging::Op),
 }

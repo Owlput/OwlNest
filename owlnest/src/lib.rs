@@ -2,3 +2,4 @@
 #![feature(io_error_downcast)]
 pub mod net;
 pub mod utils;
+pub mod cli;

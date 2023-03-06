@@ -1,14 +1,20 @@
-use std::{time::{SystemTime, Duration}, fmt::Display};
 use libp2p::PeerId;
 use serde::{Deserialize, Serialize};
+use std::{
+    fmt::Display,
+    time::{Duration, SystemTime},
+};
 use tokio::sync::oneshot;
 use tracing::{debug, info, warn};
 
 mod behaviour;
+pub mod cli;
 mod handler;
-mod cli;
+pub mod event_listener;
 
 pub use behaviour::Behaviour;
+
+use crate::net::p2p::swarm::BehaviourOpResult;
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Message {
     time: u128,
@@ -34,7 +40,7 @@ impl Message {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone,Serialize,Deserialize)]
 pub struct Config {
     timeout: Duration,
 }
@@ -58,10 +64,10 @@ impl Default for Config {
 #[derive(Debug)]
 pub struct InEvent {
     op: Op,
-    callback: oneshot::Sender<OpResult>,
+    callback: oneshot::Sender<BehaviourOpResult>,
 }
-impl InEvent{
-    pub fn new(op:Op,callback:oneshot::Sender<OpResult>)->Self{
+impl InEvent {
+    pub fn new(op: Op, callback: oneshot::Sender<BehaviourOpResult>) -> Self {
         Self { op, callback }
     }
 }
@@ -77,7 +83,7 @@ pub enum OpResult {
     Error(Error),
 }
 
-#[derive(Debug)]
+#[derive(Debug,Serialize,Deserialize)]
 pub enum OutEvent {
     IncomingMessage { from: PeerId, msg: Message },
     Error(Error),
@@ -93,7 +99,7 @@ pub enum Error {
     PeerNotFound(PeerId),
     Timeout,
     UnrecognizedMessage(String), // Serialzied not available on the original type
-    IO(String), // Serialize not available on the original type
+    IO(String),                  // Serialize not available on the original type
 }
 impl Display for Error {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -101,7 +107,7 @@ impl Display for Error {
             Self::ConnectionClosed => f.write_str("Connection Closed"),
             Self::VerifierMismatch => f.write_str("Message verifier mismatch"),
             Self::Timeout => f.write_str("Message timed out"),
-            Self::PeerNotFound(peer)=>f.write_str(&format!("Peer {} not connected",peer)),
+            Self::PeerNotFound(peer) => f.write_str(&format!("Peer {} not connected", peer)),
             Self::UnrecognizedMessage(msg) => f.write_str(msg),
             Self::IO(msg) => f.write_str(msg),
         }

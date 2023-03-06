@@ -1,4 +1,4 @@
-use std::{collections::VecDeque, io, task::Poll, time::Duration};
+use super::*;
 use futures::{future::BoxFuture, FutureExt};
 use futures_timer::Delay;
 use libp2p::core::{
@@ -10,12 +10,12 @@ use libp2p::swarm::{
     ConnectionHandler, ConnectionHandlerEvent, ConnectionHandlerUpgrErr, NegotiatedSubstream,
     SubstreamProtocol,
 };
+use std::{collections::VecDeque, io, task::Poll, time::Duration};
 use tracing::warn;
-use super::*;
 
 #[derive(Debug)]
 pub enum InEvent {
-    PostMessage(Message, oneshot::Sender<OpResult>),
+    PostMessage(Message, oneshot::Sender<BehaviourOpResult>),
 }
 #[derive(Debug)]
 pub enum OutEvent {
@@ -108,63 +108,37 @@ impl ConnectionHandler for Handler {
         >,
     > {
         match self.state {
-            State::Inactive { reported: true } => {
-                // When user is notified with a failing handshake
-                return Poll::Pending;
-            }
+            State::Inactive { reported: true } => return Poll::Pending,
             State::Inactive { reported: false } => {
-                // When user is not notified with a failing handshake
                 self.state = State::Inactive { reported: true };
-                // Make it notified
                 return Poll::Ready(ConnectionHandlerEvent::Custom(OutEvent::Unsupported));
             }
-            State::Active => {
-                // Handshake success, nothing to do, proceed
-            }
-        }
-        // We've confirmed that the remote supports this protocol
-        // Check for inbund messages
+            State::Active => {}
+        };
         if let Some(fut) = self.inbound.as_mut() {
-            // Poll the incoming future to see if it's ready
             match fut.poll_unpin(cx) {
-                // The incoming message is not ready
-                Poll::Pending => {
-                    //Nothing to do, proceed
-                }
-                // The incoming future resolves to an error
+                Poll::Pending => {}
                 Poll::Ready(Err(e)) => {
-                    self.pending_out_events
-                        .push_front(OutEvent::Error(Error::IO(format!("IO Error: {:?}", e))));
-                    // Free the inbound because there's no stream present
+                    let error = Error::IO(format!("IO Error: {:?}", e));
+                    self.pending_out_events.push_front(OutEvent::Error(error));
                     self.inbound = None;
                 }
-                // The incoming message is ready and resolves to the stream and message sent by the remote
                 Poll::Ready(Ok((stream, bytes))) => {
-                    // Keep trying to receive from remote
                     self.inbound = Some(super::protocol::recv(stream).boxed());
-                    // Resolve the handler to an incoming message
-                    return Poll::Ready(ConnectionHandlerEvent::Custom(OutEvent::IncomingMessage(
-                        bytes,
-                    )));
-                    // This poll is over, waiting for the next call
+                    let event = ConnectionHandlerEvent::Custom(OutEvent::IncomingMessage(bytes));
+                    return Poll::Ready(event);
                 }
             }
         }
-        // Incoming message has been processed, now for outgoing message
         loop {
-            // Flushing the error queue
-            if let Some(ev) = self.pending_out_events.pop_back() {
-                return Poll::Ready(ConnectionHandlerEvent::Custom(ev));
-            }
-            // Check whether the outbound is ready
             match self.outbound.take() {
-                // Outbound is waiting for send operation
                 Some(OutboundState::Busy(mut task, callback, mut timer)) => {
                     match task.poll_unpin(cx) {
-                        // Not ready
                         Poll::Pending => {
                             if timer.poll_unpin(cx).is_ready() {
-                                match callback.send(OpResult::Error(Error::Timeout)) {
+                                let result =
+                                    BehaviourOpResult::Messaging(OpResult::Error(Error::Timeout));
+                                match callback.send(result) {
                                     Ok(_) => {}
                                     Err(res) => warn!("Failed to send callback {:?}", res),
                                 };
@@ -177,7 +151,9 @@ impl ConnectionHandler for Handler {
                         }
                         // Ready
                         Poll::Ready(Ok((stream, rtt))) => {
-                            match callback.send(OpResult::SuccessfulPost(rtt)) {
+                            let result =
+                                BehaviourOpResult::Messaging(OpResult::SuccessfulPost(rtt));
+                            match callback.send(result) {
                                 Ok(_) => {}
                                 Err(res) => warn!("Failed to send callback {:?}", res),
                             };
@@ -186,9 +162,10 @@ impl ConnectionHandler for Handler {
                         }
                         // Ready but resolved to an error
                         Poll::Ready(Err(e)) => {
-                            match callback
-                                .send(OpResult::Error(Error::IO(format!("IO Error: {:?}", e))))
-                            {
+                            let result = BehaviourOpResult::Messaging(OpResult::Error(Error::IO(
+                                format!("IO Error: {:?}", e),
+                            )));
+                            match callback.send(result) {
                                 Ok(_) => {}
                                 Err(res) => warn!("Failed to send result to callback: {:?}", res),
                             }
@@ -196,9 +173,8 @@ impl ConnectionHandler for Handler {
                     }
                 }
                 // Outbound is free, get the next message sent
-                Some(OutboundState::Idle(stream)) => match self.pending_in_events.pop_back() {
-                    // Unsent message found
-                    Some(ev) => {
+                Some(OutboundState::Idle(stream)) => {
+                    if let Some(ev) = self.pending_in_events.pop_back() {
                         match ev {
                             InEvent::PostMessage(msg, callback) => {
                                 // Put Outbound into send state
@@ -209,30 +185,25 @@ impl ConnectionHandler for Handler {
                                 ))
                             }
                         }
-                    }
-                    None => {
-                        // Put Outbound into idle state
+                    } else {
                         self.outbound = Some(OutboundState::Idle(stream));
                         break;
                     }
-                },
-                // Outbound is waiting for a stream to open
+                }
                 Some(OutboundState::OpenStream) => {
                     self.outbound = Some(OutboundState::OpenStream);
                     break;
                 }
-                // Outbound has no stream available
-                // Also the default state end up here
                 None => {
-                    // Put outbound into waiting state
                     self.outbound = Some(OutboundState::OpenStream);
-                    // construct a handshake
-                    let protocol = SubstreamProtocol::new(ReadyUpgrade::new(protocol::PROTOCOL_NAME), ());
-                    // Send the handshake requesting for negotiation
-                    return Poll::Ready(ConnectionHandlerEvent::OutboundSubstreamRequest {
-                        protocol,
-                    });
+                    let protocol =
+                        SubstreamProtocol::new(ReadyUpgrade::new(protocol::PROTOCOL_NAME), ());
+                    let event = ConnectionHandlerEvent::OutboundSubstreamRequest { protocol };
+                    return Poll::Ready(event);
                 }
+            }
+            if let Some(ev) = self.pending_out_events.pop_back() {
+                return Poll::Ready(ConnectionHandlerEvent::Custom(ev));
             }
         }
         Poll::Pending
@@ -275,10 +246,7 @@ type PendingVerf = BoxFuture<'static, Result<(NegotiatedSubstream, Vec<u8>), io:
 type PendingSend = BoxFuture<'static, Result<(NegotiatedSubstream, Duration), io::Error>>;
 
 enum OutboundState {
-    /// A new substream is being negotiated for the messaging protocol.
     OpenStream,
-    /// The substream is idle, waiting for next message.
     Idle(NegotiatedSubstream),
-    /// A message is being sent and the response awaited.
-    Busy(PendingSend, oneshot::Sender<OpResult>, Delay),
+    Busy(PendingSend, oneshot::Sender<BehaviourOpResult>, Delay),
 }
