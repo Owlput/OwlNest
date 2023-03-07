@@ -1,6 +1,6 @@
 use libp2p::{Multiaddr, TransportError};
-
-use super::*;
+use super::Manager;
+use super::swarm_op::*;
 
 pub fn handle_swarm(manager: &Manager, command: Vec<&str>) {
     if command.len() < 2 {
@@ -74,9 +74,10 @@ fn handle_swarm_listener(manager: &Manager, command: Vec<&str>) {
     }
     match command[2]{
         "ls" =>
-            if let OpResult::ListListeners(list) = manager.blocking_swarm_exec(swarm::Op::ListListeners){
+            if let OpResult::ListListeners(list) = manager.blocking_swarm_exec(Op::ListListeners){
                 println!("Active listeners: \n{:#?}",list);
             },
+        "help" => println!("{}",LISTENER_SUBCOMMAND_HELP),
         _=>println!("Failed to execute: unrecognized subcommand. Type \"swarm listener help\" for more information.")
     }
 }
@@ -122,3 +123,5 @@ ban <peer ID>
 unban <peer ID>
                 Unban the given peer.
 "#;
+
+const LISTENER_SUBCOMMAND_HELP:&str = r#""#;

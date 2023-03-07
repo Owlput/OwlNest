@@ -1,59 +1,20 @@
-use crate::net::p2p::protocols::tethering::TetheringOpError;
-
 use super::*;
-use libp2p::{
-    swarm::{derive_prelude::ListenerId, DialError},
-    TransportError,
-};
-use serde::{Deserialize, Serialize};
 
 #[derive(Debug)]
 pub struct InEvent {
-    op: Op,
-    callback: oneshot::Sender<OpResult>,
+    op: swarm_op::Op,
+    callback: oneshot::Sender<swarm_op::OpResult>,
 }
 impl InEvent {
-    pub fn new(op: Op, callback: oneshot::Sender<OpResult>) -> Self {
+    pub fn new(op: swarm_op::Op, callback: oneshot::Sender<swarm_op::OpResult>) -> Self {
         InEvent { op, callback }
     }
-    pub fn into_inner(self) -> (Op, oneshot::Sender<OpResult>) {
+    pub fn into_inner(self) -> (swarm_op::Op, oneshot::Sender<swarm_op::OpResult>) {
         (self.op, self.callback)
     }
 }
 
-#[derive(Debug)]
-pub enum OpResult {
-    Dial(Result<(), DialError>),
-    Listen(Result<ListenerId, TransportError<std::io::Error>>),
-    AddExternalAddress(AddExternalAddressResult),
-    RemoveExternalAddress(bool),
-    BanByPeerId,
-    UnbanByPeerId,
-    DisconnectFromPeerId(Result<(), ()>),
-    ListExternalAddresses(Vec<AddressRecord>),
-    ListListeners(Vec<Multiaddr>),
-    IsConnectedToPeerId(bool),
-}
 
-#[derive(Debug, Serialize, Deserialize)]
-pub enum Op {
-    Dial(Multiaddr),
-    Listen(Multiaddr),
-    AddExternalAddress(Multiaddr, Option<u32>),
-    RemoveExternalAddress(Multiaddr),
-    BanByPeerId(PeerId),
-    UnbanByPeerId(PeerId),
-    DisconnectFromPeerId(PeerId),
-    ListExternalAddresses,
-    ListListeners,
-    IsConnectedToPeerId(PeerId),
-}
-
-#[derive(Debug, Serialize, Deserialize)]
-pub enum AddExternalAddressResult {
-    Inserted,
-    Updated,
-}
 
 #[derive(Debug)]
 pub enum BehaviourOp {

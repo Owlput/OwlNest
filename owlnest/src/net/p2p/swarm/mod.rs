@@ -15,6 +15,7 @@ pub mod event_listener;
 mod in_event;
 pub mod manager;
 pub mod out_event;
+pub mod swarm_op;
 
 pub use event_listener::*;
 pub use in_event::*;
@@ -22,6 +23,8 @@ pub use manager::Manager;
 pub use out_event::OutEvent;
 
 pub type Swarm = Libp2pSwarm<Behaviour>;
+pub type SwarmOp = swarm_op::Op;
+pub type SwarmOpResult = swarm_op::OpResult;
 type SwarmTransport = Boxed<(PeerId, StreamMuxerBox)>;
 type SwarmEvent = libp2p::swarm::SwarmEvent<BehaviourEvent,<<Behaviour as libp2p::swarm::NetworkBehaviour>::ConnectionHandler as libp2p::swarm::ConnectionHandler>::Error>;
 
@@ -41,7 +44,7 @@ impl Builder {
         let manager = Manager {
             swarm_sender: swarm_tx,
             behaviour_sender: protocol_tx,
-            ev_hook_sender: ev_hook_tx,
+            ev_listener_sender: ev_hook_tx,
         };
         let (behaviour, transport) = behaviour::Behaviour::new(self.config);
         let mut manager_cloned = manager.clone();
@@ -52,25 +55,15 @@ impl Builder {
                 select! {
                     Some(ev) = swarm_rx.recv() => swarm_op_exec(&mut swarm, ev),
                     Some(ev) = protocol_rx.recv() => map_protocol_ev(&mut swarm,&mut manager_cloned ,ev),
-                    Some(ev) = ev_hook_rx.recv() => handle_ev_hook_op(ev),
-                    swarm_event = swarm.select_next_some() => {
-                        match swarm_event {
-                            SwarmEvent::Behaviour(event)=>handle_behaviour_event(&mut swarm, event),
-                            SwarmEvent::NewListenAddr{address, ..}=>info!("Listening on {:?}",address),
-                            SwarmEvent::ConnectionEstablished { peer_id, endpoint,.. } => kad_add(&mut swarm,peer_id,endpoint),
-                            SwarmEvent::ConnectionClosed { peer_id, endpoint,.. } => kad_remove(&mut swarm, peer_id, endpoint),
-                            SwarmEvent::IncomingConnection {send_back_addr, local_addr } => debug!("Incoming connection from {} on local address {}",send_back_addr,local_addr),
-                            SwarmEvent::IncomingConnectionError { local_addr, send_back_addr, error } => info!("Incoming connection error from {} on local address {}, error: {:?}", send_back_addr,local_addr,error),
-                            SwarmEvent::OutgoingConnectionError { peer_id, error } => info!("Outgoing connection error to peer {:?}: {:?}",peer_id,error),
-                            SwarmEvent::BannedPeer { peer_id, endpoint } => info!("Banned peer {} tried to connect to endpoint {:?}",peer_id,endpoint),
-                            SwarmEvent::ExpiredListenAddr { address,.. } => info!("Expired listen address: {}",address),
-                            SwarmEvent::ListenerClosed { addresses, reason, .. } => info!("Listener on address {:?} closed: {:?}",addresses, reason),
-                            SwarmEvent::ListenerError { listener_id, error } => info!("Listener {:?} reported an error {}",listener_id, error),
-                            SwarmEvent::Dialing(peer_id) => debug!("Dailing peer {}",peer_id),
-
-                        }
-                    }
+                    swarm_event = swarm.select_next_some() => handle_swarm_event(swarm_event,&mut swarm)
                 };
+            }
+        });
+        tokio::spawn(async move {
+            loop {
+                if let Some(ev) = ev_hook_rx.recv().await {
+                    handle_ev_hook_op(ev)
+                }
             }
         });
         manager
@@ -78,7 +71,55 @@ impl Builder {
 }
 
 #[inline]
+fn handle_swarm_event(ev: SwarmEvent, swarm: &mut Swarm) {
+    match ev {
+        SwarmEvent::Behaviour(event) => handle_behaviour_event(swarm, event),
+        SwarmEvent::NewListenAddr { address, .. } => info!("Listening on {:?}", address),
+        SwarmEvent::ConnectionEstablished {
+            peer_id, endpoint, ..
+        } => kad_add(swarm, peer_id, endpoint),
+        SwarmEvent::ConnectionClosed {
+            peer_id, endpoint, ..
+        } => kad_remove(swarm, peer_id, endpoint),
+        SwarmEvent::IncomingConnection {
+            send_back_addr,
+            local_addr,
+        } => debug!(
+            "Incoming connection from {} on local address {}",
+            send_back_addr, local_addr
+        ),
+        SwarmEvent::IncomingConnectionError {
+            local_addr,
+            send_back_addr,
+            error,
+        } => info!(
+            "Incoming connection error from {} on local address {}, error: {:?}",
+            send_back_addr, local_addr, error
+        ),
+        SwarmEvent::OutgoingConnectionError { peer_id, error } => info!(
+            "Outgoing connection error to peer {:?}: {:?}",
+            peer_id, error
+        ),
+        SwarmEvent::BannedPeer { peer_id, endpoint } => info!(
+            "Banned peer {} tried to connect to endpoint {:?}",
+            peer_id, endpoint
+        ),
+        SwarmEvent::ExpiredListenAddr { address, .. } => {
+            info!("Expired listen address: {}", address)
+        }
+        SwarmEvent::ListenerClosed {
+            addresses, reason, ..
+        } => info!("Listener on address {:?} closed: {:?}", addresses, reason),
+        SwarmEvent::ListenerError { listener_id, error } => {
+            info!("Listener {:?} reported an error {}", listener_id, error)
+        }
+        SwarmEvent::Dialing(peer_id) => debug!("Dailing peer {}", peer_id),
+    }
+}
+
+#[inline]
 fn swarm_op_exec(swarm: &mut Swarm, ev: in_event::InEvent) {
+    use swarm_op::*;
     let (op, callback) = ev.into_inner();
     match op {
         Op::Dial(addr) => {
@@ -96,10 +137,10 @@ fn swarm_op_exec(swarm: &mut Swarm, ev: in_event::InEvent) {
             };
             let result = match swarm.add_external_address(addr.clone(), score.clone()) {
                 libp2p::swarm::AddAddressResult::Inserted { .. } => {
-                    OpResult::AddExternalAddress(in_event::AddExternalAddressResult::Inserted)
+                    OpResult::AddExternalAddress(AddExternalAddressResult::Inserted)
                 }
                 libp2p::swarm::AddAddressResult::Updated { .. } => {
-                    OpResult::AddExternalAddress(in_event::AddExternalAddressResult::Updated)
+                    OpResult::AddExternalAddress(AddExternalAddressResult::Updated)
                 }
             };
             handle_callback(callback, result)
@@ -151,7 +192,6 @@ fn swarm_op_exec(swarm: &mut Swarm, ev: in_event::InEvent) {
 fn map_protocol_ev(swarm: &mut Swarm, manager: &mut Manager, ev: BehaviourInEvent) {
     match ev {
         BehaviourInEvent::Messaging(ev) => swarm.behaviour_mut().messaging.push_event(ev),
-
         BehaviourInEvent::Tethering(ev) => swarm.behaviour_mut().tethering.push_event(ev),
         BehaviourInEvent::Kad(ev) => kad::map_in_event(&mut swarm.behaviour_mut().kad, manager, ev),
     }
@@ -185,6 +225,7 @@ fn kad_add(swarm: &mut Swarm, peer_id: PeerId, endpoint: ConnectedPoint) {
         }
     }
 }
+
 #[inline]
 fn kad_remove(swarm: &mut Swarm, peer_id: PeerId, endpoint: ConnectedPoint) {
     match endpoint {
@@ -213,7 +254,7 @@ where
 #[inline]
 fn handle_ev_hook_op(ev: EventListenerOp) {
     match ev {
-        EventListenerOp::Add(_) => todo!(),
-        EventListenerOp::Remove(_) => todo!(),
+        EventListenerOp::Add(_, _, _) => todo!(),
+        EventListenerOp::Remove(_, _) => todo!(),
     }
 }

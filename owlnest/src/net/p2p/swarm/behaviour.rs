@@ -34,25 +34,19 @@ impl Behaviour {
                 config.local_ident.get_peer_id(),
                 config.relay_server,
             ),
-            
             relay_client,
             keep_alive: libp2p::swarm::keep_alive::Behaviour::default(),
         };
-        
         let transport = upgrade_transport(
             OrTransport::new(libp2p::tcp::tokio::Transport::default(), relayed_transport).boxed(),
             &ident,
         );
-        #[cfg(not(feature = "relay-client"))]
-        let transport = libp2p::tokio_development_transport(ident.get_keypair()).unwrap();
-
         (behav, transport)
     }
 }
 
 
 use futures::{AsyncRead, AsyncWrite};
-
 fn upgrade_transport<StreamSink>(
     transport: Boxed<StreamSink>,
     ident: &IdentityUnion,

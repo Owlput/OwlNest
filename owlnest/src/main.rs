@@ -20,11 +20,8 @@ fn setup_peer(ident: IdentityUnion) {
         kad: protocols::kad::Config::default(),
         identify: protocols::identify::Config::new("/owlnest/0.0.1".into(), ident.get_pubkey()),
         mdns: protocols::mdns::Config::default(),
-        
         messaging: protocols::messaging::Config::default(),
-        
         tethering: protocols::tethering::Config::default(),
-        
         relay_server: protocols::relay_server::Config::default(),
     };
     let mgr = net::p2p::swarm::Builder::new(swarm_config).build(8);

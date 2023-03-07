@@ -1,7 +1,7 @@
 use std::str::FromStr;
 
 use libp2p::{
-    kad::{store::MemoryStore, Kademlia, KademliaConfig, KademliaEvent, record::Key},
+    kad::{record::Key, store::MemoryStore, Kademlia, KademliaConfig, KademliaEvent},
     PeerId,
 };
 use tokio::sync::oneshot;
@@ -15,31 +15,30 @@ pub type OutEvent = KademliaEvent;
 
 #[derive(Debug)]
 pub struct InEvent {
-    op:Op,
-    callback:oneshot::Sender<swarm::BehaviourOpResult>
+    op: Op,
+    callback: oneshot::Sender<swarm::BehaviourOpResult>,
 }
-impl InEvent{
-    pub fn new(op:Op,callback:oneshot::Sender<swarm::BehaviourOpResult>)->Self{
-        Self{op,callback}
+impl InEvent {
+    pub fn new(op: Op, callback: oneshot::Sender<swarm::BehaviourOpResult>) -> Self {
+        Self { op, callback }
     }
-    pub fn into_inner(self)->(Op,oneshot::Sender<swarm::BehaviourOpResult>){
-        (self.op,self.callback)
+    pub fn into_inner(self) -> (Op, oneshot::Sender<swarm::BehaviourOpResult>) {
+        (self.op, self.callback)
     }
 }
 
 #[derive(Debug)]
-pub enum Op{
-    PeerLookup(PeerId)
+pub enum Op {
+    PeerLookup(PeerId),
 }
 
 #[derive(Debug)]
-pub enum OpResult{
-    BehaviourEvent(OutEvent)
+pub enum OpResult {
+    BehaviourEvent(OutEvent),
 }
 
-
-pub fn map_in_event(behav: &mut Behaviour,manager:&mut swarm::Manager, ev: InEvent) {
-    let (op,callback) = ev.into_inner();
+pub fn map_in_event(behav: &mut Behaviour, manager: &mut swarm::Manager, ev: InEvent) {
+    let (op, callback) = ev.into_inner();
     match op {
         Op::PeerLookup(peer_id) => {
             let query_id = behav.get_record(Key::new(&peer_id.to_bytes()));
@@ -53,8 +52,8 @@ pub fn map_in_event(behav: &mut Behaviour,manager:&mut swarm::Manager, ev: InEve
     }
 }
 
-pub enum EventListener{
-    PeerLookup(OutEvent)
+pub enum EventListener {
+    PeerLookup(OutEvent),
 }
 
 pub fn ev_dispatch(ev: OutEvent) {
@@ -74,7 +73,7 @@ pub fn handle_kad(manager: &swarm::Manager, command: Vec<&str>) {
     }
     match command[1] {
         "lookup" => handle_kad_lookup(manager, command),
-        "help" => println!("{}",TOP_HELP_MESSAGE),
+        "help" => println!("{}", TOP_HELP_MESSAGE),
         _ => println!("Unrecoginzed subcommands. Type \"kad help\" for more information"),
     }
 }
@@ -90,19 +89,18 @@ fn handle_kad_lookup(manager: &swarm::Manager, command: Vec<&str>) {
             return;
         }
     };
-    let (tx,rx) = oneshot::channel::<swarm::BehaviourOpResult>();
+    let (tx, rx) = oneshot::channel::<swarm::BehaviourOpResult>();
     manager.blocking_behaviour_exec(swarm::BehaviourOp::Kad(Op::PeerLookup(peer_id)));
-    match rx.blocking_recv(){
-        Ok(v) => println!("Lookup request sent. Query ID: {:?}",v),
+    match rx.blocking_recv() {
+        Ok(v) => println!("Lookup request sent. Query ID: {:?}", v),
         Err(_) => {
             warn!("Sender dropped when waiting for callback");
             println!("Error: unable to receive callback - sender dropped")
-        },
+        }
     }
-
 }
 
-const TOP_HELP_MESSAGE:&str = r#"
+const TOP_HELP_MESSAGE: &str = r#"
 Protocol `/ipfs/kad/1.0.0`
 
 Available Subcommands:
@@ -110,12 +108,4 @@ lookup <peer ID>
                 Initiate a lookup for the given peer.
 "#;
 
-pub mod event_listener{
-    use tokio::sync::mpsc;
-
-    use super::OutEvent;
-
-    pub enum EventListener{
-        OnOutboundQueryProgressed(mpsc::Sender<OutEvent>),
-    }
-}
+pub mod event_listener;
