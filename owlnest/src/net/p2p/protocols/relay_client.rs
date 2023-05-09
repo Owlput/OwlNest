@@ -41,13 +41,6 @@ pub fn ev_dispatch(ev: &OutEvent) {
             "Inbound circuit from source peer {} established, limit:{:?}",
             src_peer_id, limit
         ),
-        OutEvent::InboundCircuitReqFailed {
-            relay_peer_id,
-            error,
-        } => info!(
-            "Relayed inbound circuit from relay {} failed, error:{:?}",
-            relay_peer_id, error
-        ),
         OutEvent::InboundCircuitReqDenied { src_peer_id } => {
             info!("An inbound circuit from {} was denied", src_peer_id)
         }

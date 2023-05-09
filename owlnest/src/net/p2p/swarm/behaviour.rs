@@ -2,7 +2,7 @@ use super::*;
 
 use libp2p::core::transport::{Boxed, OrTransport, Transport};
 use libp2p::core::upgrade;
-use libp2p::swarm::{NetworkBehaviour, ConnectionHandler};
+use libp2p::swarm::NetworkBehaviour;
 
 /// Combined behaviour for libp2p swarm.
 #[derive(NetworkBehaviour)]
@@ -42,7 +42,6 @@ impl Behaviour {
         (behav, transport)
     }
 }
-
 
 use futures::{AsyncRead, AsyncWrite};
 fn upgrade_transport<StreamSink>(

@@ -5,13 +5,12 @@ use crate::net::p2p::{
 };
 use futures::{future::BoxFuture, FutureExt};
 use libp2p::{
-    core::{upgrade::NegotiationError, UpgradeError},
     swarm::{
         handler::{
             ConnectionEvent, DialUpgradeError, FullyNegotiatedInbound, FullyNegotiatedOutbound,
         },
-        ConnectionHandler, ConnectionHandlerEvent, ConnectionHandlerUpgrErr, KeepAlive,
-        NegotiatedSubstream, SubstreamProtocol,
+        ConnectionHandler, ConnectionHandlerEvent, KeepAlive,
+        NegotiatedSubstream, SubstreamProtocol, StreamUpgradeError,
     },
 };
 use serde::{Deserialize, Serialize};
@@ -134,7 +133,7 @@ impl ExecHandler {
     ) {
         self.outbound = None;
         match error {
-            ConnectionHandlerUpgrErr::Upgrade(UpgradeError::Select(NegotiationError::Failed)) => {
+            StreamUpgradeError::NegotiationFailed => {
                 self.state = State::Inactive { reported: false };
                 return;
             }
@@ -331,6 +330,8 @@ impl ConnectionHandler for ExecHandler {
                 self.on_dial_upgrade_error(e);
             }
             ConnectionEvent::AddressChange(_) | ConnectionEvent::ListenUpgradeError(_) => {}
+            ConnectionEvent::LocalProtocolsChange(_) => {},
+            ConnectionEvent::RemoteProtocolsChange(_) => {},
         }
     }
 }

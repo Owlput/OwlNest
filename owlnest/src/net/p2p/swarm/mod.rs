@@ -122,11 +122,6 @@ fn handle_swarm_event(ev: &SwarmEvent, swarm: &mut Swarm) {
             "Outgoing connection error to peer {:?}: {:?}",
             peer_id, error
         ),
-        #[allow(deprecated)]
-        SwarmEvent::BannedPeer { peer_id, endpoint } => info!(
-            "Banned peer {} tried to connect to endpoint {:?}",
-            peer_id, endpoint
-        ),
         SwarmEvent::ExpiredListenAddr { address, .. } => {
             info!("Expired listen address: {}", address)
         }
@@ -172,16 +167,16 @@ fn swarm_op_exec(swarm: &mut Swarm, ev: in_event::InEvent) {
             let result = OpResult::RemoveExternalAddress(swarm.remove_external_address(&addr));
             handle_callback(callback, result)
         }
-        Op::BanByPeerId(peer_id) => {
-            swarm.ban_peer_id(peer_id.clone());
-            let result = OpResult::BanByPeerId;
-            handle_callback(callback, result)
-        }
-        Op::UnbanByPeerId(peer_id) => {
-            swarm.unban_peer_id(peer_id.clone());
-            let result = OpResult::UnbanByPeerId;
-            handle_callback(callback, result)
-        }
+        // Op::BanByPeerId(peer_id) => {
+        //     swarm.ban_peer_id(peer_id.clone());
+        //     let result = OpResult::BanByPeerId;
+        //     handle_callback(callback, result)
+        // }
+        // Op::UnbanByPeerId(peer_id) => {
+        //     swarm.unban_peer_id(peer_id.clone());
+        //     let result = OpResult::UnbanByPeerId;
+        //     handle_callback(callback, result)
+        // }
         Op::DisconnectFromPeerId(peer_id) => {
             let result = OpResult::DisconnectFromPeerId(swarm.disconnect_peer_id(peer_id.clone()));
             handle_callback(callback, result)

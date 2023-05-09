@@ -3,15 +3,10 @@ use crate::net::p2p::{
     protocols::tethering::subprotocols::PUSH_PROTOCOL_NAME, swarm::BehaviourOpResult,
 };
 use futures::{future::BoxFuture, FutureExt};
-use libp2p::{
-    core::{upgrade::NegotiationError, UpgradeError},
-    swarm::{
-        handler::{
-            ConnectionEvent, DialUpgradeError, FullyNegotiatedInbound, FullyNegotiatedOutbound,
-        },
-        ConnectionHandler, ConnectionHandlerEvent, ConnectionHandlerUpgrErr, KeepAlive,
-        NegotiatedSubstream, SubstreamProtocol,
-    },
+use libp2p::swarm::{
+    handler::{ConnectionEvent, DialUpgradeError, FullyNegotiatedInbound, FullyNegotiatedOutbound},
+    ConnectionHandler, ConnectionHandlerEvent, KeepAlive, NegotiatedSubstream, StreamUpgradeError,
+    SubstreamProtocol,
 };
 use serde::{Deserialize, Serialize};
 use std::{collections::VecDeque, fmt::Display, task::Poll};
@@ -105,7 +100,7 @@ impl PushHandler {
     ) {
         self.outbound = None;
         match error {
-            ConnectionHandlerUpgrErr::Upgrade(UpgradeError::Select(NegotiationError::Failed)) => {
+            StreamUpgradeError::NegotiationFailed => {
                 self.state = State::Inactive { reported: false };
                 return;
             }
@@ -276,6 +271,8 @@ impl ConnectionHandler for PushHandler {
                 self.on_dial_upgrade_error(e);
             }
             ConnectionEvent::AddressChange(_) | ConnectionEvent::ListenUpgradeError(_) => {}
+            ConnectionEvent::LocalProtocolsChange(_) => {}
+            ConnectionEvent::RemoteProtocolsChange(_) => {}
         }
     }
 }

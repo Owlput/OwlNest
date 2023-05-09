@@ -220,10 +220,6 @@ impl TryFrom<super::SwarmEvent> for SwarmEvent {
             libp2p::swarm::SwarmEvent::OutgoingConnectionError { peer_id, error } => {
                 Self::OutgoingConnectionError { peer_id, error }
             }
-            #[allow(deprecated)]
-            libp2p::swarm::SwarmEvent::BannedPeer { peer_id, endpoint } => {
-                Self::BannedPeer { peer_id, endpoint }
-            }
             libp2p::swarm::SwarmEvent::NewListenAddr {
                 listener_id,
                 address,

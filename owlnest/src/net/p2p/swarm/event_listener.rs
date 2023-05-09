@@ -84,8 +84,6 @@ pub fn setup_event_listener(mut op_rx: mpsc::Receiver<Op>, mut ev_rx: mpsc::Rece
                                 libp2p::swarm::SwarmEvent::IncomingConnection { .. } => todo!(),
                                 libp2p::swarm::SwarmEvent::IncomingConnectionError { .. } => todo!(),
                                 libp2p::swarm::SwarmEvent::OutgoingConnectionError { .. } => todo!(),
-                                #[allow(deprecated)]
-                                libp2p::swarm::SwarmEvent::BannedPeer { .. } => todo!(),
                                 libp2p::swarm::SwarmEvent::NewListenAddr { .. } => todo!(),
                                 libp2p::swarm::SwarmEvent::ExpiredListenAddr { .. } => todo!(),
                                 libp2p::swarm::SwarmEvent::ListenerClosed { .. } => todo!(),

@@ -1,15 +1,11 @@
 use super::*;
 use futures::{future::BoxFuture, FutureExt};
 use futures_timer::Delay;
-use libp2p::core::{
-    upgrade::{NegotiationError, ReadyUpgrade},
-    UpgradeError,
-};
 use libp2p::swarm::{
     handler::{ConnectionEvent, DialUpgradeError, FullyNegotiatedInbound, FullyNegotiatedOutbound},
-    ConnectionHandler, ConnectionHandlerEvent, ConnectionHandlerUpgrErr, NegotiatedSubstream,
-    SubstreamProtocol,
+    ConnectionHandler, ConnectionHandlerEvent, NegotiatedSubstream, SubstreamProtocol,
 };
+use libp2p::{core::upgrade::ReadyUpgrade, swarm::StreamUpgradeError};
 use std::{collections::VecDeque, io, task::Poll, time::Duration};
 use tracing::warn;
 
@@ -61,7 +57,7 @@ impl Handler {
     ) {
         self.outbound = None;
         match error {
-            ConnectionHandlerUpgrErr::Upgrade(UpgradeError::Select(NegotiationError::Failed)) => {
+            StreamUpgradeError::NegotiationFailed => {
                 self.state = State::Inactive { reported: false };
                 return;
             }
@@ -209,36 +205,38 @@ impl ConnectionHandler for Handler {
         Poll::Pending
     }
     fn on_connection_event(
-            &mut self,
-            event: ConnectionEvent<
-                Self::InboundProtocol,
-                Self::OutboundProtocol,
-                Self::InboundOpenInfo,
-                Self::OutboundOpenInfo,
-            >,
-        ) {
-            match event {
-                ConnectionEvent::FullyNegotiatedInbound(FullyNegotiatedInbound {
-                    protocol: stream,
-                    info: (),
-                }) => {
-                    self.pending_out_events
-                        .push_front(OutEvent::InboundNegotiated);
-                    self.inbound = Some(super::protocol::recv(stream).boxed());
-                }
-                ConnectionEvent::FullyNegotiatedOutbound(FullyNegotiatedOutbound {
-                    protocol: stream,
-                    ..
-                }) => {
-                    self.pending_out_events
-                        .push_front(OutEvent::OutboundNegotiated);
-                    self.outbound = Some(OutboundState::Idle(stream));
-                }
-                ConnectionEvent::DialUpgradeError(e) => {
-                    self.on_dial_upgrade_error(e);
-                }
-                ConnectionEvent::AddressChange(_) | ConnectionEvent::ListenUpgradeError(_) => {}
+        &mut self,
+        event: ConnectionEvent<
+            Self::InboundProtocol,
+            Self::OutboundProtocol,
+            Self::InboundOpenInfo,
+            Self::OutboundOpenInfo,
+        >,
+    ) {
+        match event {
+            ConnectionEvent::FullyNegotiatedInbound(FullyNegotiatedInbound {
+                protocol: stream,
+                info: (),
+            }) => {
+                self.pending_out_events
+                    .push_front(OutEvent::InboundNegotiated);
+                self.inbound = Some(super::protocol::recv(stream).boxed());
             }
+            ConnectionEvent::FullyNegotiatedOutbound(FullyNegotiatedOutbound {
+                protocol: stream,
+                ..
+            }) => {
+                self.pending_out_events
+                    .push_front(OutEvent::OutboundNegotiated);
+                self.outbound = Some(OutboundState::Idle(stream));
+            }
+            ConnectionEvent::DialUpgradeError(e) => {
+                self.on_dial_upgrade_error(e);
+            }
+            ConnectionEvent::AddressChange(_) | ConnectionEvent::ListenUpgradeError(_) => {}
+            ConnectionEvent::LocalProtocolsChange(_) => {}
+            ConnectionEvent::RemoteProtocolsChange(_) => {}
+        }
     }
 }
 

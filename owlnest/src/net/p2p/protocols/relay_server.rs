@@ -27,10 +27,6 @@ pub fn ev_dispatch(ev: &OutEvent) {
         OutEvent::ReservationTimedOut { src_peer_id } => {
             info!("Reservation expired for source peer {}", src_peer_id)
         }
-        OutEvent::CircuitReqReceiveFailed { src_peer_id, error } => info!(
-            "Broken circuit request from {}, error:{}",
-            src_peer_id, error
-        ),
         OutEvent::CircuitReqDenied {
             src_peer_id,
             dst_peer_id,

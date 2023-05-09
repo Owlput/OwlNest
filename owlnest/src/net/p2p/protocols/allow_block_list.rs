@@ -70,6 +70,28 @@ pub mod behaviour {
             self.waker = Some(cx.waker().clone());
             Poll::Pending
         }
+
+        fn handle_established_inbound_connection(
+        &mut self,
+        _connection_id: libp2p::swarm::ConnectionId,
+        peer: PeerId,
+        local_addr: &libp2p::Multiaddr,
+        remote_addr: &libp2p::Multiaddr,
+    ) -> Result<libp2p::swarm::THandler<Self>, ConnectionDenied> {
+        self.policy.enforce(&peer)?;
+        Ok(libp2p::swarm::dummy::ConnectionHandler)
+    }
+
+        fn handle_established_outbound_connection(
+        &mut self,
+        _connection_id: libp2p::swarm::ConnectionId,
+        peer: PeerId,
+        addr: &libp2p::Multiaddr,
+        role_override: libp2p::core::Endpoint,
+    ) -> Result<libp2p::swarm::THandler<Self>, ConnectionDenied> {
+        self.policy.enforce(&peer)?;
+        Ok(libp2p::swarm::dummy::ConnectionHandler)
+    }
     }
 
     impl Behaviour<AllowPeerId> {

@@ -50,9 +50,6 @@ impl NetworkBehaviour for Behaviour {
         ConnectionHandlerSelect<exec::handler::ExecHandler, push::handler::PushHandler>;
     type OutEvent = OutEvent;
 
-    fn new_handler(&mut self) -> Self::ConnectionHandler {
-        exec::handler::ExecHandler::default().select(push::handler::PushHandler::default())
-    }
     fn on_connection_handler_event(
         &mut self,
         peer_id: PeerId,
@@ -123,6 +120,26 @@ impl NetworkBehaviour for Behaviour {
     }
 
     fn on_swarm_event(&mut self, _event: libp2p::swarm::FromSwarm<Self::ConnectionHandler>) {}
+
+    fn handle_established_inbound_connection(
+        &mut self,
+        _connection_id: ConnectionId,
+        peer: PeerId,
+        local_addr: &libp2p::Multiaddr,
+        remote_addr: &libp2p::Multiaddr,
+    ) -> Result<libp2p::swarm::THandler<Self>, libp2p::swarm::ConnectionDenied> {
+        Ok(exec::handler::ExecHandler::default().select(push::handler::PushHandler::default()))
+    }
+
+    fn handle_established_outbound_connection(
+        &mut self,
+        _connection_id: ConnectionId,
+        peer: PeerId,
+        addr: &libp2p::Multiaddr,
+        role_override: libp2p::core::Endpoint,
+    ) -> Result<libp2p::swarm::THandler<Self>, libp2p::swarm::ConnectionDenied> {
+        Ok(exec::handler::ExecHandler::default().select(push::handler::PushHandler::default()))
+    }
 }
 
 fn map_exec_out_event(peer_id: PeerId, ev: exec::OutEvent) -> behaviour::OutEvent {

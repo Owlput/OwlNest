@@ -1,68 +1,66 @@
 #[macro_export]
-macro_rules! generate_in_event_select {
-    ($($behaviour:ident:$ev:ty),+) => {
-        pub enum InEventSelect{
+macro_rules! generate_event_select {
+    ($name:ident{$($behaviour:ident:$ev:ty,)*}) => {
+        #[derive(Debug)]
+        pub enum $name{
             $($behaviour($ev),)*
         }
-        $(impl From<$ev> for InEventSelect{
-            fn from(value:$ev)->InEventSelect{
-                InEventSelect::$behaviour(value)
-            }
-        })*
-        $(impl Into<$ev> for InEventSelect{
-            fn into(self)->$ev{
-                match self{
-                    InEventSelect::$behaviour(ev)=>ev,
-                    _=>panic!("Internal conversion error")
-                }
-            }
-        })*
-    };
-}
-#[macro_export]
-macro_rules! generate_out_event_select {
-    ($($behaviour:ident:$ev:ty),+) => {
-        pub enum OutEventSelect{
-            $($behaviour($ev),)*
-        }
-        $(impl From<$ev> for OutEventSelect{
-            fn from(value:$ev)->OutEventSelect{
-                OutEventSelect::$behaviour(value)
-            }
-        })*
-        $(impl Into<$ev> for OutEventSelect{
-            fn into(self)->$ev{
-                match self{
-                    OutEventSelect::$behaviour(ev)=>ev,
-                    _=>panic!("Internal conversion error")
-                }
-            }
-        })*
+        // $(impl From<$ev> for $name{
+        //     fn from(value:$ev)->$name{
+        //         Self::$behaviour(value)
+        //     }
+        // })*
+        // $(impl Into<$ev> for $name{
+        //     fn into(self)->$ev{
+        //         match self{
+        //             Self::$behaviour(ev)=>ev,
+        //             _=>panic!("Internal conversion error")
+        //         }
+        //     }
+        // })*
     };
 }
 
 #[macro_export]
-macro_rules! generate_connection_handler_select {
-    ($($handler:ty),+) => {
-        pub struct ConnectionHandlerSelect($($behaviour:$handler,)*);
+macro_rules! connection_handler_select {
+    {$($name:ident=>$behaviour:ident:$handler:ty,)*} => {
+        use crate::*;
+        use libp2p::swarm::{NetworkBehaviour,ConnectionHandler};
+
+        pub mod upgrade{
+            pub use libp2p::core::upgrade::UpgradeInfo;
+            pub mod inbound{
+                pub use libp2p::core::upgrade::InboundUpgrade as Upgrade;
+            }
+            pub mod outbound{
+                pub use libp2p::core::upgrade::OutboundUpgrade as Upgrade;
+            }
+        }
+
+        pub struct ConnectionHandlerSelect{$($name:$handler,)*}
+        generate_event_select!(FromBehaviourSelect{$($behaviour:<$handler as ConnectionHandler>::InEvent,)*});
+        generate_event_select!(ToBehaviourSelect{$($behaviour:<$handler as ConnectionHandler>::OutEvent,)*});
+        generate_error_select_enum!(HandlerErrorSelect{$($behaviour:<$handler as ConnectionHandler>::Error,)*});
+        generate_upgrade_select!(inbound,upgrade_inbound{$($name=>$behaviour:<$handler as ConnectionHandler>::InboundProtocol,)*});
+        generate_upgrade_select!(outbound,upgrade_outbound{$($name=>$behaviour:<$handler as ConnectionHandler>::OutboundProtocol,)*});
 
         impl libp2p::swarm::ConnectionHandler for ConnectionHandlerSelect{
-            type InEvent = InEventSelect;
+            type InEvent = FromBehaviourSelect;
 
-            type OutEvent = OutEventSelect;
+            type OutEvent = ToBehaviourSelect;
 
-            type Error = ErrorSelect;
+            type Error = HandlerErrorSelect;
 
-            type InboundProtocol = InboundUpgradeSelect;
+            type InboundProtocol = inbound::UpgradeSelect;
 
-            type OutboundProtocol = OutboundUpgradeSelect;
+            type OutboundProtocol = outbound::UpgradeSelect;
 
-            type InboundOpenInfo = InboundOpenInfoSelect;
+            type InboundOpenInfo = inbound::UpgradeInfoSelect;
 
-            type OutboundOpenInfo = OutboundOpenInfoSelect;
+            type OutboundOpenInfo = outbound::UpgradeInfoSelect;
 
             fn listen_protocol(&self) -> libp2p::swarm::SubstreamProtocol<Self::InboundProtocol, Self::InboundOpenInfo> {
-                $(let $handler)*
+                todo!()
             }
 
             fn connection_keep_alive(&self) -> libp2p::swarm::KeepAlive {
@@ -103,70 +101,63 @@ macro_rules! generate_connection_handler_select {
 }
 
 #[macro_export]
-macro_rules! generate_inbound_upgrade_select {
-    ($($name:ident=>$behaviour:ident:$upgrade:ty),+) => {
-        use crate::*;
-        use libp2p::InboundUpgrade;
-        use libp2p::swarm::NegotiatedSubstream;
-        use libp2p::core::upgrade;
-
-        generate_select_enum!(#[derive(Clone)]InboundUpgradeInfoSelect{$($behaviour:<<$upgrade as ConnectionHandler>::InboundProtocol as upgrade::UpgradeInfo>::Info)*});
-        impl AsRef<str> for InboundUpgradeInfoSelect{
+macro_rules! generate_upgrade_select {
+    ($direction:ident,$impl_name:ident{$($name:ident=>$behaviour:ident:$upgrade:ty,)*}) => {
+        pub(crate) mod $direction{
+            use crate::*;
+            use super::*;
+            use libp2p::swarm::NegotiatedSubstream;
+        generate_select_enum!(#[derive(Clone)]UpgradeInfoSelect{$($behaviour:<$upgrade as upgrade::UpgradeInfo>::Info,)*});
+        impl AsRef<str> for UpgradeInfoSelect{
             fn as_ref(&self)->&str{
                 match self{
-                    $(Self::$behaviour(inner)=>inner)*
+                    $(Self::$behaviour(inner)=>inner,)*
                 }
             }
         }
-
         generate_select_struct!(
-            InboundUpgradeSelect{$($name:<$upgrade as ConnectionHandler>::InboundProtocol)*}
+            UpgradeSelect{$($name:$upgrade,)*}
         );
 
-        generate_select_enum!(InboundUpgradeErrorSelect{$($behaviour:<<$upgrade as ConnectionHandler>::InboundProtocol as upgrade::InboundUpgrade<NegotiatedSubstream>>::Error)*});
+        generate_select_enum!(UpgradeErrorSelect{$($behaviour:<$upgrade as upgrade::$direction::Upgrade<NegotiatedSubstream>>::Error,)*});
 
-        impl upgrade::UpgradeInfo for InboundUpgradeSelect{
-            type Info = InboundUpgradeInfoSelect;
-            type InfoIter = core::iter::Once<Self::Info>;
-        
+        impl upgrade::UpgradeInfo for UpgradeSelect{
+            type Info = UpgradeInfoSelect;
+            type InfoIter = Vec<UpgradeInfoSelect>;
+
             fn protocol_info(&self) -> Self::InfoIter {
-                match self{
-                    $(Self::$behaviour(info)=>info.protocol_info())*
-                }
+                vec![$(UpgradeInfoSelect::$behaviour(self.$name.protocol_info().next().unwrap()),)*]      
             }
         }
 
-        generate_future_select!($(inbound=>$behaviour:<<$upgrade as ConnectionHandler>::InboundProtocol as upgrade::InboundUpgrade<NegotiatedSubstream>>::Future)*); // collected future
+        generate_select_enum!(SubstreamSelect{$($behaviour:<$upgrade as upgrade::$direction::Upgrade<NegotiatedSubstream>>::Output,)*});
+        generate_future_select!($($upgrade|$behaviour:<$upgrade as upgrade::$direction::Upgrade<NegotiatedSubstream>>::Future,)*); // collected future
 
-        impl InboundUpgrade<NegotiatedSubstream> for InboundUpgradeSelect{
-            type Output = NegotiatedSubstream;
-            type Future = inbound::FutureSelect; // future needed to be resolved in this negotiation
-            type Error = InboundUpgradeErrorSelect;
+        impl upgrade::$direction::Upgrade<NegotiatedSubstream> for UpgradeSelect{
+            type Output = SubstreamSelect;
+            type Future = FutureSelect;
+            type Error = UpgradeErrorSelect;
 
-            fn upgrade_inbound(self, sock: NegotiatedSubstream, info: InboundUpgradeInfoSelect) -> Self::Future {
+            fn $impl_name(self, sock: NegotiatedSubstream, info: UpgradeInfoSelect) -> Self::Future {
                 match info {
-                    $(InboundUpgradeInfoSelect::$behaviour(info)=>Self::Future::$behaviour(self.$name.upgrade_inbound(sock,info)))*
+                    $(UpgradeInfoSelect::$behaviour(info)=>Self::Future::$behaviour(self.$name.$impl_name(sock,info)),)*
                 }
             }
         }
+    }
     };
 }
 
 #[macro_export]
 macro_rules! generate_future_select {
-    ($name:ident=>$($behaviour:ident:$future:ty),+) => {
-        pub(crate) mod $name{
-        use crate::*;
-        use super::*;
+    ($($upgrade:ty|$behaviour:ident:$future:ty,)*) => {
         use std::pin::Pin;
         use futures::Future;
         use std::task::{Poll,Context};
-        use libp2p::core::upgrade::Negotiated;
-        use libp2p::core::muxing::SubstreamBox;
 
-        generate_select_enum!(PinSelect<'a>{$($behaviour:Pin<&'a mut $future>),+});
-        generate_select_enum!(FutureSelect{$($behaviour:$future),+});
-        generate_select_enum!(OutputSelect{$($behaviour:<$future as Future>::Output),+});
+        generate_select_enum!(PinSelect<'a>{$($behaviour:Pin<&'a mut $future>,)*});
+        generate_select_enum!(FutureSelect{$($behaviour:$future,)*});
+
 
         impl FutureSelect{
             pub fn as_pin_mut(self:Pin<&mut Self>)-> PinSelect{
@@ -181,26 +172,28 @@ macro_rules! generate_future_select {
         }
 
         impl Future for FutureSelect{
-            type Output = OutputSelect;
+            type Output = Result<SubstreamSelect,UpgradeErrorSelect>;
 
             fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
                 match self.as_pin_mut() {
                     $(
                         PinSelect::$behaviour(inner) => match inner.poll(cx){
                             Poll::Pending => Poll::Pending,
-                            Poll::Ready(inner) => Poll::Ready(OutputSelect::$behaviour(inner))
+                            Poll::Ready(inner) => Poll::Ready(match inner{
+                                Ok(stream) => Ok(SubstreamSelect::$behaviour(stream)),
+                                Err(upg_err)=> Err(UpgradeErrorSelect::$behaviour(upg_err))
+                            })
                         }
                     )*
                 }
             }
         }
-    }
     };
 }
 
 #[macro_export]
 macro_rules! generate_select_enum {
-    ($(#[$meta:meta])*$name:ident$(<$life:lifetime>)?{$($identifier:ident:$inner:ty),+}) => {
+    ($(#[$meta:meta])*$name:ident$(<$life:lifetime>)?{$($identifier:ident:$inner:ty,)*}) => {
         $(#[$meta])*
         pub enum $name$(<$life>)?{
             $($identifier($inner),)*
@@ -210,7 +203,7 @@ macro_rules! generate_select_enum {
 
 #[macro_export]
 macro_rules! generate_select_struct {
-    ($(#[$meta:meta])*$name:ident$(<$life:lifetime>)?{$($field:ident:$inner:ty),+}) => {
+    ($(#[$meta:meta])*$name:ident$(<$life:lifetime>)?{$($field:ident:$inner:ty,)*}) => {
         $(#[$meta])*
         pub struct $name$(<$life>)?{
             $($field:$inner,)*
@@ -218,5 +211,19 @@ macro_rules! generate_select_struct {
     };
 }
 
+#[macro_export]
+macro_rules! generate_error_select_enum {
+    ($(#[$meta:meta])*$name:ident$(<$life:lifetime>)?{$($field:ident:$inner:ty,)*}) => {
+        generate_select_enum!(#[derive(Debug)]$name$(<$life>)?{$($field:$inner,)*});
+        impl std::fmt::Display for $name{
+            fn fmt(&self,f:&mut std::fmt::Formatter<'_>)->Result<(),std::fmt::Error>{
+                match self{
+                    $(Self::$field(e)=>std::fmt::Display::fmt(e,f),)*
+                }
+            }
+        }
+        impl serde::ser::StdError for $name{
 
-
+        }
+    };
+}
