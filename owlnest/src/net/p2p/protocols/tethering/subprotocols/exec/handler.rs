@@ -1,5 +1,8 @@
 use super::*;
-use crate::net::p2p::{protocols::tethering::{self, subprotocols::EXEC_PROTOCOL_NAME}, swarm::BehaviourOpResult};
+use crate::net::p2p::{
+    protocols::tethering::{self, subprotocols::EXEC_PROTOCOL_NAME},
+    swarm::BehaviourOpResult,
+};
 use futures::{future::BoxFuture, FutureExt};
 use libp2p::{
     core::{upgrade::NegotiationError, UpgradeError},
@@ -138,7 +141,7 @@ impl ExecHandler {
             e => {
                 warn!(
                     "Error occurred when negotiating protocol {}: {}",
-                    String::from_utf8(EXEC_PROTOCOL_NAME.to_vec()).unwrap(),
+                    EXEC_PROTOCOL_NAME,
                     e
                 )
             }
@@ -251,7 +254,8 @@ impl ConnectionHandler for ExecHandler {
                         break;
                     }
                     Poll::Ready(Ok((stream, rtt))) => {
-                        let result = BehaviourOpResult::Tethering(Ok(tethering::HandleOk::RemoteExec(rtt)));
+                        let result =
+                            BehaviourOpResult::Tethering(Ok(tethering::HandleOk::RemoteExec(rtt)));
                         callback.send(result).unwrap();
                         self.outbound = Some(OutboundState::Idle(stream));
                     }
@@ -337,8 +341,5 @@ type PendingSend = BoxFuture<'static, Result<(NegotiatedSubstream, Duration), io
 enum OutboundState {
     OpenStream,
     Idle(NegotiatedSubstream),
-    Busy(
-        PendingSend,
-        oneshot::Sender<BehaviourOpResult>,
-    ),
+    Busy(PendingSend, oneshot::Sender<BehaviourOpResult>),
 }

@@ -82,4 +82,4 @@ pub enum TetheringOpError {
     AlreadyTrusted,
 }
 
-pub fn ev_dispatch(_ev: OutEvent) {}
+pub fn ev_dispatch(_ev: &OutEvent) {}

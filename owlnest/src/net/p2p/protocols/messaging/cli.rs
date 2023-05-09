@@ -12,14 +12,11 @@ pub fn handle_messaging(manager: &swarm::Manager, ident: &IdentityUnion, command
     if command.len() < 2 {
         println!("Failed to execute: missing subcommands.");
         println!("{}", TOP_HELP_MESSAGE);
+        return;
     }
     match command[1] {
         "send" => handle_message_send(manager, ident, command),
-        "help" => println!(
-            "Protocol {}/n{}",
-            String::from_utf8(protocol::PROTOCOL_NAME.to_vec()).unwrap(),
-            TOP_HELP_MESSAGE
-        ),
+        "help" => println!("Protocol {}/n{}", protocol::PROTOCOL_NAME, TOP_HELP_MESSAGE),
         _ => println!(
             "Failed to execute: unrecognized subcommand.\n{}",
             TOP_HELP_MESSAGE
@@ -29,13 +26,15 @@ pub fn handle_messaging(manager: &swarm::Manager, ident: &IdentityUnion, command
 
 pub fn handle_message_send(manager: &swarm::Manager, ident: &IdentityUnion, command: Vec<&str>) {
     if command.len() < 4 {
-        println!("Error: Missing required argument(s), syntax: `msg <peer id> <message>`");
+        println!(
+            "Error: Missing required argument(s), syntax: `messaging send <peer id> <message>`"
+        );
         return;
     }
-    let target_peer = match PeerId::from_str(command[1]) {
+    let target_peer = match PeerId::from_str(command[2]) {
         Ok(addr) => addr,
         Err(e) => {
-            println!("Error: Failed parsing peer ID `{}`: {}", command[1], e);
+            println!("Error: Failed parsing peer ID `{}`: {}", command[2], e);
             return;
         }
     };

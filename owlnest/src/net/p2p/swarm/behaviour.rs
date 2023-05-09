@@ -2,11 +2,11 @@ use super::*;
 
 use libp2p::core::transport::{Boxed, OrTransport, Transport};
 use libp2p::core::upgrade;
-use libp2p::swarm::NetworkBehaviour;
+use libp2p::swarm::{NetworkBehaviour, ConnectionHandler};
 
 /// Combined behaviour for libp2p swarm.
 #[derive(NetworkBehaviour)]
-#[behaviour(out_event = OutEvent)]
+#[behaviour(out_event = "OutEvent")]
 pub struct Behaviour {
     pub messaging: messaging::Behaviour,
     pub tethering: tethering::Behaviour,
@@ -15,7 +15,6 @@ pub struct Behaviour {
     pub kad: kad::Behaviour,
     pub identify: identify::Behaviour,
     pub mdns: mdns::Behaviour,
-    pub keep_alive: libp2p::swarm::keep_alive::Behaviour,
 }
 impl Behaviour {
     pub fn new(config: SwarmConfig) -> (Self, SwarmTransport) {
@@ -35,7 +34,6 @@ impl Behaviour {
                 config.relay_server,
             ),
             relay_client,
-            keep_alive: libp2p::swarm::keep_alive::Behaviour::default(),
         };
         let transport = upgrade_transport(
             OrTransport::new(libp2p::tcp::tokio::Transport::default(), relayed_transport).boxed(),
@@ -56,7 +54,7 @@ where
 {
     transport
         .upgrade(upgrade::Version::V1)
-        .authenticate(libp2p::noise::NoiseAuthenticated::xx(&ident.get_keypair()).unwrap())
-        .multiplex(libp2p::yamux::YamuxConfig::default())
+        .authenticate(libp2p::noise::Config::new(&ident.get_keypair()).unwrap())
+        .multiplex(libp2p::yamux::Config::default())
         .boxed()
 }

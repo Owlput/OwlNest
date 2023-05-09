@@ -112,8 +112,7 @@ impl PushHandler {
             e => {
                 warn!(
                     "Error occurred when negotiating protocol {}: {:?}",
-                    String::from_utf8(PUSH_PROTOCOL_NAME.to_vec()).unwrap(),
-                    e
+                    PUSH_PROTOCOL_NAME, e
                 )
             }
         }

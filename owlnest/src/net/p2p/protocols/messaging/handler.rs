@@ -68,7 +68,7 @@ impl Handler {
             e => {
                 warn!(
                     "Error occurred when negotiating protocol {}: {:?}",
-                    String::from_utf8(protocol::PROTOCOL_NAME.to_vec()).unwrap(),
+                    protocol::PROTOCOL_NAME,
                     e
                 )
             }
@@ -80,8 +80,8 @@ impl ConnectionHandler for Handler {
     type InEvent = InEvent;
     type OutEvent = OutEvent;
     type Error = Error;
-    type InboundProtocol = ReadyUpgrade<&'static [u8]>;
-    type OutboundProtocol = ReadyUpgrade<&'static [u8]>;
+    type InboundProtocol = ReadyUpgrade<&'static str>;
+    type OutboundProtocol = ReadyUpgrade<&'static str>;
     type InboundOpenInfo = ();
     type OutboundOpenInfo = ();
     fn listen_protocol(
@@ -209,36 +209,36 @@ impl ConnectionHandler for Handler {
         Poll::Pending
     }
     fn on_connection_event(
-        &mut self,
-        event: libp2p::swarm::handler::ConnectionEvent<
-            Self::InboundProtocol,
-            Self::OutboundProtocol,
-            Self::InboundOpenInfo,
-            Self::OutboundOpenInfo,
-        >,
-    ) {
-        match event {
-            ConnectionEvent::FullyNegotiatedInbound(FullyNegotiatedInbound {
-                protocol: stream,
-                info: (),
-            }) => {
-                self.pending_out_events
-                    .push_front(OutEvent::InboundNegotiated);
-                self.inbound = Some(super::protocol::recv(stream).boxed());
+            &mut self,
+            event: ConnectionEvent<
+                Self::InboundProtocol,
+                Self::OutboundProtocol,
+                Self::InboundOpenInfo,
+                Self::OutboundOpenInfo,
+            >,
+        ) {
+            match event {
+                ConnectionEvent::FullyNegotiatedInbound(FullyNegotiatedInbound {
+                    protocol: stream,
+                    info: (),
+                }) => {
+                    self.pending_out_events
+                        .push_front(OutEvent::InboundNegotiated);
+                    self.inbound = Some(super::protocol::recv(stream).boxed());
+                }
+                ConnectionEvent::FullyNegotiatedOutbound(FullyNegotiatedOutbound {
+                    protocol: stream,
+                    ..
+                }) => {
+                    self.pending_out_events
+                        .push_front(OutEvent::OutboundNegotiated);
+                    self.outbound = Some(OutboundState::Idle(stream));
+                }
+                ConnectionEvent::DialUpgradeError(e) => {
+                    self.on_dial_upgrade_error(e);
+                }
+                ConnectionEvent::AddressChange(_) | ConnectionEvent::ListenUpgradeError(_) => {}
             }
-            ConnectionEvent::FullyNegotiatedOutbound(FullyNegotiatedOutbound {
-                protocol: stream,
-                ..
-            }) => {
-                self.pending_out_events
-                    .push_front(OutEvent::OutboundNegotiated);
-                self.outbound = Some(OutboundState::Idle(stream));
-            }
-            ConnectionEvent::DialUpgradeError(e) => {
-                self.on_dial_upgrade_error(e);
-            }
-            ConnectionEvent::AddressChange(_) | ConnectionEvent::ListenUpgradeError(_) => {}
-        }
     }
 }
 

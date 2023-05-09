@@ -1,6 +1,7 @@
+use crate::event_bus::EventBusHandle;
+
 use super::*;
 use behaviour::Behaviour;
-use behaviour::BehaviourEvent;
 use libp2p::{
     core::{muxing::StreamMuxerBox, transport::Boxed, ConnectedPoint},
     swarm::{AddressRecord, AddressScore},
@@ -16,6 +17,7 @@ mod in_event;
 pub mod manager;
 pub mod out_event;
 pub mod swarm_op;
+mod select;
 
 pub use event_listener::*;
 pub use in_event::*;
@@ -26,7 +28,7 @@ pub type Swarm = Libp2pSwarm<Behaviour>;
 pub type SwarmOp = swarm_op::Op;
 pub type SwarmOpResult = swarm_op::OpResult;
 type SwarmTransport = Boxed<(PeerId, StreamMuxerBox)>;
-type SwarmEvent = libp2p::swarm::SwarmEvent<BehaviourEvent,<<Behaviour as libp2p::swarm::NetworkBehaviour>::ConnectionHandler as libp2p::swarm::ConnectionHandler>::Error>;
+pub(crate) type SwarmEvent = libp2p::swarm::SwarmEvent<OutEvent,<<Behaviour as libp2p::swarm::NetworkBehaviour>::ConnectionHandler as libp2p::swarm::ConnectionHandler>::Error>;
 
 pub struct Builder {
     config: SwarmConfig,
@@ -35,34 +37,54 @@ impl Builder {
     pub fn new(config: SwarmConfig) -> Self {
         Self { config }
     }
-    pub fn build(self, buffer_size: usize) -> Manager {
+    pub fn build(self, buffer_size: usize, mut ev_bus_handle: EventBusHandle) -> Manager {
         let ident = self.config.local_ident.clone();
 
         let (swarm_tx, mut swarm_rx) = mpsc::channel(buffer_size);
-        let (ev_hook_tx, mut ev_hook_rx) = mpsc::channel(buffer_size);
+        let (ev_tx, mut ev_rx) = mpsc::channel(buffer_size);
         let (protocol_tx, mut protocol_rx) = mpsc::channel(buffer_size);
         let manager = Manager {
             swarm_sender: swarm_tx,
             behaviour_sender: protocol_tx,
-            ev_listener_sender: ev_hook_tx,
         };
         let (behaviour, transport) = behaviour::Behaviour::new(self.config);
-        let mut manager_cloned = manager.clone();
         tokio::spawn(async move {
-            let mut swarm =
-                libp2p::Swarm::with_tokio_executor(transport, behaviour, ident.get_peer_id());
+            let mut swarm = libp2p::swarm::SwarmBuilder::with_tokio_executor(
+                transport,
+                behaviour,
+                ident.get_peer_id(),
+            )
+            .build();
             loop {
                 select! {
                     Some(ev) = swarm_rx.recv() => swarm_op_exec(&mut swarm, ev),
-                    Some(ev) = protocol_rx.recv() => map_protocol_ev(&mut swarm,&mut manager_cloned ,ev),
-                    swarm_event = swarm.select_next_some() => handle_swarm_event(swarm_event,&mut swarm)
+                    Some(ev) = protocol_rx.recv() => map_protocol_ev(&mut swarm,&mut ev_bus_handle ,ev).await,
+                    out_event = swarm.select_next_some() => {handle_swarm_event(&out_event,&mut swarm);ev_tx.send(out_event).await.unwrap()}
                 };
             }
         });
         tokio::spawn(async move {
+            let (kad_ev_in, kad_op_in) = kad::event_listener::setup_event_listener(8);
+            let op_in_bundle = (kad_op_in);
             loop {
-                if let Some(ev) = ev_hook_rx.recv().await {
-                    handle_ev_hook_op(ev)
+                select! {
+                    Some(ev) = ev_rx.recv() =>{
+                        match ev{
+                            SwarmEvent::Behaviour(ev)=>{
+                                match ev{
+                            OutEvent::Messaging(_) => todo!(),
+                            OutEvent::Tethering(ev) => todo!(),
+                            OutEvent::RelayServer(_) => todo!(),
+                            OutEvent::RelayClient(_) => todo!(),
+                            OutEvent::Kad(ev) => kad_ev_in.send(ev).await.unwrap(),
+                            OutEvent::Identify(_) => todo!(),
+                            OutEvent::Mdns(_) => todo!(),}
+                            }
+                            ev=>{
+                                todo!()
+                            }
+                        }
+                    }
                 }
             }
         });
@@ -71,16 +93,16 @@ impl Builder {
 }
 
 #[inline]
-fn handle_swarm_event(ev: SwarmEvent, swarm: &mut Swarm) {
+fn handle_swarm_event(ev: &SwarmEvent, swarm: &mut Swarm) {
     match ev {
-        SwarmEvent::Behaviour(event) => handle_behaviour_event(swarm, event),
+        SwarmEvent::Behaviour(event) => handle_behaviour_event(swarm, &event),
         SwarmEvent::NewListenAddr { address, .. } => info!("Listening on {:?}", address),
         SwarmEvent::ConnectionEstablished {
             peer_id, endpoint, ..
-        } => kad_add(swarm, peer_id, endpoint),
+        } => kad_add(swarm, peer_id.clone(), endpoint.clone()),
         SwarmEvent::ConnectionClosed {
             peer_id, endpoint, ..
-        } => kad_remove(swarm, peer_id, endpoint),
+        } => kad_remove(swarm, peer_id.clone(), endpoint.clone()),
         SwarmEvent::IncomingConnection {
             send_back_addr,
             local_addr,
@@ -100,6 +122,7 @@ fn handle_swarm_event(ev: SwarmEvent, swarm: &mut Swarm) {
             "Outgoing connection error to peer {:?}: {:?}",
             peer_id, error
         ),
+        #[allow(deprecated)]
         SwarmEvent::BannedPeer { peer_id, endpoint } => info!(
             "Banned peer {} tried to connect to endpoint {:?}",
             peer_id, endpoint
@@ -189,25 +212,26 @@ fn swarm_op_exec(swarm: &mut Swarm, ev: in_event::InEvent) {
 }
 
 #[inline]
-fn map_protocol_ev(swarm: &mut Swarm, manager: &mut Manager, ev: BehaviourInEvent) {
+async fn map_protocol_ev(swarm: &mut Swarm, manager: &mut EventBusHandle, ev: BehaviourInEvent) {
     match ev {
         BehaviourInEvent::Messaging(ev) => swarm.behaviour_mut().messaging.push_event(ev),
         BehaviourInEvent::Tethering(ev) => swarm.behaviour_mut().tethering.push_event(ev),
-        BehaviourInEvent::Kad(ev) => kad::map_in_event(&mut swarm.behaviour_mut().kad, manager, ev),
+        BehaviourInEvent::Kad(ev) => {
+            kad::map_in_event(&mut swarm.behaviour_mut().kad, manager, ev).await
+        }
     }
 }
 
 #[inline]
-fn handle_behaviour_event(swarm: &mut Swarm, ev: BehaviourEvent) {
+fn handle_behaviour_event(swarm: &mut Swarm, ev: &OutEvent) {
     match ev {
-        BehaviourEvent::Kad(ev) => kad::ev_dispatch(ev),
-        BehaviourEvent::Identify(ev) => identify::ev_dispatch(ev),
-        BehaviourEvent::Mdns(ev) => mdns::ev_dispatch(ev, swarm),
-        BehaviourEvent::Messaging(ev) => messaging::ev_dispatch(ev),
-        BehaviourEvent::Tethering(ev) => tethering::ev_dispatch(ev),
-        BehaviourEvent::RelayServer(ev) => relay_server::ev_dispatch(ev),
-        BehaviourEvent::RelayClient(ev) => relay_client::ev_dispatch(ev),
-        BehaviourEvent::KeepAlive(_) => {}
+        OutEvent::Kad(ev) => kad::ev_dispatch(ev),
+        OutEvent::Identify(ev) => identify::ev_dispatch(ev),
+        OutEvent::Mdns(ev) => mdns::ev_dispatch(&ev, swarm),
+        OutEvent::Messaging(ev) => messaging::ev_dispatch(ev),
+        OutEvent::Tethering(ev) => tethering::ev_dispatch(ev),
+        OutEvent::RelayServer(ev) => relay_server::ev_dispatch(ev),
+        OutEvent::RelayClient(ev) => relay_client::ev_dispatch(ev),
     }
 }
 
@@ -248,13 +272,5 @@ where
 {
     if let Err(v) = callback.send(result) {
         warn!("Failed to send callback: {:?}", v)
-    }
-}
-
-#[inline]
-fn handle_ev_hook_op(ev: EventListenerOp) {
-    match ev {
-        EventListenerOp::Add(_, _, _) => todo!(),
-        EventListenerOp::Remove(_, _) => todo!(),
     }
 }

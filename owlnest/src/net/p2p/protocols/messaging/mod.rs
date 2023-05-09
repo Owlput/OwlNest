@@ -1,65 +1,24 @@
+use crate::event_bus::listener_event::{BehaviourEvent, ListenedEvent};
 use libp2p::PeerId;
 use serde::{Deserialize, Serialize};
-use std::{
-    fmt::Display,
-    time::{Duration, SystemTime},
-};
+use std::time::Duration;
 use tokio::sync::oneshot;
 use tracing::{debug, info, warn};
 
 mod behaviour;
 pub mod cli;
-mod handler;
+mod config;
+mod error;
 pub mod event_listener;
+pub(crate) mod handler;
+mod message;
 
 pub use behaviour::Behaviour;
+pub use config::Config;
+pub use error::Error;
+pub use message::Message;
 
 use crate::net::p2p::swarm::BehaviourOpResult;
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct Message {
-    time: u128,
-    from: PeerId,
-    to: PeerId,
-    msg: String,
-}
-impl Message {
-    pub fn new(from: &PeerId, to: &PeerId, msg: String) -> Self {
-        Self {
-            time: SystemTime::now()
-                .duration_since(SystemTime::UNIX_EPOCH)
-                .unwrap()
-                .as_millis(),
-            from: from.clone(),
-            to: to.clone(),
-            msg,
-        }
-    }
-    #[inline]
-    pub fn as_bytes(&self) -> Vec<u8> {
-        serde_json::to_vec(self).unwrap()
-    }
-}
-
-#[derive(Debug, Clone,Serialize,Deserialize)]
-pub struct Config {
-    timeout: Duration,
-}
-impl Config {
-    pub fn new() -> Self {
-        Self {
-            timeout: Duration::from_secs(60),
-        }
-    }
-    pub fn with_timeout(mut self, timeout: Duration) -> Self {
-        self.timeout = timeout;
-        self
-    }
-}
-impl Default for Config {
-    fn default() -> Self {
-        Self::new()
-    }
-}
 
 #[derive(Debug)]
 pub struct InEvent {
@@ -83,7 +42,7 @@ pub enum OpResult {
     Error(Error),
 }
 
-#[derive(Debug,Serialize,Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum OutEvent {
     IncomingMessage { from: PeerId, msg: Message },
     Error(Error),
@@ -91,35 +50,13 @@ pub enum OutEvent {
     InboundNegotiated(PeerId),
     OutboundNegotiated(PeerId),
 }
-
-#[derive(Debug, Serialize, Deserialize)]
-pub enum Error {
-    ConnectionClosed,
-    VerifierMismatch,
-    PeerNotFound(PeerId),
-    Timeout,
-    UnrecognizedMessage(String), // Serialzied not available on the original type
-    IO(String),                  // Serialize not available on the original type
-}
-impl Display for Error {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Self::ConnectionClosed => f.write_str("Connection Closed"),
-            Self::VerifierMismatch => f.write_str("Message verifier mismatch"),
-            Self::Timeout => f.write_str("Message timed out"),
-            Self::PeerNotFound(peer) => f.write_str(&format!("Peer {} not connected", peer)),
-            Self::UnrecognizedMessage(msg) => f.write_str(msg),
-            Self::IO(msg) => f.write_str(msg),
-        }
-    }
-}
-impl std::error::Error for Error {
-    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
-        None
+impl Into<ListenedEvent> for OutEvent {
+    fn into(self) -> ListenedEvent {
+        ListenedEvent::Behaviours(BehaviourEvent::Messaging(self))
     }
 }
 
-pub fn ev_dispatch(ev: OutEvent) {
+pub fn ev_dispatch(ev: &OutEvent) {
     match ev {
         OutEvent::IncomingMessage { .. } => {
             println!("Incoming message: {:?}", ev);
@@ -144,6 +81,6 @@ pub fn ev_dispatch(ev: OutEvent) {
 }
 
 mod protocol {
-    pub const PROTOCOL_NAME: &[u8] = b"/owlnest/messaging/0.0.1";
+    pub const PROTOCOL_NAME: &'static str = "/owlnest/messaging/0.0.1";
     pub use crate::net::p2p::protocols::universal::protocol::{recv, send};
 }

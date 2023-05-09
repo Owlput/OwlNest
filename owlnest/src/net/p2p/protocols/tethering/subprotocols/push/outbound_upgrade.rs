@@ -5,7 +5,7 @@ use libp2p::{core::upgrade, swarm::NegotiatedSubstream};
 pub struct Upgrade;
 
 impl upgrade::UpgradeInfo for Upgrade {
-    type Info = &'static [u8];
+    type Info = &'static str;
     type InfoIter = core::iter::Once<Self::Info>;
 
     fn protocol_info(&self) -> Self::InfoIter {
@@ -18,7 +18,7 @@ impl upgrade::OutboundUpgrade<NegotiatedSubstream> for Upgrade {
     type Error = UpgradeError;
     type Future = BoxFuture<'static, Result<Self::Output, Self::Error>>;
 
-    fn upgrade_outbound(self,mut socket: NegotiatedSubstream, _info: Self::Info) -> Self::Future {
+    fn upgrade_outbound(self, mut socket: NegotiatedSubstream, _info: Self::Info) -> Self::Future {
         // Initialize a TCP style handshake
         async move {
             let syn = rand::random::<u64>();
@@ -40,12 +40,10 @@ impl upgrade::OutboundUpgrade<NegotiatedSubstream> for Upgrade {
                 return Err(UpgradeError::UnexpectedACK(syn, ack));
             }
             let mut syn_recv = [0u8; 8];
-            let syn_recv = match socket
-                .read_exact(&mut syn_recv)
-                .await{
-                    Ok(_) => u64::from_be_bytes(syn_recv),
-                    Err(e) => return Err(UpgradeError::StreamError(e.to_string())),
-                };
+            let syn_recv = match socket.read_exact(&mut syn_recv).await {
+                Ok(_) => u64::from_be_bytes(syn_recv),
+                Err(e) => return Err(UpgradeError::StreamError(e.to_string())),
+            };
 
             socket
                 .write_all(&(syn_recv.wrapping_add(1)).to_be_bytes())

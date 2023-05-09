@@ -2,7 +2,8 @@ use std::net::{SocketAddr, ToSocketAddrs};
 
 pub fn handle_utils(command: Vec<&str>) {
     if command.len() < 2 {
-        println!("No subcommands supplied. Type \"utils help\" for more information.")
+        println!("No subcommands supplied. Type \"utils help\" for more information.");
+        return;
     }
     match command[1] {
         "dns" => handle_utils_dns(command),
@@ -13,12 +14,14 @@ pub fn handle_utils(command: Vec<&str>) {
 
 fn handle_utils_dns(command: Vec<&str>) {
     if command.len() < 3 {
-        println!("No subcommands supplied. Type \"utils help\" for more information.")
+        println!("No subcommands supplied. Type \"utils help\" for more information.");
+        return;
     }
     match command[2] {
         "lookup" => {
             if command.len() < 4{
-                println!("Failed to perform lookup: missing required argument <domain name>.")
+                println!("Failed to perform lookup: missing required argument <domain name>.");
+                return;
             }
             let addresses = match command[3].to_socket_addrs() {
                 Ok(addr) => addr.collect::<Box<[SocketAddr]>>(),

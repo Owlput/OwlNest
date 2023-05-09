@@ -1,7 +1,7 @@
 use super::*;
 use libp2p::swarm::{
     derive_prelude::Either, ConnectionHandler, ConnectionHandlerSelect, ConnectionId,
-    NetworkBehaviour, NetworkBehaviourAction, NotifyHandler,
+    NetworkBehaviour, ToSwarm, NotifyHandler,
 };
 use std::{
     collections::{HashSet, VecDeque},
@@ -70,19 +70,19 @@ impl NetworkBehaviour for Behaviour {
         _cx: &mut std::task::Context<'_>,
         _params: &mut impl libp2p::swarm::PollParameters,
     ) -> Poll<
-        NetworkBehaviourAction<
+        ToSwarm<
             OutEvent,
             Either<subprotocols::exec::handler::InEvent, subprotocols::push::handler::InEvent>,
         >,
     > {
         if let Some(ev) = self.out_events.pop_back() {
-            return Poll::Ready(NetworkBehaviourAction::GenerateEvent(ev));
+            return Poll::Ready(ToSwarm::GenerateEvent(ev));
         }
         if let Some(ev) = self.in_events.pop_back() {
             let (op, handle_callback) = ev.into_inner();
             match op {
                 Op::RemoteExec(peer_id, op, result_callback) => {
-                    return Poll::Ready(NetworkBehaviourAction::NotifyHandler {
+                    return Poll::Ready(ToSwarm::NotifyHandler {
                         peer_id,
                         handler: NotifyHandler::Any,
                         event: Either::Left(exec::InEvent::new_exec(
@@ -93,7 +93,7 @@ impl NetworkBehaviour for Behaviour {
                     })
                 }
                 Op::RemoteCallback(peer_id, stamp, result) => {
-                    return Poll::Ready(NetworkBehaviourAction::NotifyHandler {
+                    return Poll::Ready(ToSwarm::NotifyHandler {
                         peer_id,
                         handler: NotifyHandler::Any,
                         event: Either::Left(exec::InEvent::new_callback(
@@ -104,7 +104,7 @@ impl NetworkBehaviour for Behaviour {
                     })
                 }
                 Op::Push(to, push_type) => {
-                    return Poll::Ready(NetworkBehaviourAction::NotifyHandler {
+                    return Poll::Ready(ToSwarm::NotifyHandler {
                         peer_id: to,
                         handler: NotifyHandler::Any,
                         event: Either::Right(push::InEvent::new(push_type, handle_callback)),
@@ -122,7 +122,7 @@ impl NetworkBehaviour for Behaviour {
         Poll::Pending
     }
 
-    fn on_swarm_event(&mut self, event: libp2p::swarm::FromSwarm<Self::ConnectionHandler>) {}
+    fn on_swarm_event(&mut self, _event: libp2p::swarm::FromSwarm<Self::ConnectionHandler>) {}
 }
 
 fn map_exec_out_event(peer_id: PeerId, ev: exec::OutEvent) -> behaviour::OutEvent {

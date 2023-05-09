@@ -1,7 +1,7 @@
 use crate::net::p2p::protocols::messaging::OpResult;
 
 use super::*;
-use libp2p::swarm::{ConnectionId, NetworkBehaviour, NetworkBehaviourAction, NotifyHandler};
+use libp2p::swarm::{ConnectionId, NetworkBehaviour, ToSwarm, NotifyHandler};
 use libp2p::PeerId;
 use std::collections::HashSet;
 use std::{collections::VecDeque, task::Poll};
@@ -79,9 +79,9 @@ impl NetworkBehaviour for Behaviour {
         &mut self,
         _cx: &mut std::task::Context<'_>,
         _params: &mut impl libp2p::swarm::PollParameters,
-    ) -> Poll<NetworkBehaviourAction<super::OutEvent, handler::InEvent>> {
+    ) -> Poll<ToSwarm<super::OutEvent, handler::InEvent>> {
         if let Some(ev) = self.out_events.pop_back() {
-            return Poll::Ready(NetworkBehaviourAction::GenerateEvent(ev));
+            return Poll::Ready(ToSwarm::GenerateEvent(ev));
         }
         if let Some(ev) = self.in_events.pop_back() {
             debug!("Received event {:#?}", ev);
@@ -90,7 +90,7 @@ impl NetworkBehaviour for Behaviour {
             match op {
                 Op::SendMessage(target, msg) => {
                     if self.connected_peers.contains(&target) {
-                        return Poll::Ready(NetworkBehaviourAction::NotifyHandler {
+                        return Poll::Ready(ToSwarm::NotifyHandler {
                             peer_id: target,
                             handler: NotifyHandler::Any,
                             event: handler::InEvent::PostMessage(msg, callback),

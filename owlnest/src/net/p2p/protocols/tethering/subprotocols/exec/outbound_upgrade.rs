@@ -5,7 +5,7 @@ use super::*;
 pub struct Upgrade;
 
 impl upgrade::UpgradeInfo for Upgrade {
-    type Info = &'static [u8];
+    type Info = &'static str;
     type InfoIter = core::iter::Once<Self::Info>;
 
     fn protocol_info(&self) -> Self::InfoIter {

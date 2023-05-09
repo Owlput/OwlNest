@@ -6,7 +6,7 @@ pub use libp2p::identify::Behaviour;
 pub use libp2p::identify::Config;
 pub type OutEvent = Event;
 
-pub fn ev_dispatch(ev: OutEvent) {
+pub fn ev_dispatch(ev: &OutEvent) {
     match ev {
         Event::Received { peer_id, info } => info!("Identified peer {} with {:?}", peer_id, info),
         Event::Sent { peer_id } => info!(

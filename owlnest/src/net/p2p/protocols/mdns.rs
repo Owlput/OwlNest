@@ -44,15 +44,15 @@ pub fn map_in_event(ev: InEvent, behav: &mut Behaviour) {
     }
 }
 
-pub fn ev_dispatch(ev: OutEvent, swarm: &mut Swarm) {
-    match ev {
+pub fn ev_dispatch(ev: &OutEvent, swarm: &mut Swarm) {
+    match ev.clone() {
         libp2p::mdns::Event::Discovered(list) => {
-            for (peer, addr) in list {
+            for (peer, addr) in list.clone() {
                 swarm.behaviour_mut().kad.add_address(&peer, addr);
             }
         }
         libp2p::mdns::Event::Expired(list) => {
-            for (peer, addr) in list {
+            for (peer, addr) in list.clone() {
                 swarm.behaviour_mut().kad.remove_address(&peer, &addr);
             }
         }

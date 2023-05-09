@@ -7,7 +7,7 @@ pub fn handle_swarm(manager: &Manager, command: Vec<&str>) {
         println!("Error: Missing subcommands. Type \"swarm help\" for more information");
         return;
     }
-    match command[2] {
+    match command[1] {
         "help" => println!("{}", TOP_HELP_MESSAGE),
         "dial" => handle_swarm_dial(manager, command),
         "listen" => handle_swarm_listen(manager, command),
@@ -19,11 +19,11 @@ pub fn handle_swarm(manager: &Manager, command: Vec<&str>) {
 }
 
 fn handle_swarm_dial(manager: &Manager, command: Vec<&str>) {
-    if command.len() < 2 {
+    if command.len() < 3 {
         println!("Error: Missing required argument <address>, syntax: `swarm dial <address>`");
         return;
     }
-    let addr = match command[1].parse::<Multiaddr>() {
+    let addr = match command[2].parse::<Multiaddr>() {
         Ok(addr) => addr,
         Err(e) => {
             println!("Error: Failed parsing address `{}`: {}", command[1], e);
@@ -40,11 +40,11 @@ fn handle_swarm_dial(manager: &Manager, command: Vec<&str>) {
 }
 
 fn handle_swarm_listen(manager: &Manager, command: Vec<&str>) {
-    if command.len() < 2 {
+    if command.len() < 3 {
         println!("Error: Missing required argument <address>, syntax: `swarm listen <address>`");
         return;
     }
-    let addr = match command[1].parse::<Multiaddr>() {
+    let addr = match command[2].parse::<Multiaddr>() {
         Ok(addr) => addr,
         Err(e) => {
             println!("Error: Failed parsing address `{}`: {}", command[1], e);

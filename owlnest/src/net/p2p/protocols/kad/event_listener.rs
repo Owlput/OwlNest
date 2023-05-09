@@ -1,56 +1,78 @@
-use super::OutEvent;
-use libp2p::kad::QueryId;
-use tokio::{select, sync::mpsc};
+use super::*;
+use crate::event_bus::{
+    listener_event::{BehaviourListenerKind, EventListenerKind},
+    Error,
+};
+use std::collections::HashMap;
+use tokio::{
+    select,
+    sync::{mpsc, oneshot},
+};
 
 #[repr(i8)]
 #[derive(Debug)]
-pub enum EventListener {
-    OnOutboundQueryProgressed(QueryId, mpsc::Sender<OutEvent>) = 0,
+pub enum Kind {
+    OnOutboundQueryProgressed = 0,
+}
+impl Into<EventListenerKind> for Kind {
+    fn into(self) -> EventListenerKind {
+        EventListenerKind::Behaviours(BehaviourListenerKind::Kad(self))
+    }
 }
 
-pub enum EventListenerOp {
-    Add(EventListener),
-    Remove(EventListener),
+#[derive(Debug)]
+pub enum Op {
+    Add(
+        Kind,
+        mpsc::Sender<ListenedEvent>,
+        oneshot::Sender<Result<u64, Error>>,
+    ),
+    Remove(u64, oneshot::Sender<Result<(), Error>>),
 }
 
-pub fn setup_event_listener(
-    mut event_in: mpsc::Receiver<OutEvent>,
-    mut op_in: mpsc::Receiver<EventListenerOp>,
-) {
+/// Spawn a task that delegates all events to their listeners.
+pub(crate) fn setup_event_listener(
+    buffer_size: usize,
+) -> (mpsc::Sender<OutEvent>, mpsc::Sender<Op>) {
+    let (ev_tx, mut ev_rx) = mpsc::channel(buffer_size);
+    let (op_tx, mut op_rx) = mpsc::channel(8);
     tokio::spawn(async move {
-        let mut listener_store: Box<[Vec<EventListener>; 1]> = Box::new([vec![]]);
+        let mut listener_store: Box<[HashMap<u64, mpsc::Sender<ListenedEvent>>]> =
+            Box::new([HashMap::new(); 1]);
         loop {
             select! {
-                Some(ev) = event_in.recv() =>{
+                Some(ev) = ev_rx.recv() =>{
                     match ev {
                         OutEvent::OutboundQueryProgressed {
-                            id,
-                            result,
-                            stats,
-                            step,
+                            ..
                         } => {
-                            for EventListener::OnOutboundQueryProgressed(query,sender) in &mut listener_store[0] {
-                                if query.clone() == id{
-                                    let ev = OutEvent::OutboundQueryProgressed {
-                                        id:id.clone(),
-                                        result:result.clone(),
-                                        stats:stats.clone(),
-                                        step:step.clone(),
-                                    };
-                                    sender.send(ev).await.unwrap()
-                                }
+                            for (_,sender) in &listener_store[0] {
+                                sender.send(ev.clone().into()).await.unwrap();
                             }
                         }
                         _ => {}
                     }
                 }
-                Some(ev) = op_in.recv()=>{
+                Some(ev) = op_rx.recv()=>{
                     match ev{
-                        EventListenerOp::Add(listener) => {},
-                        EventListenerOp::Remove(id) => todo!(),                    
+                        Op::Add(kind,sender,callback) => {
+                            let id:u64 = rand::random();
+                            let result = match kind{
+                                Kind::OnOutboundQueryProgressed => listener_store[0].try_insert(id, sender),
+                            }.map_or(Err(Error::QueueFull), |_|Ok(id));
+                            callback.send(result).unwrap();
+                        },
+                        Op::Remove(id,callback) => {
+                            if let Some(_) = listener_store[0].remove(&id){
+                                callback.send(Ok(())).unwrap()
+                            } else {
+                                callback.send(Err(Error::NotFound)).unwrap()
+                            };
+                        },
                     }
                 }
             }
         }
     });
+    (ev_tx, op_tx)
 }

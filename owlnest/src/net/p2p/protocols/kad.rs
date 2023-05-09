@@ -1,17 +1,26 @@
 use std::str::FromStr;
 
 use libp2p::{
-    kad::{record::Key, store::MemoryStore, Kademlia, KademliaConfig, KademliaEvent},
+    kad::{record::Key, store::MemoryStore, Kademlia, KademliaConfig, KademliaEvent, QueryResult},
     PeerId,
 };
 use tokio::sync::oneshot;
-use tracing::{info, warn};
+use tracing::info;
 
-use crate::net::p2p::swarm;
+use crate::{
+    event_bus::{
+        listener_event::{BehaviourEvent, ListenedEvent},
+        EventBusHandle,
+    },
+    net::p2p::swarm,
+};
+
+use self::event_listener::Kind;
 
 pub type Behaviour = Kademlia<MemoryStore>;
 pub type Config = KademliaConfig;
 pub type OutEvent = KademliaEvent;
+pub mod cli;
 
 #[derive(Debug)]
 pub struct InEvent {
@@ -34,29 +43,53 @@ pub enum Op {
 
 #[derive(Debug)]
 pub enum OpResult {
+    PeerLookup(Vec<QueryResult>),
     BehaviourEvent(OutEvent),
 }
+impl Into<swarm::BehaviourOpResult> for OpResult {
+    fn into(self) -> swarm::BehaviourOpResult {
+        swarm::BehaviourOpResult::Kad(self)
+    }
+}
 
-pub fn map_in_event(behav: &mut Behaviour, manager: &mut swarm::Manager, ev: InEvent) {
+pub async fn map_in_event(behav: &mut Behaviour, ev_bus_handle: &EventBusHandle, ev: InEvent) {
     let (op, callback) = ev.into_inner();
     match op {
         Op::PeerLookup(peer_id) => {
+            let (mut listener_rx, listener_id) = ev_bus_handle
+                .add(Kind::OnOutboundQueryProgressed, 4)
+                .unwrap();
             let query_id = behav.get_record(Key::new(&peer_id.to_bytes()));
-            if let Err(v) = callback.send(todo!()) {
-                warn!(
-                    "Receiver dropped when sending callback `PeerLookup` with {}: {:?}",
-                    peer_id, v
-                )
-            }
+            let ev_bus_handle = ev_bus_handle.clone();
+            tokio::spawn(async move {
+                let mut results = Vec::new();
+                loop {
+                    if let Some(v) = listener_rx.recv().await {
+                        let ev: OutEvent = v.try_into().unwrap();
+                        if let OutEvent::OutboundQueryProgressed {
+                            id, result, step, ..
+                        } = ev
+                        {
+                            if query_id != id {
+                                continue;
+                            }
+                            results.push(result);
+                            if step.last {
+                                let _ = ev_bus_handle
+                                    .remove(Kind::OnOutboundQueryProgressed, listener_id)
+                                    .unwrap();
+                                callback.send(OpResult::PeerLookup(results).into()).unwrap();
+                                break;
+                            }
+                        }
+                    }
+                }
+            });
         }
     }
 }
 
-pub enum EventListener {
-    PeerLookup(OutEvent),
-}
-
-pub fn ev_dispatch(ev: OutEvent) {
+pub fn ev_dispatch(ev: &OutEvent) {
     match ev{
         KademliaEvent::InboundRequest { request } => info!("Incoming request: {:?}",request),
         KademliaEvent::OutboundQueryProgressed { id, result, stats, step } => info!("Outbound query {:?} progressed, stats: {:?}, step: {:?}, result: {:?}",id,stats,step,result),
@@ -67,45 +100,20 @@ pub fn ev_dispatch(ev: OutEvent) {
     }
 }
 
-pub fn handle_kad(manager: &swarm::Manager, command: Vec<&str>) {
-    if command.len() < 2 {
-        println!("Missing subcommands. Type \"kad help\" for more information")
-    }
-    match command[1] {
-        "lookup" => handle_kad_lookup(manager, command),
-        "help" => println!("{}", TOP_HELP_MESSAGE),
-        _ => println!("Unrecoginzed subcommands. Type \"kad help\" for more information"),
-    }
-}
-
-fn handle_kad_lookup(manager: &swarm::Manager, command: Vec<&str>) {
-    if command.len() < 3 {
-        println!("Missing required argument: <peer ID>")
-    }
-    let peer_id = match PeerId::from_str(command[2]) {
-        Ok(peer_id) => peer_id,
-        Err(e) => {
-            println!("Error: Failed parsing peer ID `{}`: {}", command[1], e);
-            return;
-        }
-    };
-    let (tx, rx) = oneshot::channel::<swarm::BehaviourOpResult>();
-    manager.blocking_behaviour_exec(swarm::BehaviourOp::Kad(Op::PeerLookup(peer_id)));
-    match rx.blocking_recv() {
-        Ok(v) => println!("Lookup request sent. Query ID: {:?}", v),
-        Err(_) => {
-            warn!("Sender dropped when waiting for callback");
-            println!("Error: unable to receive callback - sender dropped")
-        }
-    }
-}
-
-const TOP_HELP_MESSAGE: &str = r#"
-Protocol `/ipfs/kad/1.0.0`
-
-Available Subcommands:
-lookup <peer ID>        
-                Initiate a lookup for the given peer.
-"#;
-
 pub mod event_listener;
+
+impl TryFrom<ListenedEvent> for OutEvent {
+    type Error = ();
+
+    fn try_from(value: ListenedEvent) -> Result<Self, Self::Error> {
+        if let ListenedEvent::Behaviours(BehaviourEvent::Kad(ev)) = value {
+            return Ok(ev);
+        }
+        Err(())
+    }
+}
+impl Into<ListenedEvent> for OutEvent{
+    fn into(self) -> ListenedEvent {
+        ListenedEvent::Behaviours(BehaviourEvent::Kad(self))
+    }
+}

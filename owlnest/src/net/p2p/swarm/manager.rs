@@ -1,5 +1,3 @@
-use std::marker::PhantomData;
-
 use super::{*, in_event::{BehaviourOpResult, BehaviourInEvent}};
 use tokio::sync::{mpsc, oneshot};
 
@@ -8,12 +6,11 @@ use tokio::sync::{mpsc, oneshot};
 pub struct Manager {
     pub swarm_sender: mpsc::Sender<swarm::in_event::InEvent>,
     pub behaviour_sender: mpsc::Sender<in_event::BehaviourInEvent>,
-    pub ev_listener_sender:mpsc::Sender<swarm::EventListenerOp>,
 }
 
 impl Manager {
     /// Send event to the that manages local swarm
-    /// ## Panic
+    /// ### Panic
     /// Panics when receiver in the swarm task get dropped or
     /// callback sender get dropped.
     pub async fn swarm_exec(&self, op: swarm_op::Op) -> swarm_op::OpResult {
@@ -25,7 +22,7 @@ impl Manager {
         rx.await.unwrap()
     }
     /// Blocking version of method `swarm_exec`.
-    /// ## Panic
+    /// ### Panic
     /// Panics when receiver in the swarm task get dropped or
     /// callback sender get dropped.
     pub fn blocking_swarm_exec(&self, op: swarm_op::Op) -> swarm_op::OpResult {
@@ -54,14 +51,6 @@ impl Manager {
         };
         self.behaviour_sender.blocking_send(event).unwrap();
         rx.blocking_recv().unwrap()
-    }
-    pub async fn add_event_listener(&self,listener_type:EventListener,queue_legth:usize)->(u16,mpsc::Receiver<ListenedEvent>)
-    {
-        let (op_tx,op_rx) = oneshot::channel();
-        let (ev_tx,ev_rx) = mpsc::channel(queue_legth);
-        let ev = EventListenerOp::Add(listener_type,ev_tx,op_tx);
-        self.ev_listener_sender.send(ev).await.unwrap();
-        (op_rx.await.unwrap(),ev_rx)
     }
 }
 

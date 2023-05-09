@@ -6,7 +6,8 @@ use crate::net::p2p::swarm;
 
 pub fn handle_tethering(manager: &swarm::Manager, command: Vec<&str>) {
     if command.len() < 2 {
-        println!("Missing subcommands. Please type \"tethering help\" for more information")
+        println!("Missing subcommands. Please type \"tethering help\" for more information");
+        return;
     }
     match command[1] {
         "trust" => handle_trust_peer(manager, command),

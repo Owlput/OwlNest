@@ -5,7 +5,7 @@ use std::fmt::Display;
 pub struct Upgrade;
 
 impl upgrade::UpgradeInfo for Upgrade {
-    type Info = &'static [u8];
+    type Info = &'static str;
     type InfoIter = core::iter::Once<Self::Info>;
 
     fn protocol_info(&self) -> Self::InfoIter {
@@ -19,6 +19,7 @@ impl upgrade::InboundUpgrade<NegotiatedSubstream> for Upgrade {
     type Future = BoxFuture<'static, Result<Self::Output, Self::Error>>;
 
     fn upgrade_inbound(self, mut socket: NegotiatedSubstream, _: Self::Info) -> Self::Future {
+        // A TCP-style handshake.
         async move {
             let mut syn_recv = [0u8; 8];
             let syn_recv = match socket.read_exact(&mut syn_recv).await {

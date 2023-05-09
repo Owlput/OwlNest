@@ -6,6 +6,7 @@ use rustyline::{error::ReadlineError, DefaultEditor};
 
 use self::utils::handle_utils;
 
+/// Make current terminal interactive
 pub fn setup_interactive_shell(ident: IdentityUnion, manager: swarm::Manager) {
     std::thread::spawn(move || {
         println!(
@@ -49,7 +50,7 @@ fn handle_command(line: String, manager: &swarm::Manager, ident: &IdentityUnion)
         "tethering" => tethering::cli::handle_tethering(manager, command),
         
         "messaging" => messaging::cli::handle_messaging(manager,ident,command),
-        "kad" => kad::handle_kad(manager, command),
+        "kad" => kad::cli::handle_kad(manager, command),
         "utils" => handle_utils(command),
         "" => {}
         _ => println!("Unrecognized command"),

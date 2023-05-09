@@ -5,7 +5,7 @@ use tracing::{debug, info};
 pub type Behaviour = client::Behaviour;
 pub type OutEvent = client::Event;
 
-pub fn ev_dispatch(ev: OutEvent) {
+pub fn ev_dispatch(ev: &OutEvent) {
     match ev {
         OutEvent::ReservationReqAccepted {
             relay_peer_id,
