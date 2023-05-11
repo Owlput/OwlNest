@@ -62,13 +62,13 @@ impl NetworkBehaviour for Behaviour {
             handler::OutEvent::Unsupported => {
                 self.out_events.push_front(OutEvent::Unsupported(peer_id))
             }
-            handler::OutEvent::InboundNegotiated => self
+            handler::OutEvent::InboundNegotiated => {self
                 .out_events
-                .push_front(OutEvent::InboundNegotiated(peer_id)),
+                .push_front(OutEvent::InboundNegotiated(peer_id));
+            }
             handler::OutEvent::OutboundNegotiated => {
                 self.out_events
                     .push_front(OutEvent::OutboundNegotiated(peer_id.clone()));
-                self.connected_peers.insert(peer_id);
             }
         }
     }
@@ -86,6 +86,7 @@ impl NetworkBehaviour for Behaviour {
 
             match op {
                 Op::SendMessage(target, msg) => {
+                    println!("{:?}",self.connected_peers.clone().into_iter().collect::<Vec<_>>());
                     if self.connected_peers.contains(&target) {
                         return Poll::Ready(ToSwarm::NotifyHandler {
                             peer_id: target,
@@ -110,20 +111,22 @@ impl NetworkBehaviour for Behaviour {
     fn handle_established_inbound_connection(
         &mut self,
         _connection_id: ConnectionId,
-        _peer: PeerId,
+        peer: PeerId,
         _local_addr: &libp2p::Multiaddr,
         _remote_addr: &libp2p::Multiaddr,
     ) -> Result<libp2p::swarm::THandler<Self>, libp2p::swarm::ConnectionDenied> {
+        self.connected_peers.insert(peer);
         Ok(handler::Handler::new(self.config.clone()))
     }
 
     fn handle_established_outbound_connection(
         &mut self,
         _connection_id: ConnectionId,
-        _peer: PeerId,
+        peer: PeerId,
         _addr: &libp2p::Multiaddr,
         _role_override: libp2p::core::Endpoint,
     ) -> Result<libp2p::swarm::THandler<Self>, libp2p::swarm::ConnectionDenied> {
+        self.connected_peers.insert(peer);
         Ok(handler::Handler::new(self.config.clone()))
     }
 }

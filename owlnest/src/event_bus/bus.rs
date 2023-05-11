@@ -6,6 +6,10 @@ pub type OpOutBundle = (
     mpsc::Sender<messaging::event_listener::Op>,
     mpsc::Sender<kad::event_listener::Op>,
 );
+pub type EvInBundle = (
+    mpsc::Sender<messaging::OutEvent>,
+    mpsc::Sender<kad::OutEvent>
+);
 
 /// Spawn the task used for delegating operations to other tasks
 /// that handle the actual event listening, returns a handle for

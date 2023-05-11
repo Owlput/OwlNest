@@ -29,7 +29,7 @@ macro_rules! behaviour_select {
         use crate::*;
 
         generate_select_struct!(Behaviour{$($name:$behaviour_type,)*});
-        generate_event_select!(OutEventSelect{
+        generate_event_select!(OutEvent{
             $($behaviour:<$behaviour_type as NetworkBehaviour>::OutEvent,)*
         });
 
@@ -39,7 +39,7 @@ macro_rules! behaviour_select {
         }
         impl NetworkBehaviour for Behaviour{
             type ConnectionHandler = ConnectionHandlerSelect;
-            type OutEvent = OutEventSelect;
+            type OutEvent = OutEvent;
             fn handle_pending_inbound_connection(
                 &mut self,
                 connection_id: ConnectionId,
@@ -64,7 +64,7 @@ macro_rules! behaviour_select {
                 Self::ConnectionHandler,
                 ConnectionDenied,
             >{
-                
+
                 let handler = Self::ConnectionHandler{
                     $($name:self.$name.handle_established_inbound_connection(
                         connection_id,
@@ -74,7 +74,7 @@ macro_rules! behaviour_select {
                     )?,)*
                 };
                 Ok(handler)
-                
+
             }
             fn handle_pending_outbound_connection(
                 &mut self,
@@ -160,7 +160,7 @@ macro_rules! behaviour_select {
                         ) => {
                             return std::task::Poll::Ready(
                                 ::libp2p::swarm::derive_prelude::ToSwarm::GenerateEvent(
-                                    OutEventSelect::$behaviour(event),
+                                    OutEvent::$behaviour(event),
                                 ),
                             );
                         }
@@ -481,7 +481,7 @@ macro_rules! connection_handler_select {
                 generate_substream_protocol($($name,)*)
             }
             fn connection_keep_alive(&self) -> libp2p::swarm::KeepAlive {
-                vec![$(self.$name.connection_keep_alive(),)*].iter().max().unwrap().clone()
+                vec![$(self.$name.connection_keep_alive(),)*].iter().max().unwrap_or(&libp2p::swarm::KeepAlive::Yes).clone()
             }
 
             fn poll(
@@ -516,8 +516,10 @@ macro_rules! connection_handler_select {
                 Poll::Pending
             }
 
-            fn on_behaviour_event(&mut self, _event: Self::InEvent) {
-                todo!()
+            fn on_behaviour_event(&mut self, event: Self::InEvent) {
+                match event{
+                    $(FromBehaviourSelect::$behaviour(ev)=>self.$name.on_behaviour_event(ev),)*
+                }
             }
 
             fn on_connection_event(
@@ -583,12 +585,27 @@ macro_rules! generate_inbound_upgrade_select {
             use super::*;
             use libp2p::swarm::NegotiatedSubstream;
 
-         generate_select_enum!(#[derive(Clone)]UpgradeInfoSelect{$($behaviour:<$upgrade as upgrade::UpgradeInfo>::Info,)*});
+        generate_select_enum!(#[derive(Clone)]UpgradeInfoSelect{$($behaviour:<$upgrade as upgrade::UpgradeInfo>::Info,)*});
         impl AsRef<str> for UpgradeInfoSelect{
             fn as_ref(&self)->&str{
                 match self{
-                    $(Self::$behaviour(inner)=>inner,)*
+                    $(Self::$behaviour(inner)=>AsRef::<str>::as_ref(inner),)*
                 }
+            }
+        }
+        generate_select_struct!(#[derive(Clone)]UpgradeInfoIterSelect{$($name:Option<std::iter::Map<<<$upgrade as upgrade::UpgradeInfo>::InfoIter as IntoIterator>::IntoIter, fn(<$upgrade as upgrade::UpgradeInfo>::Info) -> UpgradeInfoSelect>>,)*});
+        impl Iterator for UpgradeInfoIterSelect{
+            type Item = UpgradeInfoSelect;
+            fn next(&mut self)->Option<UpgradeInfoSelect>{
+                $(
+                    if let Some(map) = &mut self.$name{
+                        match map.next(){
+                            Some(v)=> return Some(v),
+                            None => self.$name = None,
+                        }
+                    }
+                )*
+                None
             }
         }
 
@@ -600,10 +617,12 @@ macro_rules! generate_inbound_upgrade_select {
 
         impl upgrade::UpgradeInfo for UpgradeSelect{
             type Info = UpgradeInfoSelect;
-            type InfoIter = Vec<UpgradeInfoSelect>;
+            type InfoIter = UpgradeInfoIterSelect;
 
             fn protocol_info(&self) -> Self::InfoIter {
-                vec![$(UpgradeInfoSelect::$behaviour(self.$name.protocol_info().next().unwrap()),)*]
+                UpgradeInfoIterSelect{
+                    $($name:Some(self.$name.protocol_info().into_iter().map(UpgradeInfoSelect::$behaviour as fn(<$upgrade as upgrade::UpgradeInfo>::Info)->_)),)*
+                }
             }
         }
 
@@ -636,7 +655,7 @@ macro_rules! generate_outbound_upgrade_select {
         impl AsRef<str> for UpgradeInfoSelect{
             fn as_ref(&self)->&str{
                 match self{
-                    $(Self::$behaviour(inner)=>inner,)*
+                    $(Self::$behaviour(inner)=>AsRef::<str>::as_ref(inner),)*
                 }
             }
         }
@@ -781,8 +800,6 @@ macro_rules! generate_upgr_error_transpose {
         }
     }
 }
-
-
 
 #[macro_export]
 macro_rules! generate_select_enum {

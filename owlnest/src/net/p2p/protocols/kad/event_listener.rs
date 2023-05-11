@@ -31,7 +31,7 @@ pub enum Op {
 }
 
 /// Spawn a task that delegates all events to their listeners.
-pub(crate) fn setup_event_listener(
+pub fn setup_event_listener(
     buffer_size: usize,
 ) -> (mpsc::Sender<OutEvent>, mpsc::Sender<Op>) {
     let (ev_tx, mut ev_rx) = mpsc::channel(buffer_size);

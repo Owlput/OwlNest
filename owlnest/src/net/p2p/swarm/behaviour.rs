@@ -1,20 +1,32 @@
+use crate::behaviour_select;
+
 use super::*;
 
 use libp2p::core::transport::{Boxed, OrTransport, Transport};
-use libp2p::core::upgrade;
+// use libp2p::core::upgrade;
 use libp2p::swarm::NetworkBehaviour;
 
 /// Combined behaviour for libp2p swarm.
-#[derive(NetworkBehaviour)]
-#[behaviour(out_event = "OutEvent")]
-pub struct Behaviour {
-    pub messaging: messaging::Behaviour,
-    pub tethering: tethering::Behaviour,
-    pub relay_server: relay_server::Behaviour,
-    pub relay_client: relay_client::Behaviour,
-    pub kad: kad::Behaviour,
-    pub identify: identify::Behaviour,
-    pub mdns: mdns::Behaviour,
+// #[derive(NetworkBehaviour)]
+// #[behaviour(out_event = "OutEvent")]
+// pub struct Behaviour {
+//     pub messaging: messaging::Behaviour,
+//     pub tethering: tethering::Behaviour,
+//     pub relay_server: relay_server::Behaviour,
+//     pub relay_client: relay_client::Behaviour,
+//     pub kad: kad::Behaviour,
+//     pub identify: identify::Behaviour,
+//     pub mdns: mdns::Behaviour,
+// }
+behaviour_select!{
+    messaging=>Messaging:messaging::Behaviour,
+    tethering=>Tethering:tethering::Behaviour,
+    relay_server=>RelayServer:relay_server::Behaviour,
+    relay_client=> RelayClient:relay_client::Behaviour,
+     kad=>Kad:kad::Behaviour,
+    identify=>Identify:identify::Behaviour,
+    mdns=> Mdns:mdns::Behaviour,
+
 }
 impl Behaviour {
     pub fn new(config: SwarmConfig) -> (Self, SwarmTransport) {
@@ -52,7 +64,7 @@ where
     StreamSink: AsyncRead + AsyncWrite + Send + Unpin + 'static,
 {
     transport
-        .upgrade(upgrade::Version::V1)
+        .upgrade(libp2p::core::upgrade::Version::V1)
         .authenticate(libp2p::noise::Config::new(&ident.get_keypair()).unwrap())
         .multiplex(libp2p::yamux::Config::default())
         .boxed()

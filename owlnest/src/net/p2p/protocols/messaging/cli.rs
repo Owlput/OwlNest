@@ -56,7 +56,6 @@ pub fn handle_message_send(manager: &swarm::Manager, ident: &IdentityUnion, comm
             OpResult::Error(e) => println!("Failed to send message: {}", e),
         }
     }
-    todo!()
 }
 
 const TOP_HELP_MESSAGE: &str = r#"

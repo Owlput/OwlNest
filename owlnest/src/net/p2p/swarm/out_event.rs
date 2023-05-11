@@ -6,17 +6,18 @@ use libp2p::{
     TransportError,
 };
 use tokio::sync::mpsc;
+pub use behaviour::OutEvent;
 
-#[derive(Debug)]
-pub enum OutEvent {
-    Messaging(messaging::OutEvent),
-    Tethering(tethering::OutEvent),
-    RelayClient(relay_client::OutEvent),
-    RelayServer(relay_server::OutEvent),
-    Identify(identify::OutEvent),
-    Mdns(mdns::OutEvent),
-    Kad(kad::OutEvent),
-}
+// #[derive(Debug)]
+// pub enum OutEvent {
+//     Messaging(messaging::OutEvent),
+//     Tethering(tethering::OutEvent),
+//     RelayClient(relay_client::OutEvent),
+//     RelayServer(relay_server::OutEvent),
+//     Identify(identify::OutEvent),
+//     Mdns(mdns::OutEvent),
+//     Kad(kad::OutEvent),
+// }
 impl From<tethering::OutEvent> for OutEvent {
     fn from(value: tethering::OutEvent) -> Self {
         OutEvent::Tethering(value)

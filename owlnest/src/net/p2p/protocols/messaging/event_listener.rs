@@ -27,7 +27,7 @@ impl Into<EventListenerKind> for Kind {
     }
 }
 
-pub(crate) fn setup_event_listener() -> (mpsc::Sender<OutEvent>, mpsc::Sender<Op>) {
+pub fn setup_event_listener() -> (mpsc::Sender<OutEvent>, mpsc::Sender<Op>) {
     let (ev_tx, mut ev_rx) = mpsc::channel(8);
     let (op_tx, mut op_rx) = mpsc::channel(8);
     let listener_store:ListenerStore = Box::new([HashMap::new(); 1]);
@@ -41,10 +41,7 @@ pub(crate) fn setup_event_listener() -> (mpsc::Sender<OutEvent>, mpsc::Sender<Op
                                 listener.send(ev.clone().into()).await.unwrap()
                             }
                         },
-                        OutEvent::Error(_) => todo!(),
-                        OutEvent::Unsupported(_) => todo!(),
-                        OutEvent::InboundNegotiated(_) => todo!(),
-                        OutEvent::OutboundNegotiated(_) => todo!(),
+                        _=>{}
                     }
                 }
                 Some(op) = op_rx.recv()=>{}

@@ -1,4 +1,4 @@
-use crate::event_bus::EventBusHandle;
+use crate::event_bus::{bus::EvInBundle, EventBusHandle};
 
 use super::*;
 use behaviour::Behaviour;
@@ -16,8 +16,8 @@ pub mod event_listener;
 mod in_event;
 pub mod manager;
 pub mod out_event;
-pub mod swarm_op;
 mod select;
+pub mod swarm_op;
 
 pub use event_listener::*;
 pub use in_event::*;
@@ -37,11 +37,15 @@ impl Builder {
     pub fn new(config: SwarmConfig) -> Self {
         Self { config }
     }
-    pub fn build(self, buffer_size: usize, mut ev_bus_handle: EventBusHandle) -> Manager {
+    pub fn build(
+        self,
+        buffer_size: usize,
+        mut ev_bus_handle: EventBusHandle,
+        ev_bus_event_in: EvInBundle,
+    ) -> Manager {
         let ident = self.config.local_ident.clone();
-
+        let (messaging_tx, kad_tx) = ev_bus_event_in;
         let (swarm_tx, mut swarm_rx) = mpsc::channel(buffer_size);
-        let (ev_tx, mut ev_rx) = mpsc::channel(buffer_size);
         let (protocol_tx, mut protocol_rx) = mpsc::channel(buffer_size);
         let manager = Manager {
             swarm_sender: swarm_tx,
@@ -57,35 +61,19 @@ impl Builder {
             .build();
             loop {
                 select! {
-                    Some(ev) = swarm_rx.recv() => swarm_op_exec(&mut swarm, ev),
-                    Some(ev) = protocol_rx.recv() => map_protocol_ev(&mut swarm,&mut ev_bus_handle ,ev).await,
-                    out_event = swarm.select_next_some() => {handle_swarm_event(&out_event,&mut swarm);ev_tx.send(out_event).await.unwrap()}
-                };
-            }
-        });
-        tokio::spawn(async move {
-            let (kad_ev_in, kad_op_in) = kad::event_listener::setup_event_listener(8);
-            let op_in_bundle = (kad_op_in);
-            loop {
-                select! {
-                    Some(ev) = ev_rx.recv() =>{
-                        match ev{
-                            SwarmEvent::Behaviour(ev)=>{
-                                match ev{
-                            OutEvent::Messaging(_) => todo!(),
-                            OutEvent::Tethering(ev) => todo!(),
-                            OutEvent::RelayServer(_) => todo!(),
-                            OutEvent::RelayClient(_) => todo!(),
-                            OutEvent::Kad(ev) => kad_ev_in.send(ev).await.unwrap(),
-                            OutEvent::Identify(_) => todo!(),
-                            OutEvent::Mdns(_) => todo!(),}
-                            }
-                            ev=>{
-                                todo!()
-                            }
-                        }
-                    }
+                                    Some(ev) = swarm_rx.recv() => swarm_op_exec(&mut swarm, ev),
+                                    Some(ev) = protocol_rx.recv() => map_protocol_ev(&mut swarm,&mut ev_bus_handle ,ev).await,
+                                    out_event = swarm.select_next_some() => {handle_swarm_event(&out_event,&mut swarm);
+                                        match out_event{
+                    libp2p_swarm::SwarmEvent::Behaviour(ev) => match ev{
+                    OutEvent::Messaging(ev) => messaging_tx.send(ev).await.unwrap(),
+                    OutEvent::Kad(ev) => kad_tx.send(ev).await.unwrap(),
+                    _=>{}
+                },
+                    _ => {}
                 }
+                                    }
+                                };
             }
         });
         manager
@@ -95,7 +83,7 @@ impl Builder {
 #[inline]
 fn handle_swarm_event(ev: &SwarmEvent, swarm: &mut Swarm) {
     match ev {
-        SwarmEvent::Behaviour(event) => handle_behaviour_event(swarm, &event),
+        SwarmEvent::Behaviour(event) => handle_behaviour_event(swarm, event),
         SwarmEvent::NewListenAddr { address, .. } => info!("Listening on {:?}", address),
         SwarmEvent::ConnectionEstablished {
             peer_id, endpoint, ..
