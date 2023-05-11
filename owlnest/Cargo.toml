@@ -9,6 +9,7 @@ crate-type=["lib"]
 [dependencies]
 tokio ={version="1",features = ["full"]}
 libp2p = {path="../../../rust-libp2p/libp2p", features=["full"]}
+libp2p-swarm = {path="../../../rust-libp2p/swarm"}
 tracing = "0.1"
 tracing-subscriber = "0.3"
 serde = { version = "1", features = ["derive"] }

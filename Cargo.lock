@@ -3140,6 +3140,7 @@ dependencies = [
  "futures",
  "futures-timer",
  "libp2p",
+ "libp2p-swarm",
  "owlnest-proc",
  "rand 0.8.5",
  "rustyline",
