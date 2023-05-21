@@ -1,59 +1,49 @@
 use std::{io, num::NonZeroU32};
 
 use super::*;
+pub use behaviour::ToSwarmEvent;
 use libp2p::{
     swarm::{derive_prelude::ListenerId, ConnectionError, DialError, ListenError},
     TransportError,
 };
 use tokio::sync::mpsc;
-pub use behaviour::OutEvent;
 
-// #[derive(Debug)]
-// pub enum OutEvent {
-//     Messaging(messaging::OutEvent),
-//     Tethering(tethering::OutEvent),
-//     RelayClient(relay_client::OutEvent),
-//     RelayServer(relay_server::OutEvent),
-//     Identify(identify::OutEvent),
-//     Mdns(mdns::OutEvent),
-//     Kad(kad::OutEvent),
-// }
-impl From<tethering::OutEvent> for OutEvent {
+impl From<tethering::OutEvent> for ToSwarmEvent {
     fn from(value: tethering::OutEvent) -> Self {
-        OutEvent::Tethering(value)
+        ToSwarmEvent::Tethering(value)
     }
 }
-impl From<messaging::OutEvent> for OutEvent {
+impl From<messaging::OutEvent> for ToSwarmEvent {
     fn from(value: messaging::OutEvent) -> Self {
-        OutEvent::Messaging(value)
+        ToSwarmEvent::Messaging(value)
     }
 }
-impl From<mdns::OutEvent> for OutEvent {
+impl From<mdns::OutEvent> for ToSwarmEvent {
     fn from(value: mdns::OutEvent) -> Self {
-        OutEvent::Mdns(value)
+        ToSwarmEvent::Mdns(value)
     }
 }
-impl From<kad::OutEvent> for OutEvent {
+impl From<kad::OutEvent> for ToSwarmEvent {
     fn from(value: kad::OutEvent) -> Self {
-        OutEvent::Kad(value)
+        ToSwarmEvent::Kad(value)
     }
 }
-impl From<relay_client::OutEvent> for OutEvent {
+impl From<relay_client::OutEvent> for ToSwarmEvent {
     fn from(value: relay_client::OutEvent) -> Self {
-        OutEvent::RelayClient(value)
+        ToSwarmEvent::RelayClient(value)
     }
 }
-impl From<relay_server::OutEvent> for OutEvent {
+impl From<relay_server::OutEvent> for ToSwarmEvent {
     fn from(value: relay_server::OutEvent) -> Self {
-        OutEvent::RelayServer(value)
+        ToSwarmEvent::RelayServer(value)
     }
 }
-impl From<identify::OutEvent> for OutEvent {
+impl From<identify::OutEvent> for ToSwarmEvent {
     fn from(value: identify::OutEvent) -> Self {
-        OutEvent::Identify(value)
+        ToSwarmEvent::Identify(value)
     }
 }
-impl From<void::Void> for OutEvent{
+impl From<void::Void> for ToSwarmEvent {
     fn from(_value: void::Void) -> Self {
         unreachable!()
     }
@@ -188,7 +178,7 @@ impl TryFrom<super::SwarmEvent> for SwarmEvent {
                 peer_id,
                 endpoint,
                 num_established,
-                concurrent_dial_errors,
+                concurrent_dial_errors: concurrent_dial_errors,
                 established_in,
             },
             libp2p::swarm::SwarmEvent::ConnectionClosed {
@@ -200,7 +190,7 @@ impl TryFrom<super::SwarmEvent> for SwarmEvent {
                 peer_id,
                 endpoint,
                 num_established,
-                cause,
+                cause: cause,
             },
             libp2p::swarm::SwarmEvent::IncomingConnection {
                 local_addr,
@@ -216,10 +206,13 @@ impl TryFrom<super::SwarmEvent> for SwarmEvent {
             } => Self::IncomingConnectionError {
                 local_addr,
                 send_back_addr,
-                error,
+                error: error,
             },
             libp2p::swarm::SwarmEvent::OutgoingConnectionError { peer_id, error } => {
-                Self::OutgoingConnectionError { peer_id, error }
+                Self::OutgoingConnectionError {
+                    peer_id,
+                    error: error,
+                }
             }
             libp2p::swarm::SwarmEvent::NewListenAddr {
                 listener_id,
@@ -242,10 +235,13 @@ impl TryFrom<super::SwarmEvent> for SwarmEvent {
             } => Self::ListenerClosed {
                 listener_id,
                 addresses,
-                reason,
+                reason: reason,
             },
             libp2p::swarm::SwarmEvent::ListenerError { listener_id, error } => {
-                Self::ListenerError { listener_id, error }
+                Self::ListenerError {
+                    listener_id,
+                    error: error,
+                }
             }
             libp2p::swarm::SwarmEvent::Dialing(peer_id) => Self::Dialing(peer_id),
         };

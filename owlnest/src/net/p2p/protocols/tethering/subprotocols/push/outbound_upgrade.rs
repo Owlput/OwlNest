@@ -1,6 +1,6 @@
 use super::PUSH_PROTOCOL_NAME;
 use futures::{future::BoxFuture, AsyncReadExt, AsyncWriteExt, FutureExt};
-use libp2p::{core::upgrade, swarm::NegotiatedSubstream};
+use libp2p::{core::upgrade, swarm::Stream};
 
 pub struct Upgrade;
 
@@ -13,12 +13,12 @@ impl upgrade::UpgradeInfo for Upgrade {
     }
 }
 
-impl upgrade::OutboundUpgrade<NegotiatedSubstream> for Upgrade {
-    type Output = NegotiatedSubstream;
+impl upgrade::OutboundUpgrade<Stream> for Upgrade {
+    type Output = Stream;
     type Error = UpgradeError;
     type Future = BoxFuture<'static, Result<Self::Output, Self::Error>>;
 
-    fn upgrade_outbound(self, mut socket: NegotiatedSubstream, _info: Self::Info) -> Self::Future {
+    fn upgrade_outbound(self, mut socket: Stream, _info: Self::Info) -> Self::Future {
         // Initialize a TCP style handshake
         async move {
             let syn = rand::random::<u64>();

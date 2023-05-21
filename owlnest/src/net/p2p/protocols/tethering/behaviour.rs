@@ -48,13 +48,13 @@ impl Behaviour {
 impl NetworkBehaviour for Behaviour {
     type ConnectionHandler =
         ConnectionHandlerSelect<push::handler::PushHandler, exec::handler::ExecHandler>;
-    type OutEvent = OutEvent;
+    type ToSwarm = OutEvent;
 
     fn on_connection_handler_event(
         &mut self,
         peer_id: PeerId,
         _connection_id: ConnectionId,
-        event: <Self::ConnectionHandler as libp2p::swarm::ConnectionHandler>::OutEvent,
+        event: <Self::ConnectionHandler as libp2p::swarm::ConnectionHandler>::ToBehaviour,
     ) {
         let out_event = match event {
             Either::Right(ev) => map_exec_out_event(peer_id, ev),

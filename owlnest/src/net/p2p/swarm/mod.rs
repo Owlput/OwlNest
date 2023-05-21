@@ -1,4 +1,4 @@
-use crate::event_bus::{bus::EvInBundle, EventBusHandle};
+use crate::event_bus::{Handle, bus::EventTap};
 
 use super::*;
 use behaviour::Behaviour;
@@ -16,19 +16,18 @@ pub mod event_listener;
 mod in_event;
 pub mod manager;
 pub mod out_event;
-mod select;
 pub mod swarm_op;
 
 pub use event_listener::*;
 pub use in_event::*;
 pub use manager::Manager;
-pub use out_event::OutEvent;
+pub use out_event::ToSwarmEvent;
 
 pub type Swarm = Libp2pSwarm<Behaviour>;
 pub type SwarmOp = swarm_op::Op;
 pub type SwarmOpResult = swarm_op::OpResult;
 type SwarmTransport = Boxed<(PeerId, StreamMuxerBox)>;
-pub(crate) type SwarmEvent = libp2p::swarm::SwarmEvent<OutEvent,<<Behaviour as libp2p::swarm::NetworkBehaviour>::ConnectionHandler as libp2p::swarm::ConnectionHandler>::Error>;
+pub(crate) type SwarmEvent = libp2p::swarm::SwarmEvent<ToSwarmEvent,<<Behaviour as libp2p::swarm::NetworkBehaviour>::ConnectionHandler as libp2p::swarm::ConnectionHandler>::Error>;
 
 pub struct Builder {
     config: SwarmConfig,
@@ -37,14 +36,8 @@ impl Builder {
     pub fn new(config: SwarmConfig) -> Self {
         Self { config }
     }
-    pub fn build(
-        self,
-        buffer_size: usize,
-        mut ev_bus_handle: EventBusHandle,
-        ev_bus_event_in: EvInBundle,
-    ) -> Manager {
+    pub fn build(self, buffer_size: usize, mut ev_bus_handle: Handle, mut ev_tap:EventTap) -> Manager {
         let ident = self.config.local_ident.clone();
-        let (messaging_tx, kad_tx) = ev_bus_event_in;
         let (swarm_tx, mut swarm_rx) = mpsc::channel(buffer_size);
         let (protocol_tx, mut protocol_rx) = mpsc::channel(buffer_size);
         let manager = Manager {
@@ -61,19 +54,16 @@ impl Builder {
             .build();
             loop {
                 select! {
-                                    Some(ev) = swarm_rx.recv() => swarm_op_exec(&mut swarm, ev),
-                                    Some(ev) = protocol_rx.recv() => map_protocol_ev(&mut swarm,&mut ev_bus_handle ,ev).await,
-                                    out_event = swarm.select_next_some() => {handle_swarm_event(&out_event,&mut swarm);
-                                        match out_event{
-                    libp2p_swarm::SwarmEvent::Behaviour(ev) => match ev{
-                    OutEvent::Messaging(ev) => messaging_tx.send(ev).await.unwrap(),
-                    OutEvent::Kad(ev) => kad_tx.send(ev).await.unwrap(),
-                    _=>{}
-                },
-                    _ => {}
-                }
-                                    }
-                                };
+                    Some(ev) = swarm_rx.recv() => swarm_op_exec(&mut swarm, ev),
+                    Some(ev) = protocol_rx.recv() => map_protocol_ev(&mut swarm,&mut ev_bus_handle ,ev).await,
+                    out_event = swarm.select_next_some() => {
+                        handle_swarm_event(&out_event,&mut swarm);
+                        match out_event {
+                            libp2p_swarm::SwarmEvent::Behaviour(ev) => ev_tap.send(ev).await.unwrap(),
+                            _ => {}
+                        }
+                    }
+                };
             }
         });
         manager
@@ -195,7 +185,7 @@ fn swarm_op_exec(swarm: &mut Swarm, ev: in_event::InEvent) {
 }
 
 #[inline]
-async fn map_protocol_ev(swarm: &mut Swarm, manager: &mut EventBusHandle, ev: BehaviourInEvent) {
+async fn map_protocol_ev(swarm: &mut Swarm, manager: &mut Handle, ev: BehaviourInEvent) {
     match ev {
         BehaviourInEvent::Messaging(ev) => swarm.behaviour_mut().messaging.push_event(ev),
         BehaviourInEvent::Tethering(ev) => swarm.behaviour_mut().tethering.push_event(ev),
@@ -206,15 +196,16 @@ async fn map_protocol_ev(swarm: &mut Swarm, manager: &mut EventBusHandle, ev: Be
 }
 
 #[inline]
-fn handle_behaviour_event(swarm: &mut Swarm, ev: &OutEvent) {
+fn handle_behaviour_event(swarm: &mut Swarm, ev: &ToSwarmEvent) {
+    use out_event::ToSwarmEvent::*;
     match ev {
-        OutEvent::Kad(ev) => kad::ev_dispatch(ev),
-        OutEvent::Identify(ev) => identify::ev_dispatch(ev),
-        OutEvent::Mdns(ev) => mdns::ev_dispatch(&ev, swarm),
-        OutEvent::Messaging(ev) => messaging::ev_dispatch(ev),
-        OutEvent::Tethering(ev) => tethering::ev_dispatch(ev),
-        OutEvent::RelayServer(ev) => relay_server::ev_dispatch(ev),
-        OutEvent::RelayClient(ev) => relay_client::ev_dispatch(ev),
+        Kad(ev) => kad::ev_dispatch(ev),
+        Identify(ev) => identify::ev_dispatch(ev),
+        Mdns(ev) => mdns::ev_dispatch(&ev, swarm),
+        Messaging(ev) => messaging::ev_dispatch(ev),
+        Tethering(ev) => tethering::ev_dispatch(ev),
+        RelayServer(ev) => relay_server::ev_dispatch(ev),
+        RelayClient(ev) => relay_client::ev_dispatch(ev),
     }
 }
 

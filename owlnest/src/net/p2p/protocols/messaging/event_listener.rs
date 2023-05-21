@@ -1,52 +1,19 @@
-use std::collections::HashMap;
-use super::OutEvent;
-use crate::event_bus::{listener_event::*, Error};
-use tokio::{
-    select,
-    sync::{mpsc, oneshot},
-};
-type ListenerStore = Box<[HashMap<u64, mpsc::Sender<ListenedEvent>>]>;
 
-#[derive(Debug)]
-pub enum Op {
-    Add(
-        Kind,
-        mpsc::Sender<ListenedEvent>,
-        oneshot::Sender<Result<u64, Error>>,
-    ),
-    Remove(u64, oneshot::Sender<Result<(), Error>>),
-}
+use crate::event_bus::prelude::*;
+use super::protocol::PROTOCOL_NAME;
 
-#[derive(Debug)]
+#[repr(u8)]
+#[derive(Debug, PartialEq, Eq, Clone)]
 pub enum Kind {
-    OnIncomingMessage,
+    IncomingMessage = 0,
 }
-impl Into<EventListenerKind> for Kind {
-    fn into(self) -> EventListenerKind {
-        EventListenerKind::Behaviours(BehaviourListenerKind::Messaging(self))
+impl std::hash::Hash for Kind{
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        format!("{}:{:?}",PROTOCOL_NAME,self).hash(state);
     }
 }
-
-pub fn setup_event_listener() -> (mpsc::Sender<OutEvent>, mpsc::Sender<Op>) {
-    let (ev_tx, mut ev_rx) = mpsc::channel(8);
-    let (op_tx, mut op_rx) = mpsc::channel(8);
-    let listener_store:ListenerStore = Box::new([HashMap::new(); 1]);
-    tokio::spawn(async move {
-        loop {
-            select! {
-                Some(ev) = ev_rx.recv()=>{
-                    match ev{
-                        OutEvent::IncomingMessage { .. } => {
-                            for (_,listener) in &listener_store[0]{
-                                listener.send(ev.clone().into()).await.unwrap()
-                            }
-                        },
-                        _=>{}
-                    }
-                }
-                Some(op) = op_rx.recv()=>{}
-            };
-        }
-    });
-    (ev_tx, op_tx)
+impl Into<EventKind> for Kind {
+    fn into(self) -> EventKind {
+        EventKind::Behaviours(BehaviourEventKind::Messaging(self))
+    }
 }

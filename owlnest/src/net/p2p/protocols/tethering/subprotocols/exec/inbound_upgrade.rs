@@ -1,5 +1,5 @@
 use super::*;
-use libp2p::{core::upgrade, swarm::NegotiatedSubstream};
+use libp2p::{core::upgrade, swarm::Stream};
 use std::fmt::Display;
 
 pub struct Upgrade;
@@ -13,12 +13,12 @@ impl upgrade::UpgradeInfo for Upgrade {
     }
 }
 
-impl upgrade::InboundUpgrade<NegotiatedSubstream> for Upgrade {
-    type Output = NegotiatedSubstream;
+impl upgrade::InboundUpgrade<Stream> for Upgrade {
+    type Output = Stream;
     type Error = UpgradeError;
     type Future = BoxFuture<'static, Result<Self::Output, Self::Error>>;
 
-    fn upgrade_inbound(self, mut socket: NegotiatedSubstream, _: Self::Info) -> Self::Future {
+    fn upgrade_inbound(self, mut socket: Stream, _: Self::Info) -> Self::Future {
         // A TCP-style handshake.
         async move {
             let mut syn_recv = [0u8; 8];

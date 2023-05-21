@@ -33,16 +33,16 @@ impl Behaviour {
 
 impl NetworkBehaviour for Behaviour {
     type ConnectionHandler = handler::Handler;
-    type OutEvent = OutEvent;
+    type ToSwarm = OutEvent;
 
     fn on_connection_handler_event(
         &mut self,
         peer_id: PeerId,
         _connection_id: ConnectionId,
-        event: <Self::ConnectionHandler as libp2p::swarm::ConnectionHandler>::OutEvent,
+        event: <Self::ConnectionHandler as libp2p::swarm::ConnectionHandler>::ToBehaviour,
     ) {
         match event {
-            handler::OutEvent::IncomingMessage(bytes) => {
+            handler::ToBehaviourEvent::IncomingMessage(bytes) => {
                 match serde_json::from_slice::<Message>(&bytes) {
                     Ok(msg) => self.out_events.push_front(OutEvent::IncomingMessage {
                         from: msg.from,
@@ -58,15 +58,15 @@ impl NetworkBehaviour for Behaviour {
                     }
                 }
             }
-            handler::OutEvent::Error(e) => self.out_events.push_front(OutEvent::Error(e)),
-            handler::OutEvent::Unsupported => {
+            handler::ToBehaviourEvent::Error(e) => self.out_events.push_front(OutEvent::Error(e)),
+            handler::ToBehaviourEvent::Unsupported => {
                 self.out_events.push_front(OutEvent::Unsupported(peer_id))
             }
-            handler::OutEvent::InboundNegotiated => {self
+            handler::ToBehaviourEvent::InboundNegotiated => {self
                 .out_events
                 .push_front(OutEvent::InboundNegotiated(peer_id));
             }
-            handler::OutEvent::OutboundNegotiated => {
+            handler::ToBehaviourEvent::OutboundNegotiated => {
                 self.out_events
                     .push_front(OutEvent::OutboundNegotiated(peer_id.clone()));
             }
@@ -76,7 +76,7 @@ impl NetworkBehaviour for Behaviour {
         &mut self,
         _cx: &mut std::task::Context<'_>,
         _params: &mut impl libp2p::swarm::PollParameters,
-    ) -> Poll<ToSwarm<super::OutEvent, handler::InEvent>> {
+    ) -> Poll<ToSwarm<super::OutEvent, handler::FromBehaviourEvent>> {
         if let Some(ev) = self.out_events.pop_back() {
             return Poll::Ready(ToSwarm::GenerateEvent(ev));
         }
@@ -91,7 +91,7 @@ impl NetworkBehaviour for Behaviour {
                         return Poll::Ready(ToSwarm::NotifyHandler {
                             peer_id: target,
                             handler: NotifyHandler::Any,
-                            event: handler::InEvent::PostMessage(msg, callback),
+                            event: handler::FromBehaviourEvent::PostMessage(msg, callback),
                         });
                     } else {
                         let result = BehaviourOpResult::Messaging(OpResult::Error(

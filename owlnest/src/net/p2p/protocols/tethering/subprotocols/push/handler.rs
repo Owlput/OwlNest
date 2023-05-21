@@ -5,7 +5,7 @@ use crate::net::p2p::{
 use futures::{future::BoxFuture, FutureExt};
 use libp2p::swarm::{
     handler::{ConnectionEvent, DialUpgradeError, FullyNegotiatedInbound, FullyNegotiatedOutbound},
-    ConnectionHandler, ConnectionHandlerEvent, KeepAlive, NegotiatedSubstream, StreamUpgradeError,
+    ConnectionHandler, ConnectionHandlerEvent, KeepAlive, Stream, StreamUpgradeError,
     SubstreamProtocol,
 };
 use serde::{Deserialize, Serialize};
@@ -31,7 +31,7 @@ impl InEvent {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug,Clone)]
 pub enum PushType {
     Msg(String),
 }
@@ -126,8 +126,8 @@ impl Default for PushHandler {
 }
 
 impl ConnectionHandler for PushHandler {
-    type InEvent = InEvent;
-    type OutEvent = OutEvent;
+    type FromBehaviour = InEvent;
+    type ToBehaviour = OutEvent;
     type Error = Error;
     type InboundProtocol = inbound_upgrade::Upgrade;
     type OutboundProtocol = outbound_upgrade::Upgrade;
@@ -140,7 +140,7 @@ impl ConnectionHandler for PushHandler {
         SubstreamProtocol::new(inbound_upgrade::Upgrade, ())
     }
 
-    fn on_behaviour_event(&mut self, event: Self::InEvent) {
+    fn on_behaviour_event(&mut self, event: Self::FromBehaviour) {
         self.pending_in_events.push_front(event);
     }
     fn connection_keep_alive(&self) -> libp2p::swarm::KeepAlive {
@@ -153,7 +153,7 @@ impl ConnectionHandler for PushHandler {
         libp2p::swarm::ConnectionHandlerEvent<
             Self::OutboundProtocol,
             Self::OutboundOpenInfo,
-            Self::OutEvent,
+            Self::ToBehaviour,
             Self::Error,
         >,
     > {
@@ -277,11 +277,11 @@ impl ConnectionHandler for PushHandler {
     }
 }
 
-type PendingInbound = BoxFuture<'static, Result<(NegotiatedSubstream, Vec<u8>), io::Error>>;
-type PendingSend = BoxFuture<'static, Result<(NegotiatedSubstream, Duration), io::Error>>;
+type PendingInbound = BoxFuture<'static, Result<(Stream, Vec<u8>), io::Error>>;
+type PendingSend = BoxFuture<'static, Result<(Stream, Duration), io::Error>>;
 
 enum OutboundState {
     OpenStream,
-    Idle(NegotiatedSubstream),
+    Idle(Stream),
     Busy(PendingSend, oneshot::Sender<BehaviourOpResult>),
 }

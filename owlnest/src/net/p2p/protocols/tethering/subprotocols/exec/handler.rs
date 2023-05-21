@@ -10,7 +10,7 @@ use libp2p::{
             ConnectionEvent, DialUpgradeError, FullyNegotiatedInbound, FullyNegotiatedOutbound,
         },
         ConnectionHandler, ConnectionHandlerEvent, KeepAlive,
-        NegotiatedSubstream, SubstreamProtocol, StreamUpgradeError,
+        Stream, SubstreamProtocol, StreamUpgradeError,
     },
 };
 use serde::{Deserialize, Serialize};
@@ -161,8 +161,8 @@ impl Default for ExecHandler {
 }
 
 impl ConnectionHandler for ExecHandler {
-    type InEvent = InEvent;
-    type OutEvent = OutEvent;
+    type FromBehaviour = InEvent;
+    type ToBehaviour = OutEvent;
     type Error = Error;
     type InboundProtocol = inbound_upgrade::Upgrade;
     type OutboundProtocol = outbound_upgrade::Upgrade;
@@ -175,7 +175,7 @@ impl ConnectionHandler for ExecHandler {
         SubstreamProtocol::new(inbound_upgrade::Upgrade, ())
     }
 
-    fn on_behaviour_event(&mut self, event: Self::InEvent) {
+    fn on_behaviour_event(&mut self, event: Self::FromBehaviour) {
         self.pending_in_events.push_front(event);
     }
     fn connection_keep_alive(&self) -> libp2p::swarm::KeepAlive {
@@ -188,7 +188,7 @@ impl ConnectionHandler for ExecHandler {
         libp2p::swarm::ConnectionHandlerEvent<
             Self::OutboundProtocol,
             Self::OutboundOpenInfo,
-            Self::OutEvent,
+            Self::ToBehaviour,
             Self::Error,
         >,
     > {
@@ -336,11 +336,11 @@ impl ConnectionHandler for ExecHandler {
     }
 }
 
-type PendingInbound = BoxFuture<'static, Result<(NegotiatedSubstream, Vec<u8>), io::Error>>;
-type PendingSend = BoxFuture<'static, Result<(NegotiatedSubstream, Duration), io::Error>>;
+type PendingInbound = BoxFuture<'static, Result<(Stream, Vec<u8>), io::Error>>;
+type PendingSend = BoxFuture<'static, Result<(Stream, Duration), io::Error>>;
 
 enum OutboundState {
     OpenStream,
-    Idle(NegotiatedSubstream),
+    Idle(Stream),
     Busy(PendingSend, oneshot::Sender<BehaviourOpResult>),
 }

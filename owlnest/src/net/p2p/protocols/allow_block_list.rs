@@ -28,7 +28,7 @@ pub mod behaviour {
     {
         type ConnectionHandler = libp2p::swarm::dummy::ConnectionHandler;
 
-        type OutEvent = super::OutEvent;
+        type ToSwarm = super::OutEvent;
 
         fn on_swarm_event(&mut self, _event: libp2p::swarm::FromSwarm<Self::ConnectionHandler>) {}
 
@@ -59,7 +59,7 @@ pub mod behaviour {
             cx: &mut std::task::Context<'_>,
             _params: &mut impl libp2p::swarm::PollParameters,
         ) -> std::task::Poll<
-            libp2p::swarm::ToSwarm<Self::OutEvent, libp2p::swarm::THandlerInEvent<Self>>,
+            libp2p::swarm::ToSwarm<Self::ToSwarm, libp2p::swarm::THandlerInEvent<Self>>,
         > {
             if let Some(v) = self.pending_disconnect.pop_back() {
                 return Poll::Ready(ToSwarm::CloseConnection {

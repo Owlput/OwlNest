@@ -23,15 +23,12 @@ pub struct SwarmConfig {
     pub kad: kad::Config,
     pub identify: identify::Config,
     pub mdns: mdns::Config,
-    
     pub messaging: messaging::Config,
-    
     pub tethering: tethering::Config,
-    
     pub relay_server: libp2p::relay::Config,
 }
 impl SwarmConfig {
-    pub fn ident(&self) -> IdentityUnion {
-        self.local_ident.clone()
+    pub fn ident(&self) -> &IdentityUnion {
+        &self.local_ident
     }
 }

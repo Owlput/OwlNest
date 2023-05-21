@@ -1,5 +1,6 @@
-use crate::event_bus::listener_event::{BehaviourEvent, ListenedEvent};
+use crate::event_bus::listened_event::{BehaviourEvent, ListenedEvent};
 use libp2p::PeerId;
+use owlnest_proc::into_kind;
 use serde::{Deserialize, Serialize};
 use std::time::Duration;
 use tokio::sync::oneshot;
@@ -31,18 +32,19 @@ impl InEvent {
     }
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum Op {
     SendMessage(PeerId, Message),
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum OpResult {
     SuccessfulPost(Duration),
     Error(Error),
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[into_kind]
 pub enum OutEvent {
     IncomingMessage { from: PeerId, msg: Message },
     Error(Error),

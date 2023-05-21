@@ -1,7 +1,7 @@
 #[macro_export]
 macro_rules! generate_event_select {
-    ($name:ident{$($behaviour:ident:$ev:ty,)*}) => {
-        #[derive(Debug)]
+    ($(#[$meta:meta])*$name:ident{$($behaviour:ident:$ev:ty,)*}) => {
+        $(#[$meta])*
         pub enum $name{
             $($behaviour($ev),)*
         }
@@ -24,22 +24,23 @@ macro_rules! generate_event_select {
 #[macro_export]
 macro_rules! behaviour_select {
     {$($name:ident=>$behaviour:ident:$behaviour_type:ty,)*} => {
-        use libp2p::swarm::*;
+        use libp2p::swarm::{NetworkBehaviour,ConnectionId,ConnectionDenied};
+        use libp2p_swarm::derive_prelude::Endpoint;
         use libp2p::{PeerId,Multiaddr};
         use crate::*;
 
         generate_select_struct!(Behaviour{$($name:$behaviour_type,)*});
-        generate_event_select!(OutEvent{
-            $($behaviour:<$behaviour_type as NetworkBehaviour>::OutEvent,)*
+        generate_event_select!(ToSwarmEvent{
+            $($behaviour:<$behaviour_type as NetworkBehaviour>::ToSwarm,)*
         });
 
 
         connection_handler_select!{
-            $($name=>$behaviour:<$behaviour_type as NetworkBehaviour>::ConnectionHandler,)*
+            $($name=>$behaviour:<$behaviour_type as libp2p::swarm::NetworkBehaviour>::ConnectionHandler,)*
         }
         impl NetworkBehaviour for Behaviour{
-            type ConnectionHandler = ConnectionHandlerSelect;
-            type OutEvent = OutEvent;
+            type ConnectionHandler = handler::ConnectionHandlerSelect;
+            type ToSwarm = ToSwarmEvent;
             fn handle_pending_inbound_connection(
                 &mut self,
                 connection_id: ConnectionId,
@@ -81,7 +82,7 @@ macro_rules! behaviour_select {
                 connection_id: ConnectionId,
                 maybe_peer: Option<PeerId>,
                 addresses: &[Multiaddr],
-                effective_role: derive_prelude::Endpoint,
+                effective_role: Endpoint,
             ) -> Result<
                 ::std::vec::Vec<Multiaddr>,
                 ConnectionDenied,
@@ -105,7 +106,7 @@ macro_rules! behaviour_select {
                 connection_id: ConnectionId,
                 peer: PeerId,
                 addr: &Multiaddr,
-                role_override: derive_prelude::Endpoint,
+                role_override: Endpoint,
             ) -> Result<
                 Self::ConnectionHandler,
                 ConnectionDenied,
@@ -124,10 +125,10 @@ macro_rules! behaviour_select {
                 &mut self,
                 peer_id: PeerId,
                 connection_id: ConnectionId,
-                event: ToBehaviourSelect,
+                event: handler::ToBehaviourSelect,
             ) {
                 match event{
-                    $(ToBehaviourSelect::$behaviour(ev)=>{
+                    $(handler::ToBehaviourSelect::$behaviour(ev)=>{
                         NetworkBehaviour::on_connection_handler_event(
                             &mut self.$name,
                             peer_id,
@@ -143,7 +144,7 @@ macro_rules! behaviour_select {
                 poll_params: &mut impl ::libp2p::swarm::derive_prelude::PollParameters,
             ) -> std::task::Poll<
                 ::libp2p::swarm::derive_prelude::ToSwarm<
-                    Self::OutEvent,
+                    Self::ToSwarm,
                     ::libp2p::swarm::derive_prelude::THandlerInEvent<Self>,
                 >,
             > {
@@ -160,7 +161,7 @@ macro_rules! behaviour_select {
                         ) => {
                             return std::task::Poll::Ready(
                                 ::libp2p::swarm::derive_prelude::ToSwarm::GenerateEvent(
-                                    OutEvent::$behaviour(event),
+                                    ToSwarmEvent::$behaviour(event),
                                 ),
                             );
                         }
@@ -181,7 +182,7 @@ macro_rules! behaviour_select {
                             return std::task::Poll::Ready(::libp2p::swarm::derive_prelude::ToSwarm::NotifyHandler {
                                 peer_id,
                                 handler,
-                                event: FromBehaviourSelect::$behaviour(event)
+                                event: handler::FromBehaviourSelect::$behaviour(event)
                             });
                         }
                         std::task::Poll::Ready(
@@ -209,7 +210,7 @@ macro_rules! behaviour_select {
                         std::task::Poll::Pending => {}
                     }
                 )*
-                Poll::Pending
+                std::task::Poll::Pending
             }
             fn on_swarm_event(
                 &mut self,
@@ -410,7 +411,9 @@ macro_rules! behaviour_select {
 #[macro_export]
 macro_rules! connection_handler_select {
     {$($name:ident=>$behaviour:ident:$handler:ty,)*} => {
-        use libp2p::swarm::handler::ConnectionEvent;
+        pub mod handler{ 
+        use crate::*;
+        use libp2p::swarm::{handler::{ConnectionEvent, ListenUpgradeError}, ConnectionHandler, ConnectionHandlerEvent, SubstreamProtocol};
         use std::task::Poll;
 
         pub mod upgrade{
@@ -423,16 +426,16 @@ macro_rules! connection_handler_select {
             }
         }
 
-        pub struct ConnectionHandlerSelect{$($name:$handler,)*}
+        pub struct ConnectionHandlerSelect{$(pub $name:$handler,)*}
         impl ConnectionHandlerSelect{
             pub fn into_inner(self)->($($handler,)*){
                 ($(self.$name,)*)
             }
         }
 
-        generate_event_select!(FromBehaviourSelect{$($behaviour:<$handler as ConnectionHandler>::InEvent,)*});
-        generate_event_select!(ToBehaviourSelect{$($behaviour:<$handler as ConnectionHandler>::OutEvent,)*});
-        generate_error_select_enum!(HandlerErrorSelect{$($behaviour:<$handler as ConnectionHandler>::Error,)*});
+        generate_event_select!(#[derive(Debug)]FromBehaviourSelect{$($behaviour:<$handler as ConnectionHandler>::FromBehaviour,)*});
+        generate_event_select!(#[derive(Debug)]ToBehaviourSelect{$($behaviour:<$handler as ConnectionHandler>::ToBehaviour,)*});
+        generate_error_select_enum!(#[derive(Debug,Clone)]HandlerErrorSelect{$($behaviour:<$handler as ConnectionHandler>::Error,)*});
         generate_inbound_upgrade_select!(inbound,upgrade_inbound{$($name=>$behaviour:<$handler as ConnectionHandler>::InboundProtocol,)*});
         generate_outbound_upgrade_select!(outbound,upgrade_outbound{$($name=>$behaviour:<$handler as ConnectionHandler>::OutboundProtocol,)*});
         generate_select_enum!(OutboundOpenInfoSelect{$($behaviour:<$handler as ConnectionHandler>::OutboundOpenInfo,)*});
@@ -444,16 +447,16 @@ macro_rules! connection_handler_select {
         impl ConnectionHandlerSelect{
             fn on_listen_upgrade_error(
                 &mut self,
-                handler::ListenUpgradeError {
+                ListenUpgradeError {
                     info,
                     error,
-                }: handler::ListenUpgradeError<
+                }: ListenUpgradeError<
                     <Self as ConnectionHandler>::InboundOpenInfo,
                     <Self as ConnectionHandler>::InboundProtocol,
                 >,
             ) {
                 match error {
-                    $(inbound::UpgradeErrorSelect::$behaviour(error)=> self.$name.on_connection_event(handler::ConnectionEvent::ListenUpgradeError(handler::ListenUpgradeError{
+                    $(inbound::UpgradeErrorSelect::$behaviour(error)=> self.$name.on_connection_event(ConnectionEvent::ListenUpgradeError(ListenUpgradeError{
                         info:info.$name,
                         error
                     })),)*
@@ -462,9 +465,9 @@ macro_rules! connection_handler_select {
         }
 
         impl libp2p::swarm::ConnectionHandler for ConnectionHandlerSelect{
-            type InEvent = FromBehaviourSelect;
+            type FromBehaviour = FromBehaviourSelect;
 
-            type OutEvent = ToBehaviourSelect;
+            type ToBehaviour = ToBehaviourSelect;
 
             type Error = HandlerErrorSelect;
 
@@ -491,7 +494,7 @@ macro_rules! connection_handler_select {
                 libp2p::swarm::ConnectionHandlerEvent<
                     Self::OutboundProtocol,
                     Self::OutboundOpenInfo,
-                    Self::OutEvent,
+                    Self::ToBehaviour,
                     Self::Error,
                 >,
             > {
@@ -516,7 +519,7 @@ macro_rules! connection_handler_select {
                 Poll::Pending
             }
 
-            fn on_behaviour_event(&mut self, event: Self::InEvent) {
+            fn on_behaviour_event(&mut self, event: Self::FromBehaviour) {
                 match event{
                     $(FromBehaviourSelect::$behaviour(ev)=>self.$name.on_behaviour_event(ev),)*
                 }
@@ -524,7 +527,7 @@ macro_rules! connection_handler_select {
 
             fn on_connection_event(
                 &mut self,
-                event: libp2p::swarm::handler::ConnectionEvent<
+                event: ConnectionEvent<
                     Self::InboundProtocol,
                     Self::OutboundProtocol,
                     Self::InboundOpenInfo,
@@ -574,7 +577,8 @@ macro_rules! connection_handler_select {
         fn generate_substream_protocol($($name:(<$handler as ConnectionHandler>::InboundProtocol,<$handler as ConnectionHandler>::InboundOpenInfo),)*)->SubstreamProtocol<inbound::UpgradeSelect,<ConnectionHandlerSelect as ConnectionHandler>::InboundOpenInfo>{
             SubstreamProtocol::new(inbound::UpgradeSelect{$($name:$name.0,)*},InboundOpenInfoSelect{$($name:$name.1,)*})
         }
-    };
+        }
+}
 }
 
 #[macro_export]
@@ -583,7 +587,7 @@ macro_rules! generate_inbound_upgrade_select {
         pub(crate) mod $direction{
             use crate::*;
             use super::*;
-            use libp2p::swarm::NegotiatedSubstream;
+            use libp2p::swarm::Stream;
 
         generate_select_enum!(#[derive(Clone)]UpgradeInfoSelect{$($behaviour:<$upgrade as upgrade::UpgradeInfo>::Info,)*});
         impl AsRef<str> for UpgradeInfoSelect{
@@ -613,7 +617,7 @@ macro_rules! generate_inbound_upgrade_select {
             UpgradeSelect{$($name:$upgrade,)*}
         );
 
-        generate_select_enum!(UpgradeErrorSelect{$($behaviour:<$upgrade as upgrade::$direction::Upgrade<NegotiatedSubstream>>::Error,)*});
+        generate_select_enum!(UpgradeErrorSelect{$($behaviour:<$upgrade as upgrade::$direction::Upgrade<Stream>>::Error,)*});
 
         impl upgrade::UpgradeInfo for UpgradeSelect{
             type Info = UpgradeInfoSelect;
@@ -626,15 +630,15 @@ macro_rules! generate_inbound_upgrade_select {
             }
         }
 
-        generate_select_enum!(SubstreamSelect{$($behaviour:<$upgrade as upgrade::$direction::Upgrade<NegotiatedSubstream>>::Output,)*});
-        generate_future_select!($($upgrade|$behaviour:<$upgrade as upgrade::$direction::Upgrade<NegotiatedSubstream>>::Future,)*); // collected future
+        generate_select_enum!(SubstreamSelect{$($behaviour:<$upgrade as upgrade::$direction::Upgrade<Stream>>::Output,)*});
+        generate_future_select!($($upgrade|$behaviour:<$upgrade as upgrade::$direction::Upgrade<Stream>>::Future,)*); // collected future
 
-        impl upgrade::$direction::Upgrade<NegotiatedSubstream> for UpgradeSelect{
+        impl upgrade::$direction::Upgrade<Stream> for UpgradeSelect{
             type Output = SubstreamSelect;
             type Future = FutureSelect;
             type Error = UpgradeErrorSelect;
 
-            fn $impl_name(self, sock: NegotiatedSubstream, info: UpgradeInfoSelect) -> Self::Future {
+            fn $impl_name(self, sock: Stream, info: UpgradeInfoSelect) -> Self::Future {
                 match info {
                     $(UpgradeInfoSelect::$behaviour(info)=>Self::Future::$behaviour(self.$name.$impl_name(sock,info)),)*
                 }
@@ -650,7 +654,7 @@ macro_rules! generate_outbound_upgrade_select {
         pub(crate) mod $direction{
             use crate::*;
             use super::*;
-            use libp2p::swarm::NegotiatedSubstream;
+            use libp2p::swarm::Stream;
         generate_select_enum!(#[derive(Clone)]UpgradeInfoSelect{$($behaviour:<$upgrade as upgrade::UpgradeInfo>::Info,)*});
         impl AsRef<str> for UpgradeInfoSelect{
             fn as_ref(&self)->&str{
@@ -663,7 +667,7 @@ macro_rules! generate_outbound_upgrade_select {
             UpgradeSelect{$($behaviour:$upgrade,)*}
         );
 
-        generate_select_enum!(UpgradeErrorSelect{$($behaviour:<$upgrade as upgrade::$direction::Upgrade<NegotiatedSubstream>>::Error,)*});
+        generate_select_enum!(UpgradeErrorSelect{$($behaviour:<$upgrade as upgrade::$direction::Upgrade<Stream>>::Error,)*});
 
         impl upgrade::UpgradeInfo for UpgradeSelect{
             type Info = UpgradeInfoSelect;
@@ -676,15 +680,15 @@ macro_rules! generate_outbound_upgrade_select {
             }
         }
 
-        generate_select_enum!(SubstreamSelect{$($behaviour:<$upgrade as upgrade::$direction::Upgrade<NegotiatedSubstream>>::Output,)*});
-        generate_future_select!($($upgrade|$behaviour:<$upgrade as upgrade::$direction::Upgrade<NegotiatedSubstream>>::Future,)*); // collected future
+        generate_select_enum!(SubstreamSelect{$($behaviour:<$upgrade as upgrade::$direction::Upgrade<Stream>>::Output,)*});
+        generate_future_select!($($upgrade|$behaviour:<$upgrade as upgrade::$direction::Upgrade<Stream>>::Future,)*); // collected future
 
-        impl upgrade::$direction::Upgrade<NegotiatedSubstream> for UpgradeSelect{
+        impl upgrade::$direction::Upgrade<Stream> for UpgradeSelect{
             type Output = SubstreamSelect;
             type Future = FutureSelect;
             type Error = UpgradeErrorSelect;
 
-            fn $impl_name(self, sock: NegotiatedSubstream, info: UpgradeInfoSelect) -> Self::Future {
+            fn $impl_name(self, sock: Stream, info: UpgradeInfoSelect) -> Self::Future {
                 match info {
                     $(UpgradeInfoSelect::$behaviour(info)=>Self::Future::$behaviour(match self{
                         Self::$behaviour(inner)=> inner.$impl_name(sock,info),
@@ -780,7 +784,7 @@ macro_rules! generate_inbound_transpose {
 #[macro_export]
 macro_rules! generate_upgr_error_transpose {
     ($($name:ident=>$behaviour:ident:$handler:ty,)*) => {
-        use libp2p::swarm::handler::{DialUpgradeError};
+        use libp2p::swarm::handler::{DialUpgradeError,StreamUpgradeError};
         generate_select_enum!(DialUpgradeErrorSelect{$($behaviour:DialUpgradeError<<$handler as ConnectionHandler>::OutboundOpenInfo,<$handler as ConnectionHandler>::OutboundProtocol>,)*});
         fn transpose_upgr_error(error:DialUpgradeError<OutboundOpenInfoSelect,outbound::UpgradeSelect>)->DialUpgradeErrorSelect{
             match error{

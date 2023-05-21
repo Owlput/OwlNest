@@ -1,12 +1,9 @@
-use crate::behaviour_select;
+use crate::{behaviour_select, event_bus::listened_event::ListenedEvent};
 
 use super::*;
 
 use libp2p::core::transport::{Boxed, OrTransport, Transport};
-// use libp2p::core::upgrade;
-use libp2p::swarm::NetworkBehaviour;
 
-/// Combined behaviour for libp2p swarm.
 // #[derive(NetworkBehaviour)]
 // #[behaviour(out_event = "OutEvent")]
 // pub struct Behaviour {
@@ -19,20 +16,20 @@ use libp2p::swarm::NetworkBehaviour;
 //     pub mdns: mdns::Behaviour,
 // }
 behaviour_select!{
-    messaging=>Messaging:messaging::Behaviour,
-    tethering=>Tethering:tethering::Behaviour,
-    relay_server=>RelayServer:relay_server::Behaviour,
-    relay_client=> RelayClient:relay_client::Behaviour,
-     kad=>Kad:kad::Behaviour,
-    identify=>Identify:identify::Behaviour,
-    mdns=> Mdns:mdns::Behaviour,
+    messaging=>Messaging:net::p2p::protocols::messaging::Behaviour,
+    tethering=>Tethering:net::p2p::protocols::tethering::Behaviour,
+    relay_server=>RelayServer:net::p2p::protocols::relay_server::Behaviour,
+    relay_client=> RelayClient:net::p2p::protocols::relay_client::Behaviour,
+     kad=>Kad:net::p2p::kad::Behaviour,
+    identify=>Identify:net::p2p::identify::Behaviour,
+    mdns=> Mdns:net::p2p::mdns::Behaviour,
 
 }
 impl Behaviour {
     pub fn new(config: SwarmConfig) -> (Self, SwarmTransport) {
         use libp2p::kad::store::MemoryStore;
 
-        let ident = config.ident();
+        let ident = config.ident().clone();
         let kad_store = MemoryStore::new(ident.get_peer_id());
         let (relayed_transport, relay_client) = libp2p::relay::client::new(ident.get_peer_id());
         let behav = Self {
@@ -52,6 +49,20 @@ impl Behaviour {
             &ident,
         );
         (behav, transport)
+    }
+}
+
+impl Into<ListenedEvent> for ToSwarmEvent{
+    fn into(self) -> ListenedEvent {
+        match self{
+            ToSwarmEvent::Messaging(ev) => ev.into(),
+            ToSwarmEvent::Tethering(ev) => ev.into(),
+            ToSwarmEvent::RelayServer(ev) => ev.into(),
+            ToSwarmEvent::RelayClient(_) => todo!(),
+            ToSwarmEvent::Kad(_) => todo!(),
+            ToSwarmEvent::Identify(_) => todo!(),
+            ToSwarmEvent::Mdns(_) => todo!(),
+        }
     }
 }
 

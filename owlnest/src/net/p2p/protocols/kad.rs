@@ -5,15 +5,9 @@ use libp2p::{
     PeerId,
 };
 use tokio::sync::oneshot;
-use tracing::info;
+use tracing::{info, warn};
 
-use crate::{
-    event_bus::{
-        listener_event::{BehaviourEvent, ListenedEvent},
-        EventBusHandle,
-    },
-    net::p2p::swarm,
-};
+use crate::{event_bus::Handle, net::p2p::swarm};
 
 use self::event_listener::Kind;
 
@@ -52,36 +46,33 @@ impl Into<swarm::BehaviourOpResult> for OpResult {
     }
 }
 
-pub async fn map_in_event(behav: &mut Behaviour, ev_bus_handle: &EventBusHandle, ev: InEvent) {
+pub async fn map_in_event(behav: &mut Behaviour, ev_bus_handle: &Handle, ev: InEvent) {
     let (op, callback) = ev.into_inner();
     match op {
         Op::PeerLookup(peer_id) => {
-            let (mut listener_rx, listener_id) = ev_bus_handle
-                .add(Kind::OnOutboundQueryProgressed, 4)
-                .unwrap();
+            let mut listener = ev_bus_handle.add(Kind::OnOutboundQueryProgressed).unwrap();
             let query_id = behav.get_record(Key::new(&peer_id.to_bytes()));
-            let ev_bus_handle = ev_bus_handle.clone();
             tokio::spawn(async move {
                 let mut results = Vec::new();
                 loop {
-                    if let Some(v) = listener_rx.recv().await {
-                        let ev: OutEvent = v.try_into().unwrap();
-                        if let OutEvent::OutboundQueryProgressed {
-                            id, result, step, ..
-                        } = ev
-                        {
-                            if query_id != id {
-                                continue;
-                            }
-                            results.push(result);
-                            if step.last {
-                                let _ = ev_bus_handle
-                                    .remove(Kind::OnOutboundQueryProgressed, listener_id)
-                                    .unwrap();
-                                callback.send(OpResult::PeerLookup(results).into()).unwrap();
-                                break;
+                    match listener.recv().await {
+                        Ok(ev) => {
+                            if let OutEvent::OutboundQueryProgressed {
+                                id, result, step, ..
+                            } = ev
+                            {
+                                if query_id != id {
+                                    continue;
+                                }
+                                results.push(result);
+                                if step.last {
+                                    drop(listener);
+                                    callback.send(OpResult::PeerLookup(results).into()).unwrap();
+                                    break;
+                                }
                             }
                         }
+                        Err(e) => warn!("{:?}", e),
                     }
                 }
             });
@@ -101,19 +92,3 @@ pub fn ev_dispatch(ev: &OutEvent) {
 }
 
 pub mod event_listener;
-
-impl TryFrom<ListenedEvent> for OutEvent {
-    type Error = ();
-
-    fn try_from(value: ListenedEvent) -> Result<Self, Self::Error> {
-        if let ListenedEvent::Behaviours(BehaviourEvent::Kad(ev)) = value {
-            return Ok(ev);
-        }
-        Err(())
-    }
-}
-impl Into<ListenedEvent> for OutEvent{
-    fn into(self) -> ListenedEvent {
-        ListenedEvent::Behaviours(BehaviourEvent::Kad(self))
-    }
-}

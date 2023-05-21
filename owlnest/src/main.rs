@@ -2,7 +2,7 @@ use std::sync::Mutex;
 
 use owlnest::{
     net::p2p::{identity::IdentityUnion, protocols},
-    *, event_bus::{EventBusHandle, bus::*},
+    *, event_bus::{Handle, bus::*},
 };
 use tracing::Level;
 
@@ -10,13 +10,12 @@ use tracing::Level;
 async fn main() {
     setup_logging();
     let ident = get_ident();
-    let (op_bundle,ev_bundle) = setup_event_listener();
-    let ev_bus_handle = setup_ev_bus(op_bundle);
-    setup_peer(ident, &ev_bus_handle,ev_bundle);
+    let (ev_bus_handle, ev_tap) = setup_ev_bus();
+    setup_peer(ident, &ev_bus_handle,ev_tap);
     let _ = tokio::signal::ctrl_c().await;
 }
 
-fn setup_peer(ident: IdentityUnion, event_bus_handle:&EventBusHandle, bus_ev_in: EvInBundle) {
+fn setup_peer(ident: IdentityUnion, event_bus_handle:&Handle, ev_tap:EventTap) {
     let swarm_config = net::p2p::SwarmConfig {
         local_ident: ident.clone(),
         kad: protocols::kad::Config::default(),
@@ -26,7 +25,7 @@ fn setup_peer(ident: IdentityUnion, event_bus_handle:&EventBusHandle, bus_ev_in:
         tethering: protocols::tethering::Config::default(),
         relay_server: protocols::relay_server::Config::default(),
     };
-    let mgr = net::p2p::swarm::Builder::new(swarm_config).build(8,event_bus_handle.clone(),bus_ev_in);
+    let mgr = net::p2p::swarm::Builder::new(swarm_config).build(8,event_bus_handle.clone(),ev_tap);
     cli::setup_interactive_shell(ident.clone(), mgr.clone());
 }
 
@@ -61,10 +60,4 @@ fn get_ident() -> IdentityUnion {
     //     },
     // }
     IdentityUnion::generate()
-}
-
-fn setup_event_listener()->(OpOutBundle,EvInBundle){
-    let (messaging_ev_in,messaging_op_in) = protocols::messaging::event_listener::setup_event_listener();
-    let (kad_ev_in,kad_op_in) = protocols::kad::event_listener::setup_event_listener(8);
-    ((messaging_op_in,kad_op_in),(messaging_ev_in,kad_ev_in))
 }
