@@ -36,7 +36,7 @@ impl Builder {
     pub fn new(config: SwarmConfig) -> Self {
         Self { config }
     }
-    pub fn build(self, buffer_size: usize, mut ev_bus_handle: Handle, mut ev_tap:EventTap) -> Manager {
+    pub fn build(self, buffer_size: usize, mut ev_bus_handle: Handle, ev_tap:EventTap) -> Manager {
         let ident = self.config.local_ident.clone();
         let (swarm_tx, mut swarm_rx) = mpsc::channel(buffer_size);
         let (protocol_tx, mut protocol_rx) = mpsc::channel(buffer_size);
@@ -59,7 +59,7 @@ impl Builder {
                     out_event = swarm.select_next_some() => {
                         handle_swarm_event(&out_event,&mut swarm);
                         match out_event {
-                            libp2p_swarm::SwarmEvent::Behaviour(ev) => ev_tap.send(ev).await.unwrap(),
+                            libp2p_swarm::SwarmEvent::Behaviour(ev) => ev_tap.send(ev.into()).await.unwrap(),
                             _ => {}
                         }
                     }

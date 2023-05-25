@@ -8,47 +8,6 @@ use libp2p::{
 };
 use tokio::sync::mpsc;
 
-impl From<tethering::OutEvent> for ToSwarmEvent {
-    fn from(value: tethering::OutEvent) -> Self {
-        ToSwarmEvent::Tethering(value)
-    }
-}
-impl From<messaging::OutEvent> for ToSwarmEvent {
-    fn from(value: messaging::OutEvent) -> Self {
-        ToSwarmEvent::Messaging(value)
-    }
-}
-impl From<mdns::OutEvent> for ToSwarmEvent {
-    fn from(value: mdns::OutEvent) -> Self {
-        ToSwarmEvent::Mdns(value)
-    }
-}
-impl From<kad::OutEvent> for ToSwarmEvent {
-    fn from(value: kad::OutEvent) -> Self {
-        ToSwarmEvent::Kad(value)
-    }
-}
-impl From<relay_client::OutEvent> for ToSwarmEvent {
-    fn from(value: relay_client::OutEvent) -> Self {
-        ToSwarmEvent::RelayClient(value)
-    }
-}
-impl From<relay_server::OutEvent> for ToSwarmEvent {
-    fn from(value: relay_server::OutEvent) -> Self {
-        ToSwarmEvent::RelayServer(value)
-    }
-}
-impl From<identify::OutEvent> for ToSwarmEvent {
-    fn from(value: identify::OutEvent) -> Self {
-        ToSwarmEvent::Identify(value)
-    }
-}
-impl From<void::Void> for ToSwarmEvent {
-    fn from(_value: void::Void) -> Self {
-        unreachable!()
-    }
-}
-
 #[derive(Debug)]
 pub enum SwarmEvent {
     ConnectionEstablished {

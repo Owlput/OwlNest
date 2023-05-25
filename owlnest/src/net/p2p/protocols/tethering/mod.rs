@@ -1,9 +1,8 @@
 use libp2p::PeerId;
 use serde::{Deserialize, Serialize};
-use std::{fmt::Debug, sync::Arc};
+use std::fmt::Debug;
 use subprotocols::*;
 use tokio::sync::oneshot;
-use crate::event_bus::prelude::*;
 
 /// `Behaviour` of this protocol.
 mod behaviour;
@@ -58,11 +57,6 @@ pub enum OutEvent {
     ExecError(exec::handler::Error),
     PushError(push::handler::Error),
     Unsupported(PeerId, Subprotocol),
-}
-impl Into<ListenedEvent> for OutEvent{
-    fn into(self) -> ListenedEvent {
-        ListenedEvent::Behaviours(BehaviourEvent::Tethering(Arc::new(self)))
-    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

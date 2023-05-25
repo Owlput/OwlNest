@@ -7,13 +7,14 @@ use libp2p::{
 use tokio::sync::oneshot;
 use tracing::{info, warn};
 
-use crate::{event_bus::Handle, net::p2p::swarm};
+use crate::{event_bus::{Handle, ToEventIdentifier}, net::p2p::swarm};
 
 use self::event_listener::Kind;
 
 pub type Behaviour = Kademlia<MemoryStore>;
 pub type Config = KademliaConfig;
 pub type OutEvent = KademliaEvent;
+pub use libp2p::kad::PROTOCOL_NAME;
 pub mod cli;
 
 #[derive(Debug)]
@@ -50,21 +51,22 @@ pub async fn map_in_event(behav: &mut Behaviour, ev_bus_handle: &Handle, ev: InE
     let (op, callback) = ev.into_inner();
     match op {
         Op::PeerLookup(peer_id) => {
-            let mut listener = ev_bus_handle.add(Kind::OnOutboundQueryProgressed).unwrap();
+            let mut listener = ev_bus_handle.add(Kind::OnOutboundQueryProgressed.event_identifier()).unwrap();
             let query_id = behav.get_record(Key::new(&peer_id.to_bytes()));
             tokio::spawn(async move {
                 let mut results = Vec::new();
                 loop {
                     match listener.recv().await {
                         Ok(ev) => {
+                            let ev_ref = ev.downcast_ref::<OutEvent>().expect("downcast to succeed");
                             if let OutEvent::OutboundQueryProgressed {
                                 id, result, step, ..
-                            } = ev
+                            } = ev_ref
                             {
-                                if query_id != id {
+                                if query_id != *id {
                                     continue;
                                 }
-                                results.push(result);
+                                results.push(result.clone());
                                 if step.last {
                                     drop(listener);
                                     callback.send(OpResult::PeerLookup(results).into()).unwrap();

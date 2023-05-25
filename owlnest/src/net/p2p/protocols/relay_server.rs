@@ -1,17 +1,8 @@
-use std::sync::Arc;
-
 pub use libp2p::relay::Config;
 use tracing::{debug, info};
 
-use crate::event_bus::prelude::*;
 pub type Behaviour = libp2p::relay::Behaviour;
 pub type OutEvent = libp2p::relay::Event;
-
-impl Into<ListenedEvent> for OutEvent {
-    fn into(self) -> ListenedEvent {
-        ListenedEvent::Behaviours(BehaviourEvent::RelayServer(Arc::new(self)))
-    }
-}
 
 pub fn ev_dispatch(ev: &OutEvent) {
     use libp2p::relay::Event::*;

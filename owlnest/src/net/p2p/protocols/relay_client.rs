@@ -1,10 +1,9 @@
 use libp2p::relay::client;
-use owlnest_proc::into_kind;
 use tracing::{debug, info};
 
 /// `Behaviour` of libp2p's `relay` protocol.
-pub type Behaviour = client::Behaviour;
-pub type OutEvent = client::Event;
+pub use client::Behaviour;
+pub use client::Event as OutEvent;
 
 pub fn ev_dispatch(ev: &client::Event) {
     use client::Event::*;

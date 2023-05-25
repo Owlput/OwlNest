@@ -1,7 +1,12 @@
 mod utils;
 
+use std::io::stdout;
+
 use crate::net::p2p::protocols::*;
 use crate::net::p2p::{identity::IdentityUnion, swarm};
+use crossterm::style::Stylize;
+use crossterm::terminal::{ClearType, Clear};
+use crossterm::ExecutableCommand;
 use rustyline::{error::ReadlineError, DefaultEditor};
 
 use self::utils::handle_utils;
@@ -9,19 +14,15 @@ use self::utils::handle_utils;
 /// Make current terminal interactive
 pub fn setup_interactive_shell(ident: IdentityUnion, manager: swarm::Manager) {
     std::thread::spawn(move || {
-        println!(
-            "{}OwlNest is now running in interactive mode, type \"help\" for more information.",
-            termion::clear::All
-        );
+        stdout().execute(Clear(ClearType::All)).unwrap();
+        println!("OwlNest is now running in interactive mode, type \"help\" for more information.");
         let manager = manager.clone();
         let mut rl = DefaultEditor::new().unwrap();
         let mut retry_times = 0u32;
         loop {
-            let line_read = rl.readline(&format!(
-                "{}>> {}",
-                termion::color::LightYellow.fg_str(),
-                termion::color::Reset.fg_str()
-            ));
+            let line_read = rl.readline(
+                &">> ".stylize().dark_cyan().to_string()
+            );
             match line_read {
                 Ok(line) => {
                     rl.add_history_entry(line.as_str()).unwrap();
@@ -43,13 +44,13 @@ fn handle_command(line: String, manager: &swarm::Manager, ident: &IdentityUnion)
         "help" => {
             println!("{}", HELP_MESSAGE)
         }
-        "clear" => println!("{}", termion::clear::BeforeCursor),
-        "id"=>println!("Local peer ID: {}",ident.get_peer_id()),
+        "clear" => drop(stdout().execute(Clear(ClearType::FromCursorUp))),
+        "id" => println!("Local peer ID: {}", ident.get_peer_id()),
         "swarm" => swarm::cli::handle_swarm(manager, command),
-        
+
         "tethering" => tethering::cli::handle_tethering(manager, command),
-        
-        "messaging" => messaging::cli::handle_messaging(manager,ident,command),
+
+        "messaging" => messaging::handle_messaging(manager, ident, command),
         "kad" => kad::cli::handle_kad(manager, command),
         "utils" => handle_utils(command),
         "" => {}
@@ -69,10 +70,6 @@ fn handle_err(e: ReadlineError, retry_times: &mut u32) -> bool {
         }
         ReadlineError::Interrupted => {
             println!("Interrupt signal received, exiting interactive shell. Repeat to exit the whole process.");
-            true
-        }
-        ReadlineError::Errno(e) => {
-            println!("Unix signal received: {:?}, exiting interactive shell", e);
             true
         }
         ReadlineError::WindowResized => false,

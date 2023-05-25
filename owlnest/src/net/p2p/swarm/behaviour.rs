@@ -1,4 +1,4 @@
-use crate::{behaviour_select, event_bus::listened_event::ListenedEvent};
+use crate::{behaviour_select, event_bus::ListenedEvent};
 
 use super::*;
 
@@ -15,7 +15,7 @@ use libp2p::core::transport::{Boxed, OrTransport, Transport};
 //     pub identify: identify::Behaviour,
 //     pub mdns: mdns::Behaviour,
 // }
-behaviour_select!{
+behaviour_select! {
     messaging=>Messaging:net::p2p::protocols::messaging::Behaviour,
     tethering=>Tethering:net::p2p::protocols::tethering::Behaviour,
     relay_server=>RelayServer:net::p2p::protocols::relay_server::Behaviour,
@@ -51,18 +51,9 @@ impl Behaviour {
         (behav, transport)
     }
 }
-
 impl Into<ListenedEvent> for ToSwarmEvent{
-    fn into(self) -> ListenedEvent {
-        match self{
-            ToSwarmEvent::Messaging(ev) => ev.into(),
-            ToSwarmEvent::Tethering(ev) => ev.into(),
-            ToSwarmEvent::RelayServer(ev) => ev.into(),
-            ToSwarmEvent::RelayClient(_) => todo!(),
-            ToSwarmEvent::Kad(_) => todo!(),
-            ToSwarmEvent::Identify(_) => todo!(),
-            ToSwarmEvent::Mdns(_) => todo!(),
-        }
+    fn into(self)->ListenedEvent{
+        ListenedEvent::new(format!("swarmEvent:{:?}",self),self)
     }
 }
 

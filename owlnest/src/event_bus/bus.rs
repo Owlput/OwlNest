@@ -1,29 +1,29 @@
+use super::{prelude::*, Handle};
+use crate::event_bus::listened_event::EventListenerOp;
 use std::{collections::HashMap, time::Duration};
 use tokio::{
     select,
-    sync::{broadcast, mpsc}, time::MissedTickBehavior,
+    sync::{broadcast, mpsc},
+    time::MissedTickBehavior,
 };
-use super::{prelude::*, Handle};
-use crate::event_bus::listened_event::EventListenerOp;
 
-pub struct EventTap {
-    inner: mpsc::Sender<ListenedEvent>,
-}
+#[derive(Debug, Clone)]
+pub struct EventTap(mpsc::Sender<ListenedEvent>);
 impl EventTap {
-    pub fn new(sender: mpsc::Sender<ListenedEvent>) -> Self {
-        Self { inner: sender }
+    pub(crate) fn new(sender: mpsc::Sender<ListenedEvent>) -> Self {
+        Self(sender)
     }
     pub fn blocking_send(
         &self,
-        value: impl Into<ListenedEvent>,
+        value: ListenedEvent,
     ) -> Result<(), mpsc::error::SendError<ListenedEvent>> {
-        self.inner.blocking_send(value.into())
+        self.0.blocking_send(value)
     }
     pub async fn send(
         &self,
-        value: impl Into<ListenedEvent>,
+        value: ListenedEvent,
     ) -> Result<(), mpsc::error::SendError<ListenedEvent>> {
-        self.inner.send(value.into()).await
+        self.0.send(value.into()).await
     }
 }
 
@@ -31,7 +31,7 @@ impl EventTap {
 /// that handle the actual event listening, returns a handle for
 /// communicating with the task using a channel.
 pub fn setup_ev_bus() -> (Handle, EventTap) {
-    let (ev_tx, mut ev_rx) = mpsc::channel(8);
+    let (ev_tx, mut ev_rx) = mpsc::channel::<ListenedEvent>(8);
     let (op_tx, mut op_rx) = mpsc::channel(8);
     let mut listener_store: HashMap<String, broadcast::Sender<ListenedEvent>> = HashMap::new();
     let mut interval = tokio::time::interval(Duration::from_secs(30));
@@ -41,28 +41,23 @@ pub fn setup_ev_bus() -> (Handle, EventTap) {
             Some(op) = op_rx.recv()=>{
                 match op{
                     EventListenerOp::Add(kind, callback_tx) => {
-                        let key = format!("{:?}",kind);
-                        if let Some((_,listener)) = listener_store.get_key_value(&key){
-                            callback_tx.send(Ok(listener.subscribe()))
+                        if let Some((_,listener)) = listener_store.get_key_value(&kind){
+                            callback_tx.send(Ok(listener.subscribe())).unwrap()
                         } else {
                             let (tx,rx) = broadcast::channel(8);
-                            listener_store.insert(key, tx);
-                            callback_tx.send(Ok(rx))
+                            listener_store.insert(kind, tx);
+                            callback_tx.send(Ok(rx)).unwrap()
                         }
                     },
                 };
             }
             Some(ev) = ev_rx.recv()=>{
-                if let Some(listener) = listener_store.get(k){
+                if let Some(listener) = listener_store.get(&ev.kind()){
 
                 }
             }
             _ = interval.tick()=>{
-                for (k,v) in listener_store{
-                    if v.receiver_count() == 0{
-                        listener_store.remove(&k);
-                    }
-                }
+                listener_store.drain_filter(|_,v|v.receiver_count() == 0).count();
             }
         }
     });

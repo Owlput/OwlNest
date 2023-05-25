@@ -1,10 +1,34 @@
-use std::{fmt::Debug, marker::PhantomData};
-
-use self::listened_event::{EventKind, EventListenerOp, ListenedEvent};
+use self::listened_event::EventListenerOp;
+use std::{any::Any, fmt::Debug, sync::Arc};
 use tokio::sync::{broadcast, mpsc, oneshot};
 
 pub mod bus;
 pub mod listened_event;
+
+pub trait ListenableEvent {}
+
+pub trait ToEventIdentifier {
+    fn event_identifier(&self) -> String;
+}
+
+#[derive(Clone)]
+pub struct ListenedEvent(String, Arc<Box<dyn Any + Send + Sync + 'static>>);
+impl ListenedEvent {
+    pub fn new(ident:String,event: impl Any + Send + Sync) -> Self {
+        Self(ident, Arc::new(Box::new(event)))
+    }
+    pub fn kind(&self) -> String {
+        self.0.clone()
+    }
+    pub fn downcast_ref<T:'static>(&self) -> Option<&T> {
+        self.1.downcast_ref::<T>()
+    }
+}
+impl Debug for ListenedEvent {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_tuple("ListenedEvent").field(&self.0).finish()
+    }
+}
 
 pub fn init() {}
 
@@ -18,12 +42,9 @@ impl Handle {
     pub(crate) fn new(sender: mpsc::Sender<EventListenerOp>) -> Self {
         Self { sender }
     }
-    pub fn add<T>(&self, kind: impl Into<EventKind>) -> Result<Listener<T>, Error>
-    where
-        T: TryFrom<ListenedEvent, Error = ConversionError> + Send + Clone,
-    {
+    pub fn add(&self, ident: String) -> Result<Listener, Error> {
         let (callback_tx, callback_rx) = oneshot::channel();
-        let op = EventListenerOp::Add(kind.into(), callback_tx);
+        let op = EventListenerOp::Add(ident, callback_tx);
         self.sender.blocking_send(op).unwrap();
         match callback_rx.blocking_recv().unwrap() {
             Ok(listener) => Ok(Listener::new(listener)),
@@ -32,26 +53,14 @@ impl Handle {
     }
 }
 
-pub struct Listener<T>
-where
-    T: TryFrom<ListenedEvent> + Send + Clone,
-{
-    inner: broadcast::Receiver<ListenedEvent>,
-    phantom: PhantomData<T>,
-}
-impl<T> Listener<T>
-where
-    T: TryFrom<ListenedEvent, Error = ConversionError> + Send + Clone,
-{
-    pub fn new(listener: broadcast::Receiver<ListenedEvent>) -> Listener<T> {
-        Self {
-            inner: listener,
-            phantom: PhantomData::default(),
-        }
+pub struct Listener(broadcast::Receiver<ListenedEvent>);
+
+impl Listener {
+    pub(crate) fn new(listener: broadcast::Receiver<ListenedEvent>) -> Listener {
+        Self(listener)
     }
-    pub async fn recv(&mut self) -> Result<T, Error> {
-        let ev = self.inner.recv().await.map_err(Error::Recv)?;
-        ev.try_into().map_err(Error::Conversion)
+    pub async fn recv(&mut self) -> Result<ListenedEvent, Error> {
+        Ok(self.0.recv().await.map_err(Error::Recv)?)
     }
 }
 
@@ -77,7 +86,8 @@ impl From<ConversionError> for Error {
 }
 
 pub mod prelude {
-    pub use super::listened_event::{AsEventKind, EventKind, BehaviourEventKind};
-    pub use super::listened_event::{ListenedEvent, BehaviourEvent};
+    pub use super::listened_event::BehaviourEvent;
+    pub use super::listened_event::{AsEventKind, BehaviourEventKind, EventKind};
     pub use super::{ConversionError, Error};
+    pub use super::{ListenableEvent, ListenedEvent};
 }

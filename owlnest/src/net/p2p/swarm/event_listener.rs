@@ -1,22 +1,5 @@
-use std::collections::HashMap;
-use super::SwarmEvent;
-use futures::channel::oneshot;
-use tokio::{select, sync::mpsc};
-
-type Error = crate::event_bus::Error;
-
-#[derive(Debug)]
-pub enum Op {
-    Add(
-        Kind,
-        mpsc::Sender<SwarmEvent>,
-        oneshot::Sender<Result<u64, Error>>,
-    ),
-    Remove(Kind, u64, oneshot::Sender<Result<(), Error>>),
-}
-
 #[repr(u32)]
-#[derive(Debug)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Kind {
     OnConnectionEstablished = 0,
     OnIncomingConnection = 1,
@@ -28,4 +11,8 @@ pub enum Kind {
     OnListenerError = 8,
     OnDialing = 9,
 }
-
+impl std::hash::Hash for Kind{
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        format!("swarm:{:?}",self).hash(state);
+    }
+}

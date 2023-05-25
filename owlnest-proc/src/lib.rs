@@ -1,6 +1,7 @@
 use proc_macro::TokenStream;
 use quote::quote;
 
+
 #[proc_macro_attribute]
 pub fn impl_stamp(_attr: TokenStream, item: TokenStream) -> TokenStream {
     let ast: syn::DeriveInput = syn::parse(item).unwrap();
@@ -35,10 +36,14 @@ pub fn impl_stamp(_attr: TokenStream, item: TokenStream) -> TokenStream {
     .into()
 }
 
+
 #[proc_macro_attribute]
-pub fn into_kind(_attr: TokenStream, item: TokenStream) -> TokenStream {
-    let ast: syn::DeriveInput = syn::parse(item).unwrap();
-    let ident = &ast.ident;
+pub fn generate_kind(_attr: TokenStream, item: TokenStream) -> TokenStream {
+    let ast:syn::DeriveInput = syn::parse(item).unwrap();
+    into_kind(&ast)
+}
+fn into_kind(ast:&syn::DeriveInput) -> TokenStream {
+    let identif = &ast.ident;
     let data_enum = match &ast.data {
         syn::Data::Enum(data) => data,
         _ => panic!("Not applicable for types outside enum"),
@@ -57,28 +62,27 @@ pub fn into_kind(_attr: TokenStream, item: TokenStream) -> TokenStream {
             syn::Fields::Unit => quote!(=>),
         };
         quote! (
-            #field_pat Kind::#ident,
+            #ident #field_pat Kind::#ident,
         )
     });
     quote! {
         #ast
-        #[derive(Debug)]
+        #[derive(Debug, Clone,Copy, PartialEq, Eq)]
         pub enum Kind{
             #(#variant_iter)*
         }
-        impl Into<Kind> for &#ident{
+        impl Into<Kind> for &#identif {
             fn into(self)->Kind{
                 match self{
-                    #(#ident::#arm_iter)*
+                    #(#identif::#arm_iter)*
                 }
             }
         }
         impl std::hash::Hash for Kind{
             fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
-                format!("{}:{:?}",protocol::PROTOCOL_NAME,self).hash(state);
+                format!("{}:{:?}",EVENT_IDENT,self).hash(state);
             }
         }
     }
     .into()
 }
-

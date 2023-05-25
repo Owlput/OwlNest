@@ -19,7 +19,7 @@ xxhash-rust = {version="0.8.6",features=["xxh3"]}
 futures = "0.3"
 futures-timer = "3"
 rustyline = "11"
-termion = "2"
 chrono = "0.4"
 owlnest-proc = {path="../owlnest-proc"}
 void = "1"
+crossterm = "0.26.1"

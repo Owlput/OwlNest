@@ -28,12 +28,17 @@ macro_rules! behaviour_select {
         use libp2p_swarm::derive_prelude::Endpoint;
         use libp2p::{PeerId,Multiaddr};
         use crate::*;
+        use owlnest_proc::generate_kind;
 
         generate_select_struct!(Behaviour{$($name:$behaviour_type,)*});
-        generate_event_select!(ToSwarmEvent{
+
+        const EVENT_IDENT:&str = "swarmEvent";
+        generate_event_select!(
+            #[derive(Debug)]
+            #[generate_kind]
+            ToSwarmEvent{
             $($behaviour:<$behaviour_type as NetworkBehaviour>::ToSwarm,)*
         });
-
 
         connection_handler_select!{
             $($name=>$behaviour:<$behaviour_type as libp2p::swarm::NetworkBehaviour>::ConnectionHandler,)*

@@ -1,25 +1,17 @@
 use std::sync::Arc;
-
-use tokio::sync::{broadcast, oneshot};
+use super::Error;
+use super::ListenedEvent;
 use crate::net::p2p::protocols::*;
 use crate::net::p2p::swarm;
-use super::Error;
+use tokio::sync::broadcast;
+use tokio::sync::oneshot;
 
 #[derive(Debug)]
 pub(crate) enum EventListenerOp {
-    Add(
-        EventKind,
-        oneshot::Sender<Result<broadcast::Receiver<ListenedEvent>, Error>>,
-    ),
+    Add(String, oneshot::Sender<Result<broadcast::Receiver<ListenedEvent>, Error>>),
 }
 
 #[derive(Debug, Clone)]
-pub enum ListenedEvent {
-    Behaviours(BehaviourEvent),
-    Swarm(Arc<swarm::out_event::SwarmEvent>),
-}
-
-#[derive(Debug,Clone)]
 pub enum BehaviourEvent {
     /// Listener operations for `owlnest/messaging`
     Messaging(messaging::OutEvent),
@@ -27,11 +19,11 @@ pub enum BehaviourEvent {
     Kad(kad::OutEvent),
     RelayClient(Arc<relay_client::OutEvent>),
     RelayServer(Arc<relay_server::OutEvent>),
-    Tethering(Arc<tethering::OutEvent>)
+    Tethering(Arc<tethering::OutEvent>),
 }
-impl Into<BehaviourEventKind> for &BehaviourEvent{
+impl Into<BehaviourEventKind> for &BehaviourEvent {
     fn into(self) -> BehaviourEventKind {
-        match self{
+        match self {
             BehaviourEvent::Messaging(ev) => BehaviourEventKind::Messaging(ev.into()),
             BehaviourEvent::Kad(_) => todo!(),
             BehaviourEvent::RelayClient(_) => todo!(),
@@ -42,7 +34,7 @@ impl Into<BehaviourEventKind> for &BehaviourEvent{
 }
 
 /// Top-lever wrapper enum around listeners available from different modules.
-#[derive(Debug)]
+#[derive(Debug,Clone,Copy, Hash, PartialEq, Eq)]
 pub enum EventKind {
     /// Variant for operations on behaviour level.
     Behaviours(BehaviourEventKind),
@@ -51,16 +43,15 @@ pub enum EventKind {
 }
 
 /// Behaviour-level wrapper around listener operations.
-#[derive(Debug)]
+#[derive(Debug,Clone, Copy, Hash, PartialEq, Eq)]
 pub enum BehaviourEventKind {
     /// Listener operations for `owlnest/messaging`
-    Messaging(messaging::event_listener::Kind),
+    Messaging(messaging::Kind),
     /// Listener operations for `owlnest/kad`
     Kad(kad::event_listener::Kind),
-    RelayClient(relay_client::Kind),
-    RelayServer(relay_server::Kind),
 }
 
-pub trait AsEventKind{
-    fn kind(&self)->EventKind;
+pub trait AsEventKind {
+    type EventKind;
+    fn kind(&self) -> Self::EventKind;
 }

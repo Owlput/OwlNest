@@ -1,13 +1,12 @@
-use crate::event_bus::listened_event::{BehaviourEvent, ListenedEvent};
 use libp2p::PeerId;
-use owlnest_proc::into_kind;
+use owlnest_proc::generate_kind;
 use serde::{Deserialize, Serialize};
 use std::time::Duration;
 use tokio::sync::oneshot;
 use tracing::{debug, info, warn};
 
 mod behaviour;
-pub mod cli;
+mod cli;
 mod config;
 mod error;
 pub mod event_listener;
@@ -15,9 +14,11 @@ pub(crate) mod handler;
 mod message;
 
 pub use behaviour::Behaviour;
+pub(crate) use cli::handle_messaging;
 pub use config::Config;
 pub use error::Error;
 pub use message::Message;
+pub use protocol::PROTOCOL_NAME;
 
 use crate::net::p2p::swarm::BehaviourOpResult;
 
@@ -43,19 +44,15 @@ pub enum OpResult {
     Error(Error),
 }
 
+const EVENT_IDENT:&str = PROTOCOL_NAME;
 #[derive(Debug, Clone, Serialize, Deserialize)]
-#[into_kind]
+#[generate_kind]
 pub enum OutEvent {
     IncomingMessage { from: PeerId, msg: Message },
     Error(Error),
     Unsupported(PeerId),
     InboundNegotiated(PeerId),
     OutboundNegotiated(PeerId),
-}
-impl Into<ListenedEvent> for OutEvent {
-    fn into(self) -> ListenedEvent {
-        ListenedEvent::Behaviours(BehaviourEvent::Messaging(self))
-    }
 }
 
 pub fn ev_dispatch(ev: &OutEvent) {
