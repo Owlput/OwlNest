@@ -72,26 +72,26 @@ pub mod behaviour {
         }
 
         fn handle_established_inbound_connection(
-        &mut self,
-        _connection_id: libp2p::swarm::ConnectionId,
-        peer: PeerId,
-        _local_addr: &libp2p::Multiaddr,
-        _remote_addr: &libp2p::Multiaddr,
-    ) -> Result<libp2p::swarm::THandler<Self>, ConnectionDenied> {
-        self.policy.enforce(&peer)?;
-        Ok(libp2p::swarm::dummy::ConnectionHandler)
-    }
+            &mut self,
+            _connection_id: libp2p::swarm::ConnectionId,
+            peer: PeerId,
+            _local_addr: &libp2p::Multiaddr,
+            _remote_addr: &libp2p::Multiaddr,
+        ) -> Result<libp2p::swarm::THandler<Self>, ConnectionDenied> {
+            self.policy.enforce(&peer)?;
+            Ok(libp2p::swarm::dummy::ConnectionHandler)
+        }
 
         fn handle_established_outbound_connection(
-        &mut self,
-        _connection_id: libp2p::swarm::ConnectionId,
-        peer: PeerId,
-        _addr: &libp2p::Multiaddr,
-        _role_override: libp2p::core::Endpoint,
-    ) -> Result<libp2p::swarm::THandler<Self>, ConnectionDenied> {
-        self.policy.enforce(&peer)?;
-        Ok(libp2p::swarm::dummy::ConnectionHandler)
-    }
+            &mut self,
+            _connection_id: libp2p::swarm::ConnectionId,
+            peer: PeerId,
+            _addr: &libp2p::Multiaddr,
+            _role_override: libp2p::core::Endpoint,
+        ) -> Result<libp2p::swarm::THandler<Self>, ConnectionDenied> {
+            self.policy.enforce(&peer)?;
+            Ok(libp2p::swarm::dummy::ConnectionHandler)
+        }
     }
 
     impl Behaviour<AllowPeerId> {
@@ -152,19 +152,16 @@ pub mod policy_peer_id {
         }
     }
     impl Error for NotAllowed {}
-
-    
 }
 
-pub mod policy_ip{
-    use std::{net::IpAddr, collections::HashSet};
+pub mod policy_ip {
+    use std::{collections::HashSet, net::IpAddr};
 
     use libp2p::swarm::ConnectionDenied;
 
-    pub trait Policy{
-        fn enforce(&self,addr:&IpAddr)->Result<(),ConnectionDenied>;
+    pub trait Policy {
+        fn enforce(&self, addr: &IpAddr) -> Result<(), ConnectionDenied>;
     }
-
 
     pub struct AllowIp(HashSet<std::net::IpAddr>);
 }

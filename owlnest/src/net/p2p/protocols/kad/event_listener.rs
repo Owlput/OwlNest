@@ -6,7 +6,7 @@ use crate::event_bus::{prelude::*, ToEventIdentifier};
 pub enum Kind {
     OnOutboundQueryProgressed = 0,
 }
-impl ToEventIdentifier for Kind{
+impl ToEventIdentifier for Kind {
     fn event_identifier(&self) -> String {
         format!("{}:{:?}", PROTOCOL_NAME, self)
     }

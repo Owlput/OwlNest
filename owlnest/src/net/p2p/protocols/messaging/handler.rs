@@ -1,17 +1,14 @@
-use super::*;
-use futures::{future::BoxFuture, FutureExt};
+use super::{protocol, Config, Error, Message, PROTOCOL_NAME};
+use crate::net::p2p::handler_prelude::*;
+use crate::net::p2p::swarm::op::behaviour::OpResult;
 use futures_timer::Delay;
-use libp2p::swarm::{
-    handler::{ConnectionEvent, DialUpgradeError, FullyNegotiatedInbound, FullyNegotiatedOutbound},
-    ConnectionHandler, ConnectionHandlerEvent, Stream,SubstreamProtocol
-};
-use libp2p::{core::upgrade::ReadyUpgrade, swarm::StreamUpgradeError};
-use std::{collections::VecDeque, io, task::Poll, time::Duration};
-use tracing::warn;
+use std::{collections::VecDeque, time::Duration};
+use tokio::sync::oneshot;
+use tracing::{debug, warn};
 
 #[derive(Debug)]
 pub enum FromBehaviourEvent {
-    PostMessage(Message, oneshot::Sender<BehaviourOpResult>),
+    PostMessage(Message, oneshot::Sender<OpResult>),
 }
 #[derive(Debug)]
 pub enum ToBehaviourEvent {
@@ -36,6 +33,7 @@ pub struct Handler {
     outbound: Option<OutboundState>,
 }
 
+use libp2p::swarm::{handler::DialUpgradeError, StreamUpgradeError};
 impl Handler {
     pub fn new(config: Config) -> Self {
         Self {
@@ -64,14 +62,15 @@ impl Handler {
             e => {
                 warn!(
                     "Error occurred when negotiating protocol {}: {:?}",
-                    protocol::PROTOCOL_NAME,
-                    e
+                    PROTOCOL_NAME, e
                 )
             }
         }
     }
 }
 
+use libp2p::core::upgrade::ReadyUpgrade;
+use libp2p::swarm::{ConnectionHandlerEvent, KeepAlive, SubstreamProtocol};
 impl ConnectionHandler for Handler {
     type FromBehaviour = FromBehaviourEvent;
     type ToBehaviour = ToBehaviourEvent;
@@ -83,14 +82,14 @@ impl ConnectionHandler for Handler {
     fn listen_protocol(
         &self,
     ) -> libp2p::swarm::SubstreamProtocol<Self::InboundProtocol, Self::InboundOpenInfo> {
-        SubstreamProtocol::new(ReadyUpgrade::new(protocol::PROTOCOL_NAME),())
+        SubstreamProtocol::new(ReadyUpgrade::new(PROTOCOL_NAME), ())
     }
     fn on_behaviour_event(&mut self, event: Self::FromBehaviour) {
         debug!("Received event {:#?}", event);
         self.pending_in_events.push_front(event)
     }
-    fn connection_keep_alive(&self) -> libp2p::swarm::KeepAlive {
-        libp2p::swarm::KeepAlive::Yes
+    fn connection_keep_alive(&self) -> KeepAlive {
+        KeepAlive::Yes
     }
     fn poll(
         &mut self,
@@ -107,7 +106,9 @@ impl ConnectionHandler for Handler {
             State::Inactive { reported: true } => return Poll::Pending,
             State::Inactive { reported: false } => {
                 self.state = State::Inactive { reported: true };
-                return Poll::Ready(ConnectionHandlerEvent::Custom(ToBehaviourEvent::Unsupported));
+                return Poll::Ready(ConnectionHandlerEvent::Custom(
+                    ToBehaviourEvent::Unsupported,
+                ));
             }
             State::Active => {}
         };
@@ -116,12 +117,14 @@ impl ConnectionHandler for Handler {
                 Poll::Pending => {}
                 Poll::Ready(Err(e)) => {
                     let error = Error::IO(format!("IO Error: {:?}", e));
-                    self.pending_out_events.push_front(ToBehaviourEvent::Error(error));
+                    self.pending_out_events
+                        .push_front(ToBehaviourEvent::Error(error));
                     self.inbound = None;
                 }
                 Poll::Ready(Ok((stream, bytes))) => {
                     self.inbound = Some(super::protocol::recv(stream).boxed());
-                    let event = ConnectionHandlerEvent::Custom(ToBehaviourEvent::IncomingMessage(bytes));
+                    let event =
+                        ConnectionHandlerEvent::Custom(ToBehaviourEvent::IncomingMessage(bytes));
                     return Poll::Ready(event);
                 }
             }
@@ -132,8 +135,7 @@ impl ConnectionHandler for Handler {
                     match task.poll_unpin(cx) {
                         Poll::Pending => {
                             if timer.poll_unpin(cx).is_ready() {
-                                let result =
-                                    BehaviourOpResult::Messaging(OpResult::Error(Error::Timeout));
+                                let result = super::OpResult::Error(Error::Timeout).into();
                                 match callback.send(result) {
                                     Ok(_) => {}
                                     Err(res) => warn!("Failed to send callback {:?}", res),
@@ -147,8 +149,7 @@ impl ConnectionHandler for Handler {
                         }
                         // Ready
                         Poll::Ready(Ok((stream, rtt))) => {
-                            let result =
-                                BehaviourOpResult::Messaging(OpResult::SuccessfulPost(rtt));
+                            let result = super::OpResult::SuccessfulPost(rtt).into();
                             match callback.send(result) {
                                 Ok(_) => {}
                                 Err(res) => warn!("Failed to send callback {:?}", res),
@@ -158,9 +159,9 @@ impl ConnectionHandler for Handler {
                         }
                         // Ready but resolved to an error
                         Poll::Ready(Err(e)) => {
-                            let result = BehaviourOpResult::Messaging(OpResult::Error(Error::IO(
-                                format!("IO Error: {:?}", e),
-                            )));
+                            let result =
+                                super::OpResult::Error(Error::IO(format!("IO Error: {:?}", e)))
+                                    .into();
                             match callback.send(result) {
                                 Ok(_) => {}
                                 Err(res) => warn!("Failed to send result to callback: {:?}", res),
@@ -193,7 +194,7 @@ impl ConnectionHandler for Handler {
                 None => {
                     self.outbound = Some(OutboundState::OpenStream);
                     let protocol =
-                        SubstreamProtocol::new(ReadyUpgrade::new(protocol::PROTOCOL_NAME),());
+                        SubstreamProtocol::new(ReadyUpgrade::new(protocol::PROTOCOL_NAME), ());
                     let event = ConnectionHandlerEvent::OutboundSubstreamRequest { protocol };
                     return Poll::Ready(event);
                 }
@@ -246,5 +247,5 @@ type PendingSend = BoxFuture<'static, Result<(Stream, Duration), io::Error>>;
 enum OutboundState {
     OpenStream,
     Idle(Stream),
-    Busy(PendingSend, oneshot::Sender<BehaviourOpResult>, Delay),
+    Busy(PendingSend, oneshot::Sender<OpResult>, Delay),
 }

@@ -1,37 +1,28 @@
-use super::{inbound_upgrade, outbound_upgrade, protocol};
-use crate::net::p2p::{
-    protocols::tethering::subprotocols::PUSH_PROTOCOL_NAME, swarm::BehaviourOpResult,
-};
-use futures::{future::BoxFuture, FutureExt};
-use libp2p::swarm::{
-    handler::{ConnectionEvent, DialUpgradeError, FullyNegotiatedInbound, FullyNegotiatedOutbound},
-    ConnectionHandler, ConnectionHandlerEvent, KeepAlive, Stream, StreamUpgradeError,
-    SubstreamProtocol,
-};
+use super::{inbound_upgrade, outbound_upgrade, protocol, PUSH_PROTOCOL_NAME};
+use crate::net::p2p::handler_prelude::*;
 use serde::{Deserialize, Serialize};
-use std::{collections::VecDeque, fmt::Display, task::Poll};
-use std::{io, time::Duration};
-use tokio::sync::oneshot;
+use std::time::Duration;
+use std::{collections::VecDeque, fmt::Display};
 use tracing::warn;
 
 #[derive(Debug)]
 pub struct InEvent {
     push_type: PushType,
-    callback: oneshot::Sender<BehaviourOpResult>,
+    callback: CallbackSender,
 }
 impl InEvent {
-    pub fn new(push_type: PushType, callback: oneshot::Sender<BehaviourOpResult>) -> Self {
+    pub fn new(push_type: PushType, callback: CallbackSender) -> Self {
         InEvent {
             push_type,
             callback,
         }
     }
-    pub fn into_inner(self) -> (PushType, oneshot::Sender<BehaviourOpResult>) {
+    pub fn into_inner(self) -> (PushType, CallbackSender) {
         (self.push_type, self.callback)
     }
 }
 
-#[derive(Debug,Clone)]
+#[derive(Debug, Clone)]
 pub enum PushType {
     Msg(String),
 }
@@ -283,5 +274,5 @@ type PendingSend = BoxFuture<'static, Result<(Stream, Duration), io::Error>>;
 enum OutboundState {
     OpenStream,
     Idle(Stream),
-    Busy(PendingSend, oneshot::Sender<BehaviourOpResult>),
+    Busy(PendingSend, CallbackSender),
 }

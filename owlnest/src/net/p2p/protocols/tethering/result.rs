@@ -1,3 +1,4 @@
+use crate::net::p2p::swarm::op::behaviour::OpResult;
 use std::time::Duration;
 
 use super::subprotocols::{exec, push};
@@ -60,4 +61,9 @@ pub enum HandleOk {
     LocalExec(()),
     RemoteExec(Duration),
     Push(()),
+}
+impl Into<OpResult> for HandleOk {
+    fn into(self) -> OpResult {
+        OpResult::Tethering(Ok(self))
+    }
 }

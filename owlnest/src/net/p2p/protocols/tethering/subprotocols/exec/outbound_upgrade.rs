@@ -1,5 +1,7 @@
-use std::fmt::Display;
+use crate::net::p2p::protocols::tethering::subprotocols::{write_flush, read_u64};
 use libp2p::{core::upgrade, swarm::Stream};
+use std::fmt::Display;
+
 use super::*;
 
 pub struct Upgrade;
@@ -23,38 +25,16 @@ impl upgrade::OutboundUpgrade<Stream> for Upgrade {
         async move {
             // Send SYN
             let syn = rand::random::<u64>();
-            socket
-                .write_all(&syn.to_be_bytes())
-                .await
-                .map_err(|e| UpgradeError::StreamError(e.to_string()))?;
-            socket
-                .flush()
-                .await
-                .map_err(|e| UpgradeError::StreamError(e.to_string()))?;
+            write_flush::<UpgradeError>(&mut socket, &syn.to_be_bytes()).await?;
             // Receive ACK
-            let mut ack = [0u8; 8];
-            socket
-                .read_exact(&mut ack)
-                .await
-                .map_err(|e| UpgradeError::StreamError(e.to_string()))?;
-            let ack = u64::from_be_bytes(ack);
+            let ack = read_u64::<UpgradeError>(&mut socket).await?;
             if ack.wrapping_sub(1) != syn {
                 return Err(UpgradeError::UnexpectedACK(syn, ack));
             }
-            let mut syn_recv = [0u8; 8];
-            let syn_recv = match socket.read_exact(&mut syn_recv).await {
-                Ok(_) => u64::from_be_bytes(syn_recv),
-                Err(e) => return Err(UpgradeError::StreamError(e.to_string())),
-            };
+            let syn_recv = read_u64::<UpgradeError>(&mut socket).await?;
             // Send ACK
-            socket
-                .write_all(&(syn_recv.wrapping_add(1)).to_be_bytes())
-                .await
-                .map_err(|e| UpgradeError::StreamError(e.to_string()))?;
-            socket
-                .flush()
-                .await
-                .map_err(|e| UpgradeError::StreamError(e.to_string()))?;
+            write_flush::<UpgradeError>(&mut socket, &(syn_recv.wrapping_add(1)).to_be_bytes())
+                .await?;
             Ok(socket)
         }
         .boxed()
@@ -63,7 +43,7 @@ impl upgrade::OutboundUpgrade<Stream> for Upgrade {
 
 #[derive(Debug)]
 pub enum UpgradeError {
-    StreamError(String),
+    StreamError(std::io::Error),
     UnexpectedACK(u64, u64),
 }
 impl Display for UpgradeError {
@@ -80,5 +60,10 @@ impl Display for UpgradeError {
 impl std::error::Error for UpgradeError {
     fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
         None
+    }
+}
+impl From<std::io::Error> for UpgradeError {
+    fn from(value: std::io::Error) -> Self {
+        Self::StreamError(value)
     }
 }

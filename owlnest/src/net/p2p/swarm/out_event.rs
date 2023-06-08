@@ -1,10 +1,10 @@
 use std::{io, num::NonZeroU32};
 
-use super::*;
+use super::{*, behaviour::Behaviour};
 pub use behaviour::ToSwarmEvent;
 use libp2p::{
     swarm::{derive_prelude::ListenerId, ConnectionError, DialError, ListenError},
-    TransportError,
+    TransportError, Multiaddr,
 };
 use tokio::sync::mpsc;
 

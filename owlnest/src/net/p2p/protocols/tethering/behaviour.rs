@@ -1,8 +1,7 @@
 use super::*;
-use libp2p::swarm::{
-    derive_prelude::Either, ConnectionHandler, ConnectionHandlerSelect, ConnectionId,
-    NetworkBehaviour, NotifyHandler, ToSwarm,
-};
+use crate::connection_handler_select;
+use crate::net::p2p::swarm;
+use libp2p::swarm::{derive_prelude::*, NotifyHandler};
 use std::{
     collections::{HashSet, VecDeque},
     task::Poll,
@@ -26,7 +25,7 @@ impl Behaviour {
             in_events: VecDeque::new(),
         }
     }
-    pub fn push_event(&mut self, ev: InEvent) {
+    pub(crate) fn push_event(&mut self, ev: InEvent) {
         self.in_events.push_front(ev)
     }
     pub fn trust(&mut self, peer_id: PeerId) -> Result<(), HandleError> {
@@ -45,9 +44,13 @@ impl Behaviour {
     }
 }
 
+connection_handler_select!(
+    push=>Push:push::handler::PushHandler,
+    exec=>Exec:exec::handler::ExecHandler,
+);
+
 impl NetworkBehaviour for Behaviour {
-    type ConnectionHandler =
-        ConnectionHandlerSelect<push::handler::PushHandler, exec::handler::ExecHandler>;
+    type ConnectionHandler = handler::ConnectionHandlerSelect;
     type ToSwarm = OutEvent;
 
     fn on_connection_handler_event(
@@ -57,8 +60,8 @@ impl NetworkBehaviour for Behaviour {
         event: <Self::ConnectionHandler as libp2p::swarm::ConnectionHandler>::ToBehaviour,
     ) {
         let out_event = match event {
-            Either::Right(ev) => map_exec_out_event(peer_id, ev),
-            Either::Left(ev) => map_push_out_event(peer_id, ev),
+            handler::ToBehaviourSelect::Exec(ev) => map_exec_out_event(peer_id, ev),
+            handler::ToBehaviourSelect::Push(ev) => map_push_out_event(peer_id, ev),
         };
         self.out_events.push_front(out_event);
     }
@@ -66,12 +69,7 @@ impl NetworkBehaviour for Behaviour {
         &mut self,
         _cx: &mut std::task::Context<'_>,
         _params: &mut impl libp2p::swarm::PollParameters,
-    ) -> Poll<
-        ToSwarm<
-            OutEvent,
-            Either<subprotocols::push::handler::InEvent,subprotocols::exec::handler::InEvent, >,
-        >,
-    > {
+    ) -> Poll<ToSwarm<OutEvent, handler::FromBehaviourSelect>> {
         if let Some(ev) = self.out_events.pop_back() {
             return Poll::Ready(ToSwarm::GenerateEvent(ev));
         }
@@ -82,7 +80,7 @@ impl NetworkBehaviour for Behaviour {
                     return Poll::Ready(ToSwarm::NotifyHandler {
                         peer_id,
                         handler: NotifyHandler::Any,
-                        event: Either::Right(exec::InEvent::new_exec(
+                        event: handler::FromBehaviourSelect::Exec(exec::InEvent::new_exec(
                             op,
                             handle_callback,
                             result_callback,
@@ -93,7 +91,7 @@ impl NetworkBehaviour for Behaviour {
                     return Poll::Ready(ToSwarm::NotifyHandler {
                         peer_id,
                         handler: NotifyHandler::Any,
-                        event: Either::Right(exec::InEvent::new_callback(
+                        event: handler::FromBehaviourSelect::Exec(exec::InEvent::new_callback(
                             stamp,
                             result,
                             handle_callback,
@@ -104,7 +102,10 @@ impl NetworkBehaviour for Behaviour {
                     return Poll::Ready(ToSwarm::NotifyHandler {
                         peer_id: to,
                         handler: NotifyHandler::Any,
-                        event: Either::Left(push::InEvent::new(push_type, handle_callback)),
+                        event: handler::FromBehaviourSelect::Push(push::InEvent::new(
+                            push_type,
+                            handle_callback,
+                        )),
                     })
                 }
                 Op::LocalExec(op) => {
@@ -113,7 +114,7 @@ impl NetworkBehaviour for Behaviour {
                         TetheringOp::Untrust(peer_id) => self.untrust(peer_id),
                     };
                     handle_callback
-                        .send(BehaviourOpResult::Tethering(
+                        .send(swarm::op::behaviour::OpResult::Tethering(
                             result.map(|_| HandleOk::LocalExec(())),
                         ))
                         .unwrap();
@@ -132,7 +133,10 @@ impl NetworkBehaviour for Behaviour {
         _local_addr: &libp2p::Multiaddr,
         _remote_addr: &libp2p::Multiaddr,
     ) -> Result<libp2p::swarm::THandler<Self>, libp2p::swarm::ConnectionDenied> {
-        Ok(push::handler::PushHandler::default().select(exec::handler::ExecHandler::default()))
+        Ok(handler::ConnectionHandlerSelect {
+            push: push::PushHandler::default(),
+            exec: exec::handler::ExecHandler::default(),
+        })
     }
 
     fn handle_established_outbound_connection(
@@ -142,7 +146,10 @@ impl NetworkBehaviour for Behaviour {
         _addr: &libp2p::Multiaddr,
         _role_override: libp2p::core::Endpoint,
     ) -> Result<libp2p::swarm::THandler<Self>, libp2p::swarm::ConnectionDenied> {
-        Ok(push::handler::PushHandler::default().select(exec::handler::ExecHandler::default()))
+        Ok(handler::ConnectionHandlerSelect {
+            push: push::PushHandler::default(),
+            exec: exec::handler::ExecHandler::default(),
+        })
     }
 }
 

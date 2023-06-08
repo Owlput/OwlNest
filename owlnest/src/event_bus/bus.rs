@@ -53,7 +53,7 @@ pub fn setup_ev_bus() -> (Handle, EventTap) {
             }
             Some(ev) = ev_rx.recv()=>{
                 if let Some(listener) = listener_store.get(&ev.kind()){
-
+                    let _ = listener.send(ev);
                 }
             }
             _ = interval.tick()=>{

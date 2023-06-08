@@ -19,7 +19,7 @@ fn handle_utils_dns(command: Vec<&str>) {
     }
     match command[2] {
         "lookup" => {
-            if command.len() < 4{
+            if command.len() < 4 {
                 println!("Failed to perform lookup: missing required argument <domain name>.");
                 return;
             }

@@ -2,49 +2,42 @@ use libp2p::PeerId;
 use owlnest_proc::generate_kind;
 use serde::{Deserialize, Serialize};
 use std::time::Duration;
-use tokio::sync::oneshot;
 use tracing::{debug, info, warn};
+use crate::net::p2p::swarm::{op::behaviour::CallbackSender,self};
 
 mod behaviour;
 mod cli;
 mod config;
 mod error;
-pub mod event_listener;
-pub(crate) mod handler;
+mod handler;
 mod message;
+mod op;
 
 pub use behaviour::Behaviour;
 pub(crate) use cli::handle_messaging;
 pub use config::Config;
 pub use error::Error;
 pub use message::Message;
+pub use op::{Op, OpResult};
 pub use protocol::PROTOCOL_NAME;
-
-use crate::net::p2p::swarm::BehaviourOpResult;
 
 #[derive(Debug)]
 pub struct InEvent {
     op: Op,
-    callback: oneshot::Sender<BehaviourOpResult>,
+    callback: CallbackSender,
 }
 impl InEvent {
-    pub fn new(op: Op, callback: oneshot::Sender<BehaviourOpResult>) -> Self {
+    pub fn new(op: Op, callback: CallbackSender) -> Self {
         Self { op, callback }
     }
 }
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub enum Op {
-    SendMessage(PeerId, Message),
+impl Into<swarm::in_event::behaviour::InEvent> for InEvent{
+    fn into(self) -> swarm::in_event::behaviour::InEvent {
+        swarm::in_event::behaviour::InEvent::Messaging(self)
+    }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub enum OpResult {
-    SuccessfulPost(Duration),
-    Error(Error),
-}
-
-const EVENT_IDENT:&str = PROTOCOL_NAME;
+const EVENT_IDENT: &str = PROTOCOL_NAME;
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[generate_kind]
 pub enum OutEvent {

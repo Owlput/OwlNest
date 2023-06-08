@@ -60,7 +60,7 @@ impl IdentityUnion {
         })
     }
 
-    #[cfg(feature="disabled")]
+    #[cfg(feature = "disabled")]
     pub fn export_public_key(
         &self,
         folder_path: &str,

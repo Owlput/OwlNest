@@ -1,38 +1,26 @@
-use super::*;
-use crate::net::p2p::{
-    protocols::tethering::{self, subprotocols::EXEC_PROTOCOL_NAME},
-    swarm::BehaviourOpResult,
-};
-use futures::{future::BoxFuture, FutureExt};
-use libp2p::{
-    swarm::{
-        handler::{
-            ConnectionEvent, DialUpgradeError, FullyNegotiatedInbound, FullyNegotiatedOutbound,
-        },
-        ConnectionHandler, ConnectionHandlerEvent, KeepAlive,
-        Stream, SubstreamProtocol, StreamUpgradeError,
-    },
-};
+use super::{inbound_upgrade, outbound_upgrade, protocol, Op, OpResult};
+use crate::net::p2p::handler_prelude::*;
+use crate::net::p2p::protocols::tethering::{subprotocols::EXEC_PROTOCOL_NAME, HandleOk};
+use libp2p::Stream;
 use serde::{Deserialize, Serialize};
+use std::time::Duration;
 use std::{
     collections::{HashMap, VecDeque},
     fmt::Display,
-    task::Poll,
     time::SystemTime,
 };
-use std::{io, time::Duration};
 use tokio::sync::oneshot;
 use tracing::warn;
 
 #[derive(Debug)]
 pub struct InEvent {
     inner: Inner,
-    handle_callback: oneshot::Sender<BehaviourOpResult>,
+    handle_callback: CallbackSender,
 }
 impl InEvent {
     pub fn new_exec(
         op: Op,
-        handle_callback: oneshot::Sender<BehaviourOpResult>,
+        handle_callback: CallbackSender,
         result_callback: oneshot::Sender<OpResult>,
     ) -> Self {
         InEvent {
@@ -40,17 +28,13 @@ impl InEvent {
             handle_callback,
         }
     }
-    pub fn new_callback(
-        stamp: u128,
-        result: OpResult,
-        handle_callback: oneshot::Sender<BehaviourOpResult>,
-    ) -> Self {
+    pub fn new_callback(stamp: u128, result: OpResult, handle_callback: CallbackSender) -> Self {
         InEvent {
             inner: Inner::Callback(stamp, result),
             handle_callback,
         }
     }
-    pub fn into_inner(self) -> (Inner, oneshot::Sender<BehaviourOpResult>) {
+    pub fn into_inner(self) -> (Inner, CallbackSender) {
         (self.inner, self.handle_callback)
     }
 }
@@ -133,15 +117,14 @@ impl ExecHandler {
     ) {
         self.outbound = None;
         match error {
-            StreamUpgradeError::NegotiationFailed => {
+            libp2p_swarm::StreamUpgradeError::NegotiationFailed => {
                 self.state = State::Inactive { reported: false };
                 return;
             }
             e => {
                 warn!(
                     "Error occurred when negotiating protocol {}: {}",
-                    EXEC_PROTOCOL_NAME,
-                    e
+                    EXEC_PROTOCOL_NAME, e
                 )
             }
         }
@@ -169,16 +152,14 @@ impl ConnectionHandler for ExecHandler {
     type InboundOpenInfo = ();
     type OutboundOpenInfo = ();
 
-    fn listen_protocol(
-        &self,
-    ) -> libp2p::swarm::SubstreamProtocol<Self::InboundProtocol, Self::InboundOpenInfo> {
+    fn listen_protocol(&self) -> SubstreamProtocol<Self::InboundProtocol, Self::InboundOpenInfo> {
         SubstreamProtocol::new(inbound_upgrade::Upgrade, ())
     }
 
     fn on_behaviour_event(&mut self, event: Self::FromBehaviour) {
         self.pending_in_events.push_front(event);
     }
-    fn connection_keep_alive(&self) -> libp2p::swarm::KeepAlive {
+    fn connection_keep_alive(&self) -> KeepAlive {
         KeepAlive::Yes
     }
     fn poll(
@@ -253,8 +234,7 @@ impl ConnectionHandler for ExecHandler {
                         break;
                     }
                     Poll::Ready(Ok((stream, rtt))) => {
-                        let result =
-                            BehaviourOpResult::Tethering(Ok(tethering::HandleOk::RemoteExec(rtt)));
+                        let result = HandleOk::RemoteExec(rtt).into();
                         callback.send(result).unwrap();
                         self.outbound = Some(OutboundState::Idle(stream));
                     }
@@ -330,8 +310,8 @@ impl ConnectionHandler for ExecHandler {
                 self.on_dial_upgrade_error(e);
             }
             ConnectionEvent::AddressChange(_) | ConnectionEvent::ListenUpgradeError(_) => {}
-            ConnectionEvent::LocalProtocolsChange(_) => {},
-            ConnectionEvent::RemoteProtocolsChange(_) => {},
+            ConnectionEvent::LocalProtocolsChange(_) => {}
+            ConnectionEvent::RemoteProtocolsChange(_) => {}
         }
     }
 }
@@ -342,5 +322,5 @@ type PendingSend = BoxFuture<'static, Result<(Stream, Duration), io::Error>>;
 enum OutboundState {
     OpenStream,
     Idle(Stream),
-    Busy(PendingSend, oneshot::Sender<BehaviourOpResult>),
+    Busy(PendingSend, CallbackSender),
 }

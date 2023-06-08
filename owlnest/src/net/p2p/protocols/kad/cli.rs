@@ -27,7 +27,7 @@ fn handle_kad_lookup(manager: &swarm::Manager, command: Vec<&str>) {
             return;
         }
     };
-    let _result = manager.blocking_behaviour_exec(swarm::BehaviourOp::Kad(Op::PeerLookup(peer_id)));
+    let _result = manager.blocking_behaviour_exec(behaviour::Op::Kad(Op::PeerLookup(peer_id)));
 }
 
 /// Top-level help message for `kad` command.
@@ -35,6 +35,6 @@ const TOP_HELP_MESSAGE: &str = r#"
 Protocol `/ipfs/kad/1.0.0`
 
 Available Subcommands:
-lookup <peer ID>        
+    lookup <peer ID>        
                 Initiate a lookup for the given peer.
 "#;

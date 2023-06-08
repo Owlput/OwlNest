@@ -1,33 +1,12 @@
 use self::listened_event::EventListenerOp;
-use std::{any::Any, fmt::Debug, sync::Arc};
 use tokio::sync::{broadcast, mpsc, oneshot};
 
 pub mod bus;
 pub mod listened_event;
-
-pub trait ListenableEvent {}
+pub use listened_event::ListenedEvent;
 
 pub trait ToEventIdentifier {
     fn event_identifier(&self) -> String;
-}
-
-#[derive(Clone)]
-pub struct ListenedEvent(String, Arc<Box<dyn Any + Send + Sync + 'static>>);
-impl ListenedEvent {
-    pub fn new(ident:String,event: impl Any + Send + Sync) -> Self {
-        Self(ident, Arc::new(Box::new(event)))
-    }
-    pub fn kind(&self) -> String {
-        self.0.clone()
-    }
-    pub fn downcast_ref<T:'static>(&self) -> Option<&T> {
-        self.1.downcast_ref::<T>()
-    }
-}
-impl Debug for ListenedEvent {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_tuple("ListenedEvent").field(&self.0).finish()
-    }
 }
 
 pub fn init() {}
@@ -86,8 +65,7 @@ impl From<ConversionError> for Error {
 }
 
 pub mod prelude {
-    pub use super::listened_event::BehaviourEvent;
     pub use super::listened_event::{AsEventKind, BehaviourEventKind, EventKind};
+    pub use super::ListenedEvent;
     pub use super::{ConversionError, Error};
-    pub use super::{ListenableEvent, ListenedEvent};
 }

@@ -78,9 +78,9 @@ fn into_kind(ast:&syn::DeriveInput) -> TokenStream {
                 }
             }
         }
-        impl std::hash::Hash for Kind{
-            fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
-                format!("{}:{:?}",EVENT_IDENT,self).hash(state);
+        impl std::fmt::Display for Kind{
+            fn fmt(&self,f:&mut std::fmt::Formatter<'_>)->Result<(),std::fmt::Error>{
+                f.write_str(&format!("{}:{:?}",EVENT_IDENT,self))
             }
         }
     }

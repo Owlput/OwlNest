@@ -5,7 +5,7 @@ use std::io::stdout;
 use crate::net::p2p::protocols::*;
 use crate::net::p2p::{identity::IdentityUnion, swarm};
 use crossterm::style::Stylize;
-use crossterm::terminal::{ClearType, Clear};
+use crossterm::terminal::{Clear, ClearType};
 use crossterm::ExecutableCommand;
 use rustyline::{error::ReadlineError, DefaultEditor};
 
@@ -20,9 +20,7 @@ pub fn setup_interactive_shell(ident: IdentityUnion, manager: swarm::Manager) {
         let mut rl = DefaultEditor::new().unwrap();
         let mut retry_times = 0u32;
         loop {
-            let line_read = rl.readline(
-                &">> ".stylize().dark_cyan().to_string()
-            );
+            let line_read = rl.readline(&">> ".stylize().dark_cyan().to_string());
             match line_read {
                 Ok(line) => {
                     rl.add_history_entry(line.as_str()).unwrap();

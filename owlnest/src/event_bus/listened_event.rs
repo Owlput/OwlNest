@@ -1,40 +1,38 @@
-use std::sync::Arc;
 use super::Error;
-use super::ListenedEvent;
 use crate::net::p2p::protocols::*;
 use crate::net::p2p::swarm;
-use tokio::sync::broadcast;
-use tokio::sync::oneshot;
+use std::{any::Any, sync::Arc};
+use tokio::sync::{broadcast, oneshot};
 
-#[derive(Debug)]
-pub(crate) enum EventListenerOp {
-    Add(String, oneshot::Sender<Result<broadcast::Receiver<ListenedEvent>, Error>>),
+#[derive(Clone)]
+pub struct ListenedEvent(String, Arc<Box<dyn Any + Send + Sync + 'static>>);
+impl ListenedEvent {
+    pub fn new(ident: String, event: impl Any + Send + Sync) -> Self {
+        Self(ident, Arc::new(Box::new(event)))
+    }
+    pub fn kind(&self) -> String {
+        self.0.clone()
+    }
+    pub fn downcast_ref<T: 'static>(&self) -> Option<&T> {
+        self.1.downcast_ref::<T>()
+    }
 }
-
-#[derive(Debug, Clone)]
-pub enum BehaviourEvent {
-    /// Listener operations for `owlnest/messaging`
-    Messaging(messaging::OutEvent),
-    /// Listener operations for `owlnest/kad`
-    Kad(kad::OutEvent),
-    RelayClient(Arc<relay_client::OutEvent>),
-    RelayServer(Arc<relay_server::OutEvent>),
-    Tethering(Arc<tethering::OutEvent>),
-}
-impl Into<BehaviourEventKind> for &BehaviourEvent {
-    fn into(self) -> BehaviourEventKind {
-        match self {
-            BehaviourEvent::Messaging(ev) => BehaviourEventKind::Messaging(ev.into()),
-            BehaviourEvent::Kad(_) => todo!(),
-            BehaviourEvent::RelayClient(_) => todo!(),
-            BehaviourEvent::RelayServer(_) => todo!(),
-            BehaviourEvent::Tethering(_) => todo!(),
-        }
+impl std::fmt::Debug for ListenedEvent {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_tuple("ListenedEvent").field(&self.0).finish()
     }
 }
 
+#[derive(Debug)]
+pub(crate) enum EventListenerOp {
+    Add(
+        String,
+        oneshot::Sender<Result<broadcast::Receiver<ListenedEvent>, Error>>,
+    ),
+}
+
 /// Top-lever wrapper enum around listeners available from different modules.
-#[derive(Debug,Clone,Copy, Hash, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum EventKind {
     /// Variant for operations on behaviour level.
     Behaviours(BehaviourEventKind),
@@ -43,7 +41,7 @@ pub enum EventKind {
 }
 
 /// Behaviour-level wrapper around listener operations.
-#[derive(Debug,Clone, Copy, Hash, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum BehaviourEventKind {
     /// Listener operations for `owlnest/messaging`
     Messaging(messaging::Kind),

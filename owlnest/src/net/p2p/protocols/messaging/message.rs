@@ -1,5 +1,5 @@
-use std::time::SystemTime;
 use super::*;
+use std::time::SystemTime;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Message {

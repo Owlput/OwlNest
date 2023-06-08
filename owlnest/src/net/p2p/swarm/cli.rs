@@ -1,6 +1,6 @@
 use libp2p::{Multiaddr, TransportError};
 use super::Manager;
-use super::swarm_op::*;
+use crate::net::p2p::swarm::op::swarm::*;
 
 pub fn handle_swarm(manager: &Manager, command: Vec<&str>) {
     if command.len() < 2 {
@@ -101,26 +101,33 @@ const TOP_HELP_MESSAGE: &str = r#"
 swarm: Subcommand for managing libp2p swarm.
 
 Available subcommands:
-dial <address>          
+    dial <address>          
                 Dial the given address in multiaddr format.
                 Dial result may not shown directly after
                 command issued.
-listen <address>        
+
+    listen <address>        
                 Listen on the given address in multiaddr
                 format.
-listener <subcommand>
+
+    listener <subcommand>
                 Managing connection listeners.
-external-addr <subcommand>           
+
+    external-addr <subcommand>           
                 Managing external addresses.
-disconnect <peer ID>
+
+    disconnect <peer ID>
                 Terminate connections from the given peer.
-isconnected <peer ID>
-                Check whether the swarm has connected to the
-                given peer.
-ban <peer ID>
-                Ban the given peer, refuse further connections
-                from that peer.
-unban <peer ID>
+
+    isconnected <peer ID>
+                Check whether the swarm has connected to 
+                the given peer.
+
+    ban <peer ID>
+                Ban the given peer, refuse further 
+                connections from that peer.
+                
+    unban <peer ID>
                 Unban the given peer.
 "#;
 

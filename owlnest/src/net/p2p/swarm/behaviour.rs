@@ -1,34 +1,21 @@
-use crate::{behaviour_select, event_bus::ListenedEvent};
+use crate::{behaviour_select, event_bus::ListenedEvent, net::p2p::{SwarmConfig, identity::IdentityUnion}};
+use libp2p::core::{transport::{Boxed, OrTransport, Transport}, muxing::StreamMuxerBox};
+use super::SwarmTransport;
+use crate::net::p2p::protocols::*;
 
-use super::*;
-
-use libp2p::core::transport::{Boxed, OrTransport, Transport};
-
-// #[derive(NetworkBehaviour)]
-// #[behaviour(out_event = "OutEvent")]
-// pub struct Behaviour {
-//     pub messaging: messaging::Behaviour,
-//     pub tethering: tethering::Behaviour,
-//     pub relay_server: relay_server::Behaviour,
-//     pub relay_client: relay_client::Behaviour,
-//     pub kad: kad::Behaviour,
-//     pub identify: identify::Behaviour,
-//     pub mdns: mdns::Behaviour,
-// }
 behaviour_select! {
-    messaging=>Messaging:net::p2p::protocols::messaging::Behaviour,
-    tethering=>Tethering:net::p2p::protocols::tethering::Behaviour,
-    relay_server=>RelayServer:net::p2p::protocols::relay_server::Behaviour,
-    relay_client=> RelayClient:net::p2p::protocols::relay_client::Behaviour,
-     kad=>Kad:net::p2p::kad::Behaviour,
-    identify=>Identify:net::p2p::identify::Behaviour,
-    mdns=> Mdns:net::p2p::mdns::Behaviour,
+    messaging=>Messaging:messaging::Behaviour,
+    tethering=>Tethering:tethering::Behaviour,
+    relay_server=>RelayServer:relay_server::Behaviour,
+    relay_client=> RelayClient:relay_client::Behaviour,
+     kad=>Kad:kad::Behaviour,
+    identify=>Identify:identify::Behaviour,
+    mdns=> Mdns:mdns::Behaviour,
 
 }
 impl Behaviour {
     pub fn new(config: SwarmConfig) -> (Self, SwarmTransport) {
         use libp2p::kad::store::MemoryStore;
-
         let ident = config.ident().clone();
         let kad_store = MemoryStore::new(ident.get_peer_id());
         let (relayed_transport, relay_client) = libp2p::relay::client::new(ident.get_peer_id());

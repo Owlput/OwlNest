@@ -416,8 +416,9 @@ macro_rules! behaviour_select {
 #[macro_export]
 macro_rules! connection_handler_select {
     {$($name:ident=>$behaviour:ident:$handler:ty,)*} => {
-        pub mod handler{ 
+        pub mod handler{
         use crate::*;
+        use super::*;
         use libp2p::swarm::{handler::{ConnectionEvent, ListenUpgradeError}, ConnectionHandler, ConnectionHandlerEvent, SubstreamProtocol};
         use std::task::Poll;
 
@@ -697,6 +698,7 @@ macro_rules! generate_outbound_upgrade_select {
                 match info {
                     $(UpgradeInfoSelect::$behaviour(info)=>Self::Future::$behaviour(match self{
                         Self::$behaviour(inner)=> inner.$impl_name(sock,info),
+                        #[allow(unreachable_patterns)]
                         _ => panic!("upgrade info and upgrade mismatch!")
                     }),)*
                 }
@@ -710,7 +712,7 @@ macro_rules! generate_outbound_upgrade_select {
 macro_rules! generate_future_select {
     ($($upgrade:ty|$behaviour:ident:$future:ty,)*) => {
         use std::pin::Pin;
-        use futures::Future;
+        use ::futures::Future;
         use std::task::{Poll,Context};
 
         generate_select_enum!(PinSelect<'a>{$($behaviour:Pin<&'a mut $future>,)*});
@@ -762,6 +764,7 @@ macro_rules! generate_outbound_transpose {
                         info: OutboundOpenInfoSelect::$behaviour(info)
                     } => FullyNegotiatedOutboundSelect::$behaviour(FullyNegotiatedOutbound{protocol, info}),
                 )*
+                #[allow(unreachable_patterns)]
                 _=>panic!("protocol mismatch!")
             }
         }

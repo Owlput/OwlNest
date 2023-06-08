@@ -1,7 +1,6 @@
-use crate::net::p2p::protocols::messaging::OpResult;
-
+use super::op::*;
 use super::*;
-use libp2p::swarm::{ConnectionId, NetworkBehaviour, ToSwarm, NotifyHandler};
+use libp2p::swarm::{ConnectionId, NetworkBehaviour, NotifyHandler, ToSwarm};
 use libp2p::PeerId;
 use std::collections::HashSet;
 use std::{collections::VecDeque, task::Poll};
@@ -62,9 +61,9 @@ impl NetworkBehaviour for Behaviour {
             handler::ToBehaviourEvent::Unsupported => {
                 self.out_events.push_front(OutEvent::Unsupported(peer_id))
             }
-            handler::ToBehaviourEvent::InboundNegotiated => {self
-                .out_events
-                .push_front(OutEvent::InboundNegotiated(peer_id));
+            handler::ToBehaviourEvent::InboundNegotiated => {
+                self.out_events
+                    .push_front(OutEvent::InboundNegotiated(peer_id));
             }
             handler::ToBehaviourEvent::OutboundNegotiated => {
                 self.out_events
@@ -86,7 +85,10 @@ impl NetworkBehaviour for Behaviour {
 
             match op {
                 Op::SendMessage(target, msg) => {
-                    println!("{:?}",self.connected_peers.clone().into_iter().collect::<Vec<_>>());
+                    println!(
+                        "{:?}",
+                        self.connected_peers.clone().into_iter().collect::<Vec<_>>()
+                    );
                     if self.connected_peers.contains(&target) {
                         return Poll::Ready(ToSwarm::NotifyHandler {
                             peer_id: target,
@@ -94,10 +96,8 @@ impl NetworkBehaviour for Behaviour {
                             event: handler::FromBehaviourEvent::PostMessage(msg, callback),
                         });
                     } else {
-                        let result = BehaviourOpResult::Messaging(OpResult::Error(
-                            Error::PeerNotFound(target),
-                        ));
-                        callback.send(result).unwrap();
+                        let result = OpResult::Error(Error::PeerNotFound(target));
+                        callback.send(result.into()).unwrap();
                     }
                 }
             }
@@ -105,8 +105,7 @@ impl NetworkBehaviour for Behaviour {
         Poll::Pending
     }
 
-    fn on_swarm_event(&mut self, _event: libp2p::swarm::FromSwarm<Self::ConnectionHandler>) {
-    }
+    fn on_swarm_event(&mut self, _event: libp2p::swarm::FromSwarm<Self::ConnectionHandler>) {}
 
     fn handle_established_inbound_connection(
         &mut self,

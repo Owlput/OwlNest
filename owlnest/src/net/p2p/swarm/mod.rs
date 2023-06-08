@@ -1,33 +1,37 @@
-use crate::event_bus::{Handle, bus::EventTap};
-
-use super::*;
-use behaviour::Behaviour;
+use super::protocols::*;
+use super::SwarmConfig;
+use crate::event_bus::{bus::EventTap, Handle};
+use futures::StreamExt;
+use libp2p::Multiaddr;
 use libp2p::{
     core::{muxing::StreamMuxerBox, transport::Boxed, ConnectedPoint},
     swarm::{AddressRecord, AddressScore},
-    Swarm as Libp2pSwarm,
+    PeerId, Swarm as Libp2pSwarm,
 };
 use std::fmt::Debug;
+use tokio::select;
+use tokio::sync::mpsc;
+use tokio::sync::oneshot;
 use tracing::{debug, info, warn};
 
 mod behaviour;
 pub mod cli;
 pub mod event_listener;
-mod in_event;
+pub(crate) mod in_event;
 pub mod manager;
+pub mod op;
 pub mod out_event;
-pub mod swarm_op;
 
 pub use event_listener::*;
 pub use in_event::*;
 pub use manager::Manager;
 pub use out_event::ToSwarmEvent;
 
-pub type Swarm = Libp2pSwarm<Behaviour>;
-pub type SwarmOp = swarm_op::Op;
-pub type SwarmOpResult = swarm_op::OpResult;
+pub type Swarm = Libp2pSwarm<behaviour::Behaviour>;
+pub type SwarmOp = op::swarm::Op;
+pub type SwarmOpResult = op::swarm::OpResult;
 type SwarmTransport = Boxed<(PeerId, StreamMuxerBox)>;
-pub(crate) type SwarmEvent = libp2p::swarm::SwarmEvent<ToSwarmEvent,<<Behaviour as libp2p::swarm::NetworkBehaviour>::ConnectionHandler as libp2p::swarm::ConnectionHandler>::Error>;
+pub(crate) type SwarmEvent = libp2p::swarm::SwarmEvent<ToSwarmEvent,<<behaviour::Behaviour as libp2p::swarm::NetworkBehaviour>::ConnectionHandler as libp2p::swarm::ConnectionHandler>::Error>;
 
 pub struct Builder {
     config: SwarmConfig,
@@ -36,14 +40,11 @@ impl Builder {
     pub fn new(config: SwarmConfig) -> Self {
         Self { config }
     }
-    pub fn build(self, buffer_size: usize, mut ev_bus_handle: Handle, ev_tap:EventTap) -> Manager {
+    pub fn build(self, buffer_size: usize, mut ev_bus_handle: Handle, ev_tap: EventTap) -> Manager {
         let ident = self.config.local_ident.clone();
         let (swarm_tx, mut swarm_rx) = mpsc::channel(buffer_size);
         let (protocol_tx, mut protocol_rx) = mpsc::channel(buffer_size);
-        let manager = Manager {
-            swarm_sender: swarm_tx,
-            behaviour_sender: protocol_tx,
-        };
+        let manager = Manager::new(swarm_tx, protocol_tx);
         let (behaviour, transport) = behaviour::Behaviour::new(self.config);
         tokio::spawn(async move {
             let mut swarm = libp2p::swarm::SwarmBuilder::with_tokio_executor(
@@ -114,16 +115,16 @@ fn handle_swarm_event(ev: &SwarmEvent, swarm: &mut Swarm) {
 }
 
 #[inline]
-fn swarm_op_exec(swarm: &mut Swarm, ev: in_event::InEvent) {
-    use swarm_op::*;
+fn swarm_op_exec(swarm: &mut Swarm, ev: in_event::swarm::InEvent) {
+    use op::swarm::*;
     let (op, callback) = ev.into_inner();
     match op {
         Op::Dial(addr) => {
-            let result = OpResult::Dial(swarm.dial(addr.clone()).map_err(|e| e.into()));
+            let result = OpResult::Dial(swarm.dial(addr).map_err(|e| e.into()));
             handle_callback(callback, result)
         }
         Op::Listen(addr) => {
-            let result = OpResult::Listen(swarm.listen_on(addr.clone()).map_err(|e| e.into()));
+            let result = OpResult::Listen(swarm.listen_on(addr).map_err(|e| e.into()));
             handle_callback(callback, result)
         }
         Op::AddExternalAddress(addr, score) => {
@@ -145,16 +146,6 @@ fn swarm_op_exec(swarm: &mut Swarm, ev: in_event::InEvent) {
             let result = OpResult::RemoveExternalAddress(swarm.remove_external_address(&addr));
             handle_callback(callback, result)
         }
-        // Op::BanByPeerId(peer_id) => {
-        //     swarm.ban_peer_id(peer_id.clone());
-        //     let result = OpResult::BanByPeerId;
-        //     handle_callback(callback, result)
-        // }
-        // Op::UnbanByPeerId(peer_id) => {
-        //     swarm.unban_peer_id(peer_id.clone());
-        //     let result = OpResult::UnbanByPeerId;
-        //     handle_callback(callback, result)
-        // }
         Op::DisconnectFromPeerId(peer_id) => {
             let result = OpResult::DisconnectFromPeerId(swarm.disconnect_peer_id(peer_id.clone()));
             handle_callback(callback, result)
@@ -185,18 +176,22 @@ fn swarm_op_exec(swarm: &mut Swarm, ev: in_event::InEvent) {
 }
 
 #[inline]
-async fn map_protocol_ev(swarm: &mut Swarm, manager: &mut Handle, ev: BehaviourInEvent) {
+async fn map_protocol_ev(
+    swarm: &mut Swarm,
+    manager: &mut Handle,
+    ev: in_event::behaviour::InEvent,
+) {
+    use in_event::behaviour::InEvent::*;
     match ev {
-        BehaviourInEvent::Messaging(ev) => swarm.behaviour_mut().messaging.push_event(ev),
-        BehaviourInEvent::Tethering(ev) => swarm.behaviour_mut().tethering.push_event(ev),
-        BehaviourInEvent::Kad(ev) => {
-            kad::map_in_event(&mut swarm.behaviour_mut().kad, manager, ev).await
-        }
+        Messaging(ev) => swarm.behaviour_mut().messaging.push_event(ev),
+        Tethering(ev) => swarm.behaviour_mut().tethering.push_event(ev),
+        Kad(ev) => kad::map_in_event(&mut swarm.behaviour_mut().kad, manager, ev).await,
     }
 }
 
 #[inline]
 fn handle_behaviour_event(swarm: &mut Swarm, ev: &ToSwarmEvent) {
+    use super::protocols::*;
     use out_event::ToSwarmEvent::*;
     match ev {
         Kad(ev) => kad::ev_dispatch(ev),

@@ -1,3 +1,4 @@
+use crate::net::p2p::swarm::{self, op::behaviour::CallbackSender};
 use libp2p::PeerId;
 use serde::{Deserialize, Serialize};
 use std::fmt::Debug;
@@ -22,23 +23,26 @@ pub use behaviour::Behaviour;
 pub use error::Error;
 pub use result::*;
 
-use crate::net::p2p::swarm::{BehaviourOp, BehaviourOpResult};
-
 /// A placeholder struct waiting to be used for interface consistency.
 #[derive(Debug, Default)]
 pub struct Config;
 
 #[derive(Debug)]
-pub struct InEvent {
+pub(crate) struct InEvent {
     op: Op,
-    callback: oneshot::Sender<BehaviourOpResult>,
+    callback: CallbackSender,
 }
 impl InEvent {
-    pub fn new(op: Op, callback: oneshot::Sender<BehaviourOpResult>) -> Self {
+    pub fn new(op: Op, callback: CallbackSender) -> Self {
         Self { op, callback }
     }
-    pub fn into_inner(self) -> (Op, oneshot::Sender<BehaviourOpResult>) {
+    pub fn into_inner(self) -> (Op, CallbackSender) {
         (self.op, self.callback)
+    }
+}
+impl Into<swarm::in_event::behaviour::InEvent> for InEvent {
+    fn into(self) -> swarm::in_event::behaviour::InEvent {
+        swarm::in_event::behaviour::InEvent::Tethering(self)
     }
 }
 
@@ -48,6 +52,11 @@ pub enum Op {
     RemoteCallback(PeerId, u128, exec::result::OpResult),
     LocalExec(TetheringOp),
     Push(PeerId, push::PushType),
+}
+impl Into<swarm::op::behaviour::Op> for Op {
+    fn into(self) -> swarm::op::behaviour::Op {
+        swarm::op::behaviour::Op::Tethering(self)
+    }
 }
 
 #[derive(Debug)]
@@ -59,7 +68,7 @@ pub enum OutEvent {
     Unsupported(PeerId, Subprotocol),
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Subprotocol {
     Exec,
     Push,
@@ -70,9 +79,9 @@ pub enum TetheringOp {
     Trust(PeerId),
     Untrust(PeerId),
 }
-impl Into<BehaviourOp> for TetheringOp {
-    fn into(self) -> BehaviourOp {
-        BehaviourOp::Tethering(Op::LocalExec(self))
+impl Into<swarm::op::behaviour::Op> for TetheringOp {
+    fn into(self) -> swarm::op::behaviour::Op {
+        swarm::op::behaviour::Op::Tethering(Op::LocalExec(self))
     }
 }
 
