@@ -115,7 +115,7 @@ impl NetworkBehaviour for Behaviour {
                     };
                     handle_callback
                         .send(swarm::op::behaviour::OpResult::Tethering(
-                            result.map(|_| HandleOk::LocalExec(())),
+                            result.map(|_| HandleOk::Ok),
                         ))
                         .unwrap();
                 }

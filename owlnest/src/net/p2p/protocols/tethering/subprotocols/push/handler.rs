@@ -93,7 +93,6 @@ impl PushHandler {
         match error {
             StreamUpgradeError::NegotiationFailed => {
                 self.state = State::Inactive { reported: false };
-                return;
             }
             e => {
                 warn!(

@@ -49,7 +49,7 @@ where
             MapOps::Lookup(pattern, tx) => {
                 let mut map = self.map.clone();
                 map.retain(|k, _| pattern.is_match(k));
-                if map.len() == 0 {
+                if map.is_empty() {
                     tx.send(MapResult::FoundKV(None))
                 } else {
                     tx.send(MapResult::FoundKV(Some(map)))

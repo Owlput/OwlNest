@@ -15,7 +15,7 @@ where
 {
     let verf = xxh3_128(&msg_bytes);
     let chunks_number = (msg_bytes.len() / 256) + 1;
-    stream.write(&chunks_number.to_be_bytes()).await?;
+    stream.write_all(&chunks_number.to_be_bytes()).await?;
     stream.flush().await?;
     let mut chunks = msg_bytes.chunks_exact(256);
     for _ in 1..chunks_number {
@@ -60,7 +60,7 @@ where
         msg_buf.extend_from_slice(&buf)
     }
     msg_buf = msg_buf.trim_ascii_end().to_vec();
-    stream.write(&xxh3_128(&msg_buf).to_be_bytes()).await?;
+    stream.write_all(&xxh3_128(&msg_buf).to_be_bytes()).await?;
     stream.flush().await?;
     Ok((stream, msg_buf))
 }

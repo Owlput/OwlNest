@@ -33,10 +33,10 @@ pub fn handle_message_send(manager: &Manager, ident: &IdentityUnion, command: Ve
         }
     };
     let op = Op::SendMessage(
-        target_peer.clone(),
+        target_peer,
         Message::new(
-            &ident.get_peer_id(),
-            &target_peer,
+            ident.get_peer_id(),
+            target_peer,
             command.split_at(3).1.join(" "),
         ),
     );

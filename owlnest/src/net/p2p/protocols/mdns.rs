@@ -29,8 +29,7 @@ pub(crate) fn map_in_event(ev: InEvent, behav: &mut Behaviour) {
     match op {
         Op::ListDiscoveredNodes => {
             let node_list = behav
-                .discovered_nodes()
-                .map(|r| r.clone())
+                .discovered_nodes().copied()
                 .collect::<Vec<PeerId>>();
             callback
                 .send(OpResult::ListDiscoveredNodes(node_list))

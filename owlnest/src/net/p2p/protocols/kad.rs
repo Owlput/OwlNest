@@ -27,9 +27,9 @@ impl InEvent {
         (self.op, self.callback)
     }
 }
-impl Into<swarm::in_event::behaviour::InEvent> for InEvent {
-    fn into(self) -> swarm::in_event::behaviour::InEvent {
-        swarm::in_event::behaviour::InEvent::Kad(self)
+impl From<InEvent> for swarm::in_event::behaviour::InEvent {
+    fn from(value: InEvent) -> Self {
+        Self::Kad(value)
     }
 }
 
@@ -37,9 +37,9 @@ impl Into<swarm::in_event::behaviour::InEvent> for InEvent {
 pub enum Op {
     PeerLookup(PeerId),
 }
-impl Into<behaviour::Op> for Op {
-    fn into(self) -> behaviour::Op {
-        behaviour::Op::Kad(self)
+impl From<Op> for behaviour::Op{
+    fn from(value: Op) -> Self {
+        Self::Kad(value)
     }
 }
 
@@ -48,9 +48,9 @@ pub enum OpResult {
     PeerLookup(Vec<QueryResult>),
     BehaviourEvent(OutEvent),
 }
-impl Into<behaviour::OpResult> for OpResult {
-    fn into(self) -> behaviour::OpResult {
-        behaviour::OpResult::Kad(self)
+impl From<OpResult> for behaviour::OpResult{
+    fn from(value: OpResult) -> Self {
+        Self::Kad(value)
     }
 }
 

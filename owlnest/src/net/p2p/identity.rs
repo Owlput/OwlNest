@@ -25,7 +25,7 @@ impl IdentityUnion {
     }
     /// Return a clone of the `peer_id` field.
     pub fn get_peer_id(&self) -> PeerId {
-        self.peer_id.clone()
+        self.peer_id
     }
     pub fn from_file_rsa_pkcs8_private<P>(path: P) -> Result<Self, Box<dyn std::error::Error>>
     where
@@ -84,8 +84,8 @@ impl IdentityUnion {
         Self::export_to_file(path, &buf)
     }
     pub fn export_keypair(&self, folder_path: &str, file_name: &str) -> Result<(), std::io::Error> {
-        let folder_path = if folder_path.ends_with("/") {
-            folder_path.rsplit_once("/").unwrap().0
+        let folder_path = if folder_path.ends_with('/') {
+            folder_path.rsplit_once('/').unwrap().0
         } else {
             folder_path
         };

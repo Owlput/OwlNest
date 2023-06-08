@@ -59,9 +59,8 @@ impl Builder {
                     Some(ev) = protocol_rx.recv() => map_protocol_ev(&mut swarm,&mut ev_bus_handle ,ev).await,
                     out_event = swarm.select_next_some() => {
                         handle_swarm_event(&out_event,&mut swarm);
-                        match out_event {
-                            libp2p_swarm::SwarmEvent::Behaviour(ev) => ev_tap.send(ev.into()).await.unwrap(),
-                            _ => {}
+                        if let libp2p_swarm::SwarmEvent::Behaviour(ev) = out_event{
+                            ev_tap.send(ev.into()).await.unwrap()
                         }
                     }
                 };
@@ -78,10 +77,10 @@ fn handle_swarm_event(ev: &SwarmEvent, swarm: &mut Swarm) {
         SwarmEvent::NewListenAddr { address, .. } => info!("Listening on {:?}", address),
         SwarmEvent::ConnectionEstablished {
             peer_id, endpoint, ..
-        } => kad_add(swarm, peer_id.clone(), endpoint.clone()),
+        } => kad_add(swarm, *peer_id, endpoint.clone()),
         SwarmEvent::ConnectionClosed {
             peer_id, endpoint, ..
-        } => kad_remove(swarm, peer_id.clone(), endpoint.clone()),
+        } => kad_remove(swarm, *peer_id, endpoint.clone()),
         SwarmEvent::IncomingConnection {
             send_back_addr,
             local_addr,
@@ -120,11 +119,11 @@ fn swarm_op_exec(swarm: &mut Swarm, ev: in_event::swarm::InEvent) {
     let (op, callback) = ev.into_inner();
     match op {
         Op::Dial(addr) => {
-            let result = OpResult::Dial(swarm.dial(addr).map_err(|e| e.into()));
+            let result = OpResult::Dial(swarm.dial(addr));
             handle_callback(callback, result)
         }
         Op::Listen(addr) => {
-            let result = OpResult::Listen(swarm.listen_on(addr).map_err(|e| e.into()));
+            let result = OpResult::Listen(swarm.listen_on(addr));
             handle_callback(callback, result)
         }
         Op::AddExternalAddress(addr, score) => {
@@ -132,7 +131,7 @@ fn swarm_op_exec(swarm: &mut Swarm, ev: in_event::swarm::InEvent) {
                 Some(v) => AddressScore::Finite(v),
                 None => AddressScore::Infinite,
             };
-            let result = match swarm.add_external_address(addr.clone(), score.clone()) {
+            let result = match swarm.add_external_address(addr, score) {
                 libp2p::swarm::AddAddressResult::Inserted { .. } => {
                     OpResult::AddExternalAddress(AddExternalAddressResult::Inserted)
                 }
@@ -147,23 +146,23 @@ fn swarm_op_exec(swarm: &mut Swarm, ev: in_event::swarm::InEvent) {
             handle_callback(callback, result)
         }
         Op::DisconnectFromPeerId(peer_id) => {
-            let result = OpResult::DisconnectFromPeerId(swarm.disconnect_peer_id(peer_id.clone()));
+            let result = OpResult::DisconnectFromPeerId(swarm.disconnect_peer_id(peer_id));
             handle_callback(callback, result)
         }
         Op::ListExternalAddresses => {
             let addr_list = swarm
                 .external_addresses()
-                .map(|record| record.clone())
+                .cloned()
                 .collect::<Vec<AddressRecord>>();
             let result = OpResult::ListExternalAddresses(
-                addr_list.into_iter().map(|v| v.into()).collect::<_>(),
+                addr_list.into_iter().collect::<_>(),
             );
             handle_callback(callback, result)
         }
         Op::ListListeners => {
             let listener_list = swarm
                 .listeners()
-                .map(|addr| addr.clone())
+                .cloned()
                 .collect::<Vec<Multiaddr>>();
             let result = OpResult::ListListeners(listener_list);
             handle_callback(callback, result)
@@ -196,7 +195,7 @@ fn handle_behaviour_event(swarm: &mut Swarm, ev: &ToSwarmEvent) {
     match ev {
         Kad(ev) => kad::ev_dispatch(ev),
         Identify(ev) => identify::ev_dispatch(ev),
-        Mdns(ev) => mdns::ev_dispatch(&ev, swarm),
+        Mdns(ev) => mdns::ev_dispatch(ev, swarm),
         Messaging(ev) => messaging::ev_dispatch(ev),
         Tethering(ev) => tethering::ev_dispatch(ev),
         RelayServer(ev) => relay_server::ev_dispatch(ev),

@@ -31,9 +31,9 @@ impl InEvent {
         Self { op, callback }
     }
 }
-impl Into<swarm::in_event::behaviour::InEvent> for InEvent{
-    fn into(self) -> swarm::in_event::behaviour::InEvent {
-        swarm::in_event::behaviour::InEvent::Messaging(self)
+impl From<InEvent> for swarm::in_event::behaviour::InEvent{
+    fn from(value: InEvent) -> Self {
+        Self::Messaging(value)
     }
 }
 
@@ -73,6 +73,6 @@ pub fn ev_dispatch(ev: &OutEvent) {
 }
 
 mod protocol {
-    pub const PROTOCOL_NAME: &'static str = "/owlnest/messaging/0.0.1";
+    pub const PROTOCOL_NAME: &str = "/owlnest/messaging/0.0.1";
     pub use crate::net::p2p::protocols::universal::protocol::{recv, send};
 }

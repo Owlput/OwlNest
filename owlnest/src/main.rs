@@ -22,11 +22,11 @@ fn setup_peer(ident: IdentityUnion, event_bus_handle:&Handle, ev_tap:EventTap) {
         identify: protocols::identify::Config::new("/owlnest/0.0.1".into(), ident.get_pubkey()),
         mdns: protocols::mdns::Config::default(),
         messaging: protocols::messaging::Config::default(),
-        tethering: protocols::tethering::Config::default(),
+        tethering: protocols::tethering::Config,
         relay_server: protocols::relay_server::Config::default(),
     };
     let mgr = net::p2p::swarm::Builder::new(swarm_config).build(8,event_bus_handle.clone(),ev_tap);
-    cli::setup_interactive_shell(ident.clone(), mgr.clone());
+    cli::setup_interactive_shell(ident, mgr);
 }
 
 fn setup_logging() {

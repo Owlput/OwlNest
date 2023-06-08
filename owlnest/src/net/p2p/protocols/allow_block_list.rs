@@ -102,7 +102,7 @@ pub mod behaviour {
             if !self.policy.remove_peer(peer) {
                 return false;
             }
-            self.pending_disconnect.push_front(peer.clone());
+            self.pending_disconnect.push_front(*peer);
             if let Some(waker) = self.waker.take() {
                 waker.wake()
             }
@@ -132,7 +132,7 @@ pub mod policy_peer_id {
             self.0.remove(peer)
         }
         pub fn is_allowed(&self, peer: &PeerId) -> bool {
-            self.0.contains(&peer)
+            self.0.contains(peer)
         }
     }
     impl Policy for AllowPeerId {

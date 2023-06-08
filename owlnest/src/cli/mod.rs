@@ -16,7 +16,6 @@ pub fn setup_interactive_shell(ident: IdentityUnion, manager: swarm::Manager) {
     std::thread::spawn(move || {
         stdout().execute(Clear(ClearType::All)).unwrap();
         println!("OwlNest is now running in interactive mode, type \"help\" for more information.");
-        let manager = manager.clone();
         let mut rl = DefaultEditor::new().unwrap();
         let mut retry_times = 0u32;
         loop {

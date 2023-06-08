@@ -23,7 +23,7 @@ impl EventTap {
         &self,
         value: ListenedEvent,
     ) -> Result<(), mpsc::error::SendError<ListenedEvent>> {
-        self.0.send(value.into()).await
+        self.0.send(value).await
     }
 }
 

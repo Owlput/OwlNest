@@ -58,12 +58,11 @@ impl TryInto<push::HandleError> for HandleError {
 
 #[derive(Debug)]
 pub enum HandleOk {
-    LocalExec(()),
+    Ok,
     RemoteExec(Duration),
-    Push(()),
 }
-impl Into<OpResult> for HandleOk {
-    fn into(self) -> OpResult {
-        OpResult::Tethering(Ok(self))
+impl From<HandleOk> for OpResult {
+    fn from(val: HandleOk) -> Self {
+        OpResult::Tethering(Ok(val))
     }
 }

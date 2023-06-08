@@ -40,9 +40,9 @@ impl InEvent {
         (self.op, self.callback)
     }
 }
-impl Into<swarm::in_event::behaviour::InEvent> for InEvent {
-    fn into(self) -> swarm::in_event::behaviour::InEvent {
-        swarm::in_event::behaviour::InEvent::Tethering(self)
+impl From<InEvent> for swarm::in_event::behaviour::InEvent {
+    fn from(val: InEvent) -> Self {
+        swarm::in_event::behaviour::InEvent::Tethering(val)
     }
 }
 
@@ -53,9 +53,9 @@ pub enum Op {
     LocalExec(TetheringOp),
     Push(PeerId, push::PushType),
 }
-impl Into<swarm::op::behaviour::Op> for Op {
-    fn into(self) -> swarm::op::behaviour::Op {
-        swarm::op::behaviour::Op::Tethering(self)
+impl From<Op> for swarm::op::behaviour::Op {
+    fn from(val: Op) -> Self {
+        swarm::op::behaviour::Op::Tethering(val)
     }
 }
 
@@ -79,9 +79,9 @@ pub enum TetheringOp {
     Trust(PeerId),
     Untrust(PeerId),
 }
-impl Into<swarm::op::behaviour::Op> for TetheringOp {
-    fn into(self) -> swarm::op::behaviour::Op {
-        swarm::op::behaviour::Op::Tethering(Op::LocalExec(self))
+impl From<TetheringOp> for swarm::op::behaviour::Op {
+    fn from(val: TetheringOp) -> Self {
+        swarm::op::behaviour::Op::Tethering(Op::LocalExec(val))
     }
 }
 

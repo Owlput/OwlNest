@@ -27,7 +27,7 @@ macro_rules! behaviour_select {
         use libp2p::swarm::{NetworkBehaviour,ConnectionId,ConnectionDenied};
         use libp2p_swarm::derive_prelude::Endpoint;
         use libp2p::{PeerId,Multiaddr};
-        use crate::*;
+        use $crate::*;
         use owlnest_proc::generate_kind;
 
         generate_select_struct!(Behaviour{$($name:$behaviour_type,)*});
@@ -417,7 +417,7 @@ macro_rules! behaviour_select {
 macro_rules! connection_handler_select {
     {$($name:ident=>$behaviour:ident:$handler:ty,)*} => {
         pub mod handler{
-        use crate::*;
+        use $crate::*;
         use super::*;
         use libp2p::swarm::{handler::{ConnectionEvent, ListenUpgradeError}, ConnectionHandler, ConnectionHandlerEvent, SubstreamProtocol};
         use std::task::Poll;
@@ -591,7 +591,7 @@ macro_rules! connection_handler_select {
 macro_rules! generate_inbound_upgrade_select {
     ($direction:ident,$impl_name:ident{$($name:ident=>$behaviour:ident:$upgrade:ty,)*}) => {
         pub(crate) mod $direction{
-            use crate::*;
+            use $crate::*;
             use super::*;
             use libp2p::swarm::Stream;
 
@@ -658,7 +658,7 @@ macro_rules! generate_inbound_upgrade_select {
 macro_rules! generate_outbound_upgrade_select {
     ($direction:ident,$impl_name:ident{$($name:ident=>$behaviour:ident:$upgrade:ty,)*}) => {
         pub(crate) mod $direction{
-            use crate::*;
+            use $crate::*;
             use super::*;
             use libp2p::swarm::Stream;
         generate_select_enum!(#[derive(Clone)]UpgradeInfoSelect{$($behaviour:<$upgrade as upgrade::UpgradeInfo>::Info,)*});

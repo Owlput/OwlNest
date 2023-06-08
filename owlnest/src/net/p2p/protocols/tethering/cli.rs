@@ -33,7 +33,7 @@ fn handle_trust_peer(manager: &swarm::Manager, command: Vec<&str>) {
         }
     };
     let op = swarm::op::behaviour::Op::Tethering(Op::LocalExec(TetheringOp::Trust(
-        peer_to_trust.clone(),
+        peer_to_trust,
     )));
     let result = manager.blocking_behaviour_exec(op).try_into().unwrap();
     if let Err(e) = result {
@@ -63,7 +63,7 @@ fn handle_untrust_peer(manager: &swarm::Manager, command: Vec<&str>) {
             return;
         }
     };
-    let op = Op::LocalExec(TetheringOp::Untrust(peer_to_untrust.clone())).into();
+    let op = Op::LocalExec(TetheringOp::Untrust(peer_to_untrust)).into();
     let result = manager.blocking_behaviour_exec(op).try_into().unwrap();
     if let Err(e) = result {
         match e.try_into().unwrap() {

@@ -119,7 +119,6 @@ impl ExecHandler {
         match error {
             libp2p_swarm::StreamUpgradeError::NegotiationFailed => {
                 self.state = State::Inactive { reported: false };
-                return;
             }
             e => {
                 warn!(

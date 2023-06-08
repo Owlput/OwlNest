@@ -5,9 +5,9 @@ use crate::net::p2p::swarm::op::behaviour;
 pub enum Op {
     SendMessage(PeerId, Message),
 }
-impl Into<behaviour::Op> for Op{
-    fn into(self) -> behaviour::Op {
-        behaviour::Op::Messaging(self)
+impl From<Op> for behaviour::Op {
+    fn from(value: Op) -> Self {
+        Self::Messaging(value)
     }
 }
 
@@ -16,8 +16,8 @@ pub enum OpResult {
     SuccessfulPost(Duration),
     Error(Error),
 }
-impl Into<behaviour::OpResult> for OpResult{
-    fn into(self) -> behaviour::OpResult {
-        behaviour::OpResult::Messaging(self)
+impl From<OpResult> for behaviour::OpResult {
+    fn from(value: OpResult) -> Self {
+        Self::Messaging(value)
     }
 }

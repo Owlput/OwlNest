@@ -39,7 +39,7 @@ impl Listener {
         Self(listener)
     }
     pub async fn recv(&mut self) -> Result<ListenedEvent, Error> {
-        Ok(self.0.recv().await.map_err(Error::Recv)?)
+        self.0.recv().await.map_err(Error::Recv)
     }
 }
 

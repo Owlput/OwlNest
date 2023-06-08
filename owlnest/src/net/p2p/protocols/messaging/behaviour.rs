@@ -67,7 +67,7 @@ impl NetworkBehaviour for Behaviour {
             }
             handler::ToBehaviourEvent::OutboundNegotiated => {
                 self.out_events
-                    .push_front(OutEvent::OutboundNegotiated(peer_id.clone()));
+                    .push_front(OutEvent::OutboundNegotiated(peer_id));
             }
         }
     }

@@ -137,7 +137,7 @@ impl TryFrom<super::SwarmEvent> for SwarmEvent {
                 peer_id,
                 endpoint,
                 num_established,
-                concurrent_dial_errors: concurrent_dial_errors,
+                concurrent_dial_errors,
                 established_in,
             },
             libp2p::swarm::SwarmEvent::ConnectionClosed {
@@ -149,7 +149,7 @@ impl TryFrom<super::SwarmEvent> for SwarmEvent {
                 peer_id,
                 endpoint,
                 num_established,
-                cause: cause,
+                cause,
             },
             libp2p::swarm::SwarmEvent::IncomingConnection {
                 local_addr,
@@ -165,12 +165,12 @@ impl TryFrom<super::SwarmEvent> for SwarmEvent {
             } => Self::IncomingConnectionError {
                 local_addr,
                 send_back_addr,
-                error: error,
+                error,
             },
             libp2p::swarm::SwarmEvent::OutgoingConnectionError { peer_id, error } => {
                 Self::OutgoingConnectionError {
                     peer_id,
-                    error: error,
+                    error,
                 }
             }
             libp2p::swarm::SwarmEvent::NewListenAddr {
@@ -194,12 +194,12 @@ impl TryFrom<super::SwarmEvent> for SwarmEvent {
             } => Self::ListenerClosed {
                 listener_id,
                 addresses,
-                reason: reason,
+                reason,
             },
             libp2p::swarm::SwarmEvent::ListenerError { listener_id, error } => {
                 Self::ListenerError {
                     listener_id,
-                    error: error,
+                    error,
                 }
             }
             libp2p::swarm::SwarmEvent::Dialing(peer_id) => Self::Dialing(peer_id),

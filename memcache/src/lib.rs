@@ -8,7 +8,7 @@ mod tests {
 
     #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
     async fn it_works() {
-        let manager = MapManager::new();
+        let manager = MapManager::new(8);
         let manager1 = manager.clone();
         assert_eq!(manager.map_try_insert("ping".to_string(),"PONG".to_string()).await,Inserted);
         assert_eq!(manager1.map_try_insert("ping".to_string(), "PONG".to_string()).await,Failed);

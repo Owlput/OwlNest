@@ -9,14 +9,14 @@ pub struct Message {
     pub msg: String,
 }
 impl Message {
-    pub fn new(from: &PeerId, to: &PeerId, msg: String) -> Self {
+    pub fn new(from: PeerId, to: PeerId, msg: String) -> Self {
         Self {
             time: SystemTime::now()
                 .duration_since(SystemTime::UNIX_EPOCH)
                 .unwrap()
                 .as_millis(),
-            from: from.clone(),
-            to: to.clone(),
+            from,
+            to,
             msg,
         }
     }
