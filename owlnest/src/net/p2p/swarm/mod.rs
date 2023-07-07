@@ -1,17 +1,13 @@
-use super::protocols::*;
-use super::SwarmConfig;
-use crate::event_bus::{bus::EventTap, Handle};
+use crate::{event_bus::{bus::EventTap, Handle}, net::p2p::protocols::kad};
 use futures::StreamExt;
-use libp2p::Multiaddr;
 use libp2p::{
     core::{muxing::StreamMuxerBox, transport::Boxed, ConnectedPoint},
-    swarm::{AddressRecord, AddressScore},
-    PeerId, Swarm as Libp2pSwarm,
+    Swarm as Libp2pSwarm,
 };
+use libp2p::{PeerId,Multiaddr};
 use std::fmt::Debug;
 use tokio::select;
-use tokio::sync::mpsc;
-use tokio::sync::oneshot;
+use tokio::sync::{mpsc, oneshot};
 use tracing::{debug, info, warn};
 
 mod behaviour;
@@ -27,9 +23,9 @@ pub use in_event::*;
 pub use manager::Manager;
 pub use out_event::ToSwarmEvent;
 
+use super::SwarmConfig;
+
 pub type Swarm = Libp2pSwarm<behaviour::Behaviour>;
-pub type SwarmOp = op::swarm::Op;
-pub type SwarmOpResult = op::swarm::OpResult;
 type SwarmTransport = Boxed<(PeerId, StreamMuxerBox)>;
 pub(crate) type SwarmEvent = libp2p::swarm::SwarmEvent<ToSwarmEvent,<<behaviour::Behaviour as libp2p::swarm::NetworkBehaviour>::ConnectionHandler as libp2p::swarm::ConnectionHandler>::Error>;
 
@@ -84,6 +80,7 @@ fn handle_swarm_event(ev: &SwarmEvent, swarm: &mut Swarm) {
         SwarmEvent::IncomingConnection {
             send_back_addr,
             local_addr,
+            ..
         } => debug!(
             "Incoming connection from {} on local address {}",
             send_back_addr, local_addr
@@ -92,11 +89,12 @@ fn handle_swarm_event(ev: &SwarmEvent, swarm: &mut Swarm) {
             local_addr,
             send_back_addr,
             error,
+            ..
         } => info!(
             "Incoming connection error from {} on local address {}, error: {:?}",
             send_back_addr, local_addr, error
         ),
-        SwarmEvent::OutgoingConnectionError { peer_id, error } => info!(
+        SwarmEvent::OutgoingConnectionError { peer_id, error, .. } => info!(
             "Outgoing connection error to peer {:?}: {:?}",
             peer_id, error
         ),
@@ -109,66 +107,47 @@ fn handle_swarm_event(ev: &SwarmEvent, swarm: &mut Swarm) {
         SwarmEvent::ListenerError { listener_id, error } => {
             info!("Listener {:?} reported an error {}", listener_id, error)
         }
-        SwarmEvent::Dialing(peer_id) => debug!("Dailing peer {}", peer_id),
+        SwarmEvent::Dialing { peer_id, .. } => debug!("Dailing peer? {:?}", peer_id),
     }
 }
 
 #[inline]
 fn swarm_op_exec(swarm: &mut Swarm, ev: in_event::swarm::InEvent) {
-    use op::swarm::*;
-    let (op, callback) = ev.into_inner();
-    match op {
-        Op::Dial(addr) => {
-            let result = OpResult::Dial(swarm.dial(addr));
+    use swarm::InEvent::*;
+    match ev {
+        Dial(addr, callback) => {
+            let result = swarm.dial(addr);
             handle_callback(callback, result)
         }
-        Op::Listen(addr) => {
-            let result = OpResult::Listen(swarm.listen_on(addr));
+        Listen(addr,callback) => {
+            let result = swarm.listen_on(addr);
             handle_callback(callback, result)
         }
-        Op::AddExternalAddress(addr, score) => {
-            let score = match score {
-                Some(v) => AddressScore::Finite(v),
-                None => AddressScore::Infinite,
-            };
-            let result = match swarm.add_external_address(addr, score) {
-                libp2p::swarm::AddAddressResult::Inserted { .. } => {
-                    OpResult::AddExternalAddress(AddExternalAddressResult::Inserted)
-                }
-                libp2p::swarm::AddAddressResult::Updated { .. } => {
-                    OpResult::AddExternalAddress(AddExternalAddressResult::Updated)
-                }
-            };
+        AddExternalAddress(addr,callback) => {
+            swarm.add_external_address(addr);
+            handle_callback(callback, ())
+        }
+        RemoveExternalAddress(addr,callback) => {
+            swarm.remove_external_address(&addr);
+            handle_callback(callback, ())
+        }
+        DisconnectFromPeerId(peer_id,callback) => {
+            let result = swarm.disconnect_peer_id(peer_id);
             handle_callback(callback, result)
         }
-        Op::RemoveExternalAddress(addr) => {
-            let result = OpResult::RemoveExternalAddress(swarm.remove_external_address(&addr));
-            handle_callback(callback, result)
-        }
-        Op::DisconnectFromPeerId(peer_id) => {
-            let result = OpResult::DisconnectFromPeerId(swarm.disconnect_peer_id(peer_id));
-            handle_callback(callback, result)
-        }
-        Op::ListExternalAddresses => {
+        ListExternalAddresses(callback) => {
             let addr_list = swarm
                 .external_addresses()
                 .cloned()
-                .collect::<Vec<AddressRecord>>();
-            let result = OpResult::ListExternalAddresses(
-                addr_list.into_iter().collect::<_>(),
-            );
-            handle_callback(callback, result)
-        }
-        Op::ListListeners => {
-            let listener_list = swarm
-                .listeners()
-                .cloned()
                 .collect::<Vec<Multiaddr>>();
-            let result = OpResult::ListListeners(listener_list);
-            handle_callback(callback, result)
+            handle_callback(callback, addr_list)
         }
-        Op::IsConnectedToPeerId(peer_id) => {
-            let result = OpResult::IsConnectedToPeerId(swarm.is_connected(&peer_id));
+        ListListeners(callback) => {
+            let listener_list = swarm.listeners().cloned().collect::<Vec<Multiaddr>>();
+            handle_callback(callback, listener_list)
+        }
+        IsConnectedToPeerId(peer_id,callback) => {
+            let result = swarm.is_connected(&peer_id);
             handle_callback(callback, result)
         }
     }
@@ -233,7 +212,6 @@ fn kad_remove(swarm: &mut Swarm, peer_id: PeerId, endpoint: ConnectedPoint) {
     }
 }
 
-#[inline]
 fn handle_callback<T>(callback: oneshot::Sender<T>, result: T)
 where
     T: Debug,

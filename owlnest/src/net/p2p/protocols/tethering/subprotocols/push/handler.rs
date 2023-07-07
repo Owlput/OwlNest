@@ -153,7 +153,7 @@ impl ConnectionHandler for PushHandler {
             }
             State::Inactive { reported: false } => {
                 self.state = State::Inactive { reported: true };
-                return Poll::Ready(ConnectionHandlerEvent::Custom(OutEvent::Unsupported));
+                return Poll::Ready(ConnectionHandlerEvent::NotifyBehaviour(OutEvent::Unsupported));
             }
             State::Active => {}
         }
@@ -169,7 +169,7 @@ impl ConnectionHandler for PushHandler {
                     let packet = match serde_json::from_slice::<Packet>(&bytes) {
                         Ok(packet) => packet,
                         Err(e) => {
-                            return Poll::Ready(ConnectionHandlerEvent::Custom(OutEvent::Error(
+                            return Poll::Ready(ConnectionHandlerEvent::NotifyBehaviour(OutEvent::Error(
                                 Error::Corrupted(e, bytes),
                             )))
                         }
@@ -177,7 +177,7 @@ impl ConnectionHandler for PushHandler {
                     self.inbound = Some(protocol::recv(stream).boxed());
                     match packet {
                         Packet::Msg(msg) => {
-                            return Poll::Ready(ConnectionHandlerEvent::Custom(OutEvent::Message(
+                            return Poll::Ready(ConnectionHandlerEvent::NotifyBehaviour(OutEvent::Message(
                                 msg,
                             )))
                         }
@@ -187,7 +187,7 @@ impl ConnectionHandler for PushHandler {
         }
         loop {
             if let Some(ev) = self.pending_out_events.pop_back() {
-                return Poll::Ready(ConnectionHandlerEvent::Custom(ev));
+                return Poll::Ready(ConnectionHandlerEvent::NotifyBehaviour(ev));
             }
             match self.outbound.take() {
                 Some(OutboundState::Busy(mut task, callback)) => match task.poll_unpin(cx) {

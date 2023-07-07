@@ -1,18 +1,17 @@
 pub mod swarm {
-    use crate::net::p2p::swarm::op::swarm;
-    use tokio::sync::oneshot;
+    use libp2p::{Multiaddr, TransportError, PeerId};
+    use libp2p_swarm::{DialError, derive_prelude::ListenerId};
+    use tokio::sync::oneshot::*;
     #[derive(Debug)]
-    pub struct InEvent {
-        op: swarm::Op,
-        callback: oneshot::Sender<swarm::OpResult>,
-    }
-    impl InEvent {
-        pub fn new(op: swarm::Op, callback: oneshot::Sender<swarm::OpResult>) -> Self {
-            InEvent { op, callback }
-        }
-        pub fn into_inner(self) -> (swarm::Op, oneshot::Sender<swarm::OpResult>) {
-            (self.op, self.callback)
-        }
+    pub enum InEvent {
+        Dial(Multiaddr, Sender<Result<(),DialError>>),
+        Listen(Multiaddr,Sender<Result<ListenerId,TransportError<std::io::Error>>>),
+        AddExternalAddress(Multiaddr,Sender<()>),
+        RemoveExternalAddress(Multiaddr,Sender<()>),
+        DisconnectFromPeerId(PeerId,Sender<Result<(),()>>),
+        ListExternalAddresses(Sender<Vec<Multiaddr>>),
+        ListListeners(Sender<Vec<Multiaddr>>),
+        IsConnectedToPeerId(PeerId,Sender<bool>), 
     }
 }
 

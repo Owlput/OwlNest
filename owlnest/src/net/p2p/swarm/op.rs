@@ -61,56 +61,68 @@ pub(crate) mod behaviour {
 }
 
 pub mod swarm {
-    use crate::net::p2p::swarm::in_event;
+
+    use crate::net::p2p::swarm::in_event::swarm::InEvent;
     use libp2p::{
-        swarm::{derive_prelude::ListenerId, AddressRecord, DialError},
+        swarm::{derive_prelude::ListenerId, DialError},
         Multiaddr, PeerId, TransportError,
     };
-    use serde::{Deserialize, Serialize};
-    use tokio::sync::oneshot;
+    use tokio::sync::{mpsc, oneshot::*};
 
-    #[derive(Debug, Clone, Serialize, Deserialize)]
-    pub enum Op {
-        Dial(Multiaddr),
-        Listen(Multiaddr),
-        AddExternalAddress(Multiaddr, Option<u32>),
-        RemoveExternalAddress(Multiaddr),
-        DisconnectFromPeerId(PeerId),
-        ListExternalAddresses,
-        ListListeners,
-        IsConnectedToPeerId(PeerId),
+    pub struct SwarmHandle {
+        sender: mpsc::Sender<InEvent>,
     }
-    impl Op {
-        pub fn into_event(self, sender: oneshot::Sender<OpResult>) -> in_event::swarm::InEvent {
-            in_event::swarm::InEvent::new(self, sender)
+    impl SwarmHandle {
+        pub fn dial(&self, addr: &Multiaddr) -> Result<(), DialError> {
+            let (tx, rx) = channel();
+            let ev = InEvent::Dial(addr.clone(), tx);
+            self.sender.blocking_send(ev).unwrap();
+            rx.blocking_recv().unwrap()
+        }
+        pub fn listen(
+            &self,
+            addr: &Multiaddr,
+        ) -> Result<ListenerId, TransportError<std::io::Error>> {
+            let (tx, rx) = channel();
+            let ev = InEvent::Listen(addr.clone(), tx);
+            self.sender.blocking_send(ev).unwrap();
+            rx.blocking_recv().unwrap()
+        }
+        pub fn add_external_address(&self, addr: &Multiaddr) {
+            let (tx, rx) = channel();
+            let ev = InEvent::AddExternalAddress(addr.clone(), tx);
+            self.sender.blocking_send(ev).unwrap();
+            rx.blocking_recv().unwrap()
+        }
+        pub fn remove_external_address(&self, addr: &Multiaddr) {
+            let (tx, rx) = channel();
+            let ev = InEvent::RemoveExternalAddress(addr.clone(), tx);
+            self.sender.blocking_send(ev).unwrap();
+            rx.blocking_recv().unwrap()
+        }
+        pub fn disconnect_peer_id(&self, peer_id: &PeerId) -> Result<(), ()> {
+            let (tx, rx) = channel();
+            let ev = InEvent::DisconnectFromPeerId(*peer_id, tx);
+            self.sender.blocking_send(ev).unwrap();
+            rx.blocking_recv().unwrap()
+        }
+        pub fn list_external_addresses(&self) -> Vec<Multiaddr> {
+            let (tx, rx) = channel();
+            let ev = InEvent::ListExternalAddresses(tx);
+            self.sender.blocking_send(ev).unwrap();
+            rx.blocking_recv().unwrap()
+        }
+        pub fn list_listeners(&self) -> Vec<Multiaddr> {
+            let (tx, rx) = channel();
+            let ev = InEvent::ListListeners(tx);
+            self.sender.blocking_send(ev).unwrap();
+            rx.blocking_recv().unwrap()
+        }
+        pub fn is_connected(&self, peer_id: &PeerId) -> bool {
+            let (tx, rx) = channel();
+            let ev = InEvent::IsConnectedToPeerId(*peer_id, tx);
+            self.sender.blocking_send(ev).unwrap();
+            rx.blocking_recv().unwrap()
         }
     }
-
-    #[derive(Debug)]
-    pub enum OpResult {
-        Dial(Result<(), DialError>),
-        Listen(Result<ListenerId, TransportError<std::io::Error>>),
-        AddExternalAddress(AddExternalAddressResult),
-        RemoveExternalAddress(bool),
-        DisconnectFromPeerId(Result<(), ()>),
-        ListExternalAddresses(Vec<AddressRecord>),
-        ListListeners(Vec<Multiaddr>),
-        IsConnectedToPeerId(bool),
-    }
-
-    #[derive(Debug)]
-    pub enum AddExternalAddressResult {
-        Inserted,
-        Updated,
-    }
 }
-
-// use libp2p_swarm::Stream;
-// pub trait Op {
-//     type StreamState;
-//     type Handler;
-//     type Behaviour;
-//     fn execute_behaviour(&mut self, behaviour: &mut Self::Behaviour) {}
-//     fn execute_handler(&mut self, handler: &mut Self::Handler) {}
-//     fn execute_io(&mut self, stream: Stream) -> Self::StreamState;
-// }

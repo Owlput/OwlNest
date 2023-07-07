@@ -120,7 +120,7 @@ pub enum SwarmEvent {
     /// reported if the dialing attempt succeeds, otherwise a
     /// [`OutgoingConnectionError`](SwarmEvent::OutgoingConnectionError) event
     /// is reported.
-    Dialing(PeerId),
+    Dialing(Option<PeerId>),
 }
 impl TryFrom<super::SwarmEvent> for SwarmEvent {
     type Error = ();
@@ -132,7 +132,7 @@ impl TryFrom<super::SwarmEvent> for SwarmEvent {
                 endpoint,
                 num_established,
                 concurrent_dial_errors,
-                established_in,
+                established_in,..
             } => Self::ConnectionEstablished {
                 peer_id,
                 endpoint,
@@ -144,7 +144,7 @@ impl TryFrom<super::SwarmEvent> for SwarmEvent {
                 peer_id,
                 endpoint,
                 num_established,
-                cause,
+                cause,..
             } => Self::ConnectionClosed {
                 peer_id,
                 endpoint,
@@ -153,7 +153,7 @@ impl TryFrom<super::SwarmEvent> for SwarmEvent {
             },
             libp2p::swarm::SwarmEvent::IncomingConnection {
                 local_addr,
-                send_back_addr,
+                send_back_addr,..
             } => Self::IncomingConnection {
                 local_addr,
                 send_back_addr,
@@ -161,13 +161,13 @@ impl TryFrom<super::SwarmEvent> for SwarmEvent {
             libp2p::swarm::SwarmEvent::IncomingConnectionError {
                 local_addr,
                 send_back_addr,
-                error,
+                error,..
             } => Self::IncomingConnectionError {
                 local_addr,
                 send_back_addr,
                 error,
             },
-            libp2p::swarm::SwarmEvent::OutgoingConnectionError { peer_id, error } => {
+            libp2p::swarm::SwarmEvent::OutgoingConnectionError { peer_id, error,.. } => {
                 Self::OutgoingConnectionError {
                     peer_id,
                     error,
@@ -202,12 +202,14 @@ impl TryFrom<super::SwarmEvent> for SwarmEvent {
                     error,
                 }
             }
-            libp2p::swarm::SwarmEvent::Dialing(peer_id) => Self::Dialing(peer_id),
+            libp2p::swarm::SwarmEvent::Dialing { peer_id, .. } => Self::Dialing(peer_id),
         };
         Ok(ev)
     }
 }
 
+
+use crate::net::p2p::protocols::*;
 pub struct OutEventBundle {
     pub messaging_rx: mpsc::Receiver<messaging::OutEvent>,
     pub tethering_rx: mpsc::Receiver<tethering::OutEvent>,

@@ -57,7 +57,7 @@ pub fn setup_ev_bus() -> (Handle, EventTap) {
                 }
             }
             _ = interval.tick()=>{
-                listener_store.drain_filter(|_,v|v.receiver_count() == 0).count();
+                listener_store.extract_if(|_,v|v.receiver_count() == 0).count();
             }
         }
     });

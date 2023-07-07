@@ -1,24 +1,23 @@
-use libp2p::{Multiaddr, TransportError};
-use super::Manager;
 use crate::net::p2p::swarm::op::swarm::*;
+use libp2p::{Multiaddr, TransportError};
 
-pub fn handle_swarm(manager: &Manager, command: Vec<&str>) {
+pub fn handle_swarm(handle: &SwarmHandle, command: Vec<&str>) {
     if command.len() < 2 {
         println!("Error: Missing subcommands. Type \"swarm help\" for more information");
         return;
     }
     match command[1] {
         "help" => println!("{}", TOP_HELP_MESSAGE),
-        "dial" => handle_swarm_dial(manager, command),
-        "listen" => handle_swarm_listen(manager, command),
-        "listener" => handle_swarm_listener(manager, command),
+        "dial" => handle_swarm_dial(handle, command),
+        "listen" => handle_swarm_listen(handle, command),
+        "listener" => handle_swarm_listener(handle, command),
         _ => println!(
             "Failed to execute: unrecognized subcommand. Type \"swarm help\" for more information."
         ),
     }
 }
 
-fn handle_swarm_dial(manager: &Manager, command: Vec<&str>) {
+fn handle_swarm_dial(handle: &SwarmHandle, command: Vec<&str>) {
     if command.len() < 3 {
         println!("Error: Missing required argument <address>, syntax: `swarm dial <address>`");
         return;
@@ -30,16 +29,14 @@ fn handle_swarm_dial(manager: &Manager, command: Vec<&str>) {
             return;
         }
     };
-    let op = Op::Dial(addr.clone());
-    if let OpResult::Dial(result) = manager.blocking_swarm_exec(op) {
-        match result {
-            Ok(_) => println!("Now dialing {}", addr),
-            Err(e) => println!("Failed to initiate dial {} with error: {}", addr, e),
-        }
+    if let Err(e) = handle.dial(&addr) {
+        println!("Failed to initiate dial {} with error: {:?}", addr, e);
+    } else {
+        println!("Dialing {}", addr);
     }
 }
 
-fn handle_swarm_listen(manager: &Manager, command: Vec<&str>) {
+fn handle_swarm_listen(handle: &SwarmHandle, command: Vec<&str>) {
     if command.len() < 3 {
         println!("Error: Missing required argument <address>, syntax: `swarm listen <address>`");
         return;
@@ -51,32 +48,27 @@ fn handle_swarm_listen(manager: &Manager, command: Vec<&str>) {
             return;
         }
     };
-    let op = Op::Listen(addr.clone());
-    if let OpResult::Listen(result) = manager.blocking_swarm_exec(op) {
-        match result {
-            Ok(listener_id) => println!(
-                "Successfully listening on {} with listener ID {:?}",
-                addr, listener_id
-            ),
-            Err(e) => println!(
-                "Failed to listen on {} with error: {}",
-                addr,
-                format_transport_error(e)
-            ),
-        }
+    match handle.listen(&addr) {
+        Ok(listener_id) => println!(
+            "Successfully listening on {} with listener ID {:?}",
+            addr, listener_id
+        ),
+
+        Err(e) => println!(
+            "Failed to listen on {} with error: {}",
+            addr,
+            format_transport_error(e)
+        ),
     }
 }
 
-fn handle_swarm_listener(manager: &Manager, command: Vec<&str>) {
+fn handle_swarm_listener(handle: &SwarmHandle, command: Vec<&str>) {
     if command.len() < 3 {
         println!("Missing subcommands. Type \"swarm listener help\" for more information");
         return;
     }
     match command[2]{
-        "ls" =>
-            if let OpResult::ListListeners(list) = manager.blocking_swarm_exec(Op::ListListeners){
-                println!("Active listeners: \n{:#?}",list);
-            },
+        "ls" => println!("Active listeners: {:?}",handle.list_listeners()),
         "help" => println!("{}",LISTENER_SUBCOMMAND_HELP),
         _=>println!("Failed to execute: unrecognized subcommand. Type \"swarm listener help\" for more information.")
     }
@@ -131,4 +123,4 @@ Available subcommands:
                 Unban the given peer.
 "#;
 
-const LISTENER_SUBCOMMAND_HELP:&str = r#""#;
+const LISTENER_SUBCOMMAND_HELP: &str = r#""#;

@@ -178,7 +178,7 @@ impl ConnectionHandler for ExecHandler {
             }
             State::Inactive { reported: false } => {
                 self.state = State::Inactive { reported: true };
-                return Poll::Ready(ConnectionHandlerEvent::Custom(OutEvent::Unsupported));
+                return Poll::Ready(ConnectionHandlerEvent::NotifyBehaviour(OutEvent::Unsupported));
             }
             State::Active => {}
         }
@@ -194,14 +194,14 @@ impl ConnectionHandler for ExecHandler {
                     let packet = match serde_json::from_slice::<Packet>(&bytes) {
                         Ok(packet) => packet,
                         Err(e) => {
-                            return Poll::Ready(ConnectionHandlerEvent::Custom(OutEvent::Error(
+                            return Poll::Ready(ConnectionHandlerEvent::NotifyBehaviour(OutEvent::Error(
                                 Error::Corrupted(e, bytes),
                             )))
                         }
                     };
                     match packet {
                         Packet::Op(op, stamp) => {
-                            return Poll::Ready(ConnectionHandlerEvent::Custom(OutEvent::Exec(
+                            return Poll::Ready(ConnectionHandlerEvent::NotifyBehaviour(OutEvent::Exec(
                                 op, stamp,
                             )))
                         }
@@ -224,7 +224,7 @@ impl ConnectionHandler for ExecHandler {
         }
         loop {
             if let Some(ev) = self.pending_out_events.pop_back() {
-                return Poll::Ready(ConnectionHandlerEvent::Custom(ev));
+                return Poll::Ready(ConnectionHandlerEvent::NotifyBehaviour(ev));
             }
             match self.outbound.take() {
                 Some(OutboundState::Busy(mut task, callback)) => match task.poll_unpin(cx) {

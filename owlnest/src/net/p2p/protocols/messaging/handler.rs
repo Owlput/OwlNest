@@ -105,9 +105,7 @@ impl ConnectionHandler for Handler {
             State::Inactive { reported: true } => return Poll::Pending,
             State::Inactive { reported: false } => {
                 self.state = State::Inactive { reported: true };
-                return Poll::Ready(ConnectionHandlerEvent::Custom(
-                    ToBehaviourEvent::Unsupported,
-                ));
+                return Poll::Ready(ConnectionHandlerEvent::NotifyBehaviour(ToBehaviourEvent::Unsupported));
             }
             State::Active => {}
         };
@@ -122,8 +120,7 @@ impl ConnectionHandler for Handler {
                 }
                 Poll::Ready(Ok((stream, bytes))) => {
                     self.inbound = Some(super::protocol::recv(stream).boxed());
-                    let event =
-                        ConnectionHandlerEvent::Custom(ToBehaviourEvent::IncomingMessage(bytes));
+                    let event = ConnectionHandlerEvent::NotifyBehaviour(ToBehaviourEvent::IncomingMessage(bytes));
                     return Poll::Ready(event);
                 }
             }
@@ -199,7 +196,7 @@ impl ConnectionHandler for Handler {
                 }
             }
             if let Some(ev) = self.pending_out_events.pop_back() {
-                return Poll::Ready(ConnectionHandlerEvent::Custom(ev));
+                return Poll::Ready(ConnectionHandlerEvent::NotifyBehaviour(ev));
             }
         }
         Poll::Pending

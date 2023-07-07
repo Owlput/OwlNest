@@ -43,7 +43,7 @@ fn handle_command(line: String, manager: &swarm::Manager, ident: &IdentityUnion)
         }
         "clear" => drop(stdout().execute(Clear(ClearType::FromCursorUp))),
         "id" => println!("Local peer ID: {}", ident.get_peer_id()),
-        "swarm" => swarm::cli::handle_swarm(manager, command),
+        "swarm" => swarm::cli::handle_swarm(&manager.swarm_handle(), command),
 
         "tethering" => tethering::cli::handle_tethering(manager, command),
 

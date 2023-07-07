@@ -22,6 +22,7 @@ impl SwarmConfig {
 
 mod handler_prelude {
     pub use crate::net::p2p::swarm::op::behaviour::CallbackSender;
+    pub use futures::{future::BoxFuture, FutureExt};
     pub use libp2p::swarm::{
         handler::{
             ConnectionEvent, DialUpgradeError, FullyNegotiatedInbound, FullyNegotiatedOutbound,
@@ -29,7 +30,12 @@ mod handler_prelude {
         ConnectionHandler, ConnectionHandlerEvent, KeepAlive, Stream, StreamUpgradeError,
         SubstreamProtocol,
     };
-    pub use futures::{future::BoxFuture, FutureExt};
     pub use std::io;
     pub use std::task::Poll;
+}
+
+pub trait OpExec {
+    type Executor;
+    type CallbackHandle;
+    async fn exec(&self, executor: Self::Executor) -> Self::CallbackHandle;
 }

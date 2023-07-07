@@ -191,17 +191,6 @@ macro_rules! behaviour_select {
                             });
                         }
                         std::task::Poll::Ready(
-                            ::libp2p::swarm::derive_prelude::ToSwarm::ReportObservedAddr {
-                                address,
-                                score,
-                            },
-                        ) => {
-                            return std::task::Poll::Ready(::libp2p::swarm::derive_prelude::ToSwarm::ReportObservedAddr {
-                                address,
-                                score,
-                            });
-                        }
-                        std::task::Poll::Ready(
                             ::libp2p::swarm::derive_prelude::ToSwarm::CloseConnection {
                                 peer_id,
                                 connection,
@@ -355,28 +344,6 @@ macro_rules! behaviour_select {
                                 }),
                             );)*
                     }
-                    ::libp2p::swarm::derive_prelude::FromSwarm::NewExternalAddr(
-                        ::libp2p::swarm::derive_prelude::NewExternalAddr { addr },
-                    ) => {
-                        $(self.$name
-                            .on_swarm_event(
-                                ::libp2p::swarm::derive_prelude::FromSwarm::NewExternalAddr(::libp2p::swarm::derive_prelude::NewExternalAddr {
-                                    addr,
-                                }),
-                            );)*
-                    }
-                    ::libp2p::swarm::derive_prelude::FromSwarm::ExpiredExternalAddr(
-                        ::libp2p::swarm::derive_prelude::ExpiredExternalAddr {
-                            addr,
-                        },
-                    ) => {
-                        $(self.$name
-                            .on_swarm_event(
-                                ::libp2p::swarm::derive_prelude::FromSwarm::ExpiredExternalAddr(::libp2p::swarm::derive_prelude::ExpiredExternalAddr {
-                                    addr,
-                                }),
-                            );)*
-                    }
                     ::libp2p::swarm::derive_prelude::FromSwarm::ListenerError(
                         ::libp2p::swarm::derive_prelude::ListenerError {
                             listener_id,
@@ -506,8 +473,8 @@ macro_rules! connection_handler_select {
             > {
                 $(
                     match self.$name.poll(cx) {
-                    Poll::Ready(ConnectionHandlerEvent::Custom(event)) => {
-                        return Poll::Ready(ConnectionHandlerEvent::Custom(ToBehaviourSelect::$behaviour(event)));
+                    Poll::Ready(ConnectionHandlerEvent::NotifyBehaviour(event)) => {
+                        return Poll::Ready(ConnectionHandlerEvent::NotifyBehaviour(ToBehaviourSelect::$behaviour(event)));
                     }
                     Poll::Ready(ConnectionHandlerEvent::Close(event)) => {
                         return Poll::Ready(ConnectionHandlerEvent::Close(HandlerErrorSelect::$behaviour(event)));
