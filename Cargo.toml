@@ -1,4 +1,4 @@
 [workspace]
-members = ["owlnest","memcache","owlnest-proc"]
+members = ["owlnest","memcache","owlnest-proc","owlnest-macro"]
 default_member = ["owlnest"]
 resolver = "2"

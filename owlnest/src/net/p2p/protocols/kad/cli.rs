@@ -1,8 +1,9 @@
 use super::*;
 use crate::net::p2p::swarm;
+use swarm::manager::Manager;
 
 /// Top-level handler for `kad` command.
-pub fn handle_kad(manager: &swarm::Manager, command: Vec<&str>) {
+pub fn handle_kad(manager: &Manager, command: Vec<&str>) {
     if command.len() < 2 {
         println!("Missing subcommands. Type \"kad help\" for more information");
         return;
@@ -15,7 +16,7 @@ pub fn handle_kad(manager: &swarm::Manager, command: Vec<&str>) {
 }
 
 /// Handler for `kad lookup` command.
-fn handle_kad_lookup(manager: &swarm::Manager, command: Vec<&str>) {
+fn handle_kad_lookup(manager: &Manager, command: Vec<&str>) {
     if command.len() < 3 {
         println!("Missing required argument: <peer ID>");
         return;
@@ -27,7 +28,10 @@ fn handle_kad_lookup(manager: &swarm::Manager, command: Vec<&str>) {
             return;
         }
     };
-    let _result = manager.blocking_behaviour_exec(behaviour::Op::Kad(Op::PeerLookup(peer_id)));
+    match manager.kad().blocking_lookup(peer_id){
+        Ok(v) => println!("{:?}",v),
+        Err(_) => println!("Lookup failed"),
+    }
 }
 
 /// Top-level help message for `kad` command.

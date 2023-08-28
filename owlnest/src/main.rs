@@ -4,18 +4,19 @@ use owlnest::{
     net::p2p::{identity::IdentityUnion, protocols},
     *, event_bus::{Handle, bus::*},
 };
-use tracing::Level;
+use tracing::{Level, info};
 
-#[tokio::main]
-async fn main() {
-    setup_logging();
+fn main() {
+    let rt = tokio::runtime::Builder::new_multi_thread().enable_all().build().unwrap();
+    setup_logging(&rt);
     let ident = get_ident();
-    let (ev_bus_handle, ev_tap) = setup_ev_bus();
-    setup_peer(ident, &ev_bus_handle,ev_tap);
-    let _ = tokio::signal::ctrl_c().await;
+    let (ev_bus_handle, ev_tap) = setup_ev_bus(rt.handle());
+    rt.block_on(setup_peer(ident, &ev_bus_handle,ev_tap));
+    let _ = rt.block_on(tokio::signal::ctrl_c());
+    std::thread::sleep(std::time::Duration::from_secs(10));
 }
 
-fn setup_peer(ident: IdentityUnion, event_bus_handle:&Handle, ev_tap:EventTap) {
+async fn setup_peer(ident: IdentityUnion, event_bus_handle:&Handle, ev_tap:EventTap) {
     let swarm_config = net::p2p::SwarmConfig {
         local_ident: ident.clone(),
         kad: protocols::kad::Config::default(),
@@ -29,8 +30,10 @@ fn setup_peer(ident: IdentityUnion, event_bus_handle:&Handle, ev_tap:EventTap) {
     cli::setup_interactive_shell(ident, mgr);
 }
 
-fn setup_logging() {
-    let time = chrono::Local::now().to_rfc3339();
+fn setup_logging(rt:&tokio::runtime::Runtime) {
+    
+    let time = chrono::Local::now().timestamp_micros();
+    #[cfg(target_os = "linux")]
     let log_file_handle = match std::fs::create_dir("./logs") {
         Ok(_) => std::fs::File::create(format!("./logs/{}.log", time)).unwrap(),
         Err(e) => {
@@ -42,6 +45,19 @@ fn setup_logging() {
             }
         }
     };
+    #[cfg(target_os = "windows")]
+    let log_file_handle = match std::fs::create_dir(".\\logs") {
+        Ok(_) => std::fs::File::create(format!(".\\logs\\{}.log", time)).unwrap(),
+        Err(e) => {
+            let error = format!("{:?}", e);
+            if error.contains("AlreadyExists") {
+                std::fs::File::create(format!(".\\logs\\{}.log", time)).unwrap()
+            } else {
+                panic!("{}",e)
+            }
+        }
+    };
+    let _ = rt.enter();
     tracing_subscriber::fmt::fmt()
         .with_max_level(Level::DEBUG)
         .with_ansi(false)

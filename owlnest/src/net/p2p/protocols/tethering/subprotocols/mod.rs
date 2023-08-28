@@ -1,4 +1,5 @@
 use libp2p_swarm::Stream;
+use serde::{Serialize, Deserialize};
 
 pub mod exec;
 pub mod push;
@@ -22,5 +23,20 @@ async fn read_u64<T: From<std::io::Error>>(socket: &mut Stream) -> Result<u64, T
     match socket.read_exact(&mut recv_buf).await {
         Ok(_) => Ok(u64::from_be_bytes(recv_buf)),
         Err(e) => Err(From::from(e)),
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum Subprotocol{
+    Exec,
+    Push
+}
+impl Subprotocol{
+    pub fn protocol_name(&self)->&str{
+        use Subprotocol::*;
+        match self{
+            Exec => EXEC_PROTOCOL_NAME,
+            Push => PUSH_PROTOCOL_NAME,
+        }
     }
 }

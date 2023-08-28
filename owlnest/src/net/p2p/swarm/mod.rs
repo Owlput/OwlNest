@@ -1,16 +1,12 @@
-use crate::{event_bus::{bus::EventTap, Handle}, net::p2p::protocols::kad};
+use crate::{event_bus, net::p2p::swarm::manager::HandleBundle};
 use futures::StreamExt;
-use libp2p::{
-    core::{muxing::StreamMuxerBox, transport::Boxed, ConnectedPoint},
-    Swarm as Libp2pSwarm,
-};
-use libp2p::{PeerId,Multiaddr};
-use std::fmt::Debug;
+use libp2p::{core::ConnectedPoint, Multiaddr, PeerId};
+use std::{fmt::Debug, sync::Arc};
 use tokio::select;
-use tokio::sync::{mpsc, oneshot};
+use tokio::sync::oneshot;
 use tracing::{debug, info, warn};
 
-mod behaviour;
+pub mod behaviour;
 pub mod cli;
 pub mod event_listener;
 pub(crate) mod in_event;
@@ -20,13 +16,13 @@ pub mod out_event;
 
 pub use event_listener::*;
 pub use in_event::*;
-pub use manager::Manager;
 pub use out_event::ToSwarmEvent;
+
+use self::manager::{Manager, Rx};
 
 use super::SwarmConfig;
 
-pub type Swarm = Libp2pSwarm<behaviour::Behaviour>;
-type SwarmTransport = Boxed<(PeerId, StreamMuxerBox)>;
+pub type Swarm = libp2p::Swarm<behaviour::Behaviour>;
 pub(crate) type SwarmEvent = libp2p::swarm::SwarmEvent<ToSwarmEvent,<<behaviour::Behaviour as libp2p::swarm::NetworkBehaviour>::ConnectionHandler as libp2p::swarm::ConnectionHandler>::Error>;
 
 pub struct Builder {
@@ -36,12 +32,40 @@ impl Builder {
     pub fn new(config: SwarmConfig) -> Self {
         Self { config }
     }
-    pub fn build(self, buffer_size: usize, mut ev_bus_handle: Handle, ev_tap: EventTap) -> Manager {
+    pub fn build(
+        self,
+        buffer_size: usize,
+        ev_bus_handle: event_bus::Handle,
+        ev_tap: event_bus::bus::EventTap,
+    ) -> Manager {
         let ident = self.config.local_ident.clone();
-        let (swarm_tx, mut swarm_rx) = mpsc::channel(buffer_size);
-        let (protocol_tx, mut protocol_rx) = mpsc::channel(buffer_size);
-        let manager = Manager::new(swarm_tx, protocol_tx);
-        let (behaviour, transport) = behaviour::Behaviour::new(self.config);
+
+        use crate::net::p2p::protocols::*;
+        use libp2p::kad::store::MemoryStore;
+        let kad_store = MemoryStore::new(ident.get_peer_id());
+        let (relayed_transport, relay_client) = libp2p::relay::client::new(ident.get_peer_id());
+        let behaviour = behaviour::Behaviour {
+            kad: kad::Behaviour::new(ident.get_peer_id(), kad_store),
+            mdns: mdns::Behaviour::new(self.config.mdns, ident.get_peer_id()).unwrap(),
+            identify: identify::Behaviour::new(self.config.identify),
+            messaging: messaging::Behaviour::new(self.config.messaging),
+            tethering: tethering::Behaviour::new(self.config.tethering),
+            relay_server: libp2p::relay::Behaviour::new(
+                self.config.local_ident.get_peer_id(),
+                self.config.relay_server,
+            ),
+            relay_client,
+        };
+        let transport = upgrade_transport(
+            libp2p::Transport::boxed(libp2p::core::transport::OrTransport::new(
+                libp2p::tcp::tokio::Transport::default(),
+                relayed_transport,
+            )),
+            &ident,
+        );
+
+        let (handle_bundle, mut rx_bundle) = HandleBundle::new(buffer_size);
+
         tokio::spawn(async move {
             let mut swarm = libp2p::swarm::SwarmBuilder::with_tokio_executor(
                 transport,
@@ -51,8 +75,7 @@ impl Builder {
             .build();
             loop {
                 select! {
-                    Some(ev) = swarm_rx.recv() => swarm_op_exec(&mut swarm, ev),
-                    Some(ev) = protocol_rx.recv() => map_protocol_ev(&mut swarm,&mut ev_bus_handle ,ev).await,
+                    Some(ev) = rx_bundle.next() => handle_incoming_event(ev, &mut swarm, &ev_bus_handle),
                     out_event = swarm.select_next_some() => {
                         handle_swarm_event(&out_event,&mut swarm);
                         if let libp2p_swarm::SwarmEvent::Behaviour(ev) = out_event{
@@ -62,7 +85,7 @@ impl Builder {
                 };
             }
         });
-        manager
+        manager::Manager::new(Arc::new(handle_bundle))
     }
 }
 
@@ -112,26 +135,39 @@ fn handle_swarm_event(ev: &SwarmEvent, swarm: &mut Swarm) {
 }
 
 #[inline]
-fn swarm_op_exec(swarm: &mut Swarm, ev: in_event::swarm::InEvent) {
-    use swarm::InEvent::*;
+fn handle_incoming_event(ev: Rx, swarm: &mut Swarm, ev_bus_handle: &event_bus::Handle) {
+    use crate::net::p2p::protocols::*;
+    use Rx::*;
+    match ev {
+        Kad(ev) => kad::map_in_event(ev, &mut swarm.behaviour_mut().kad, ev_bus_handle),
+        Messaging(ev) => swarm.behaviour_mut().messaging.push_event(ev),
+        Tethering(ev) => swarm.behaviour_mut().tethering.push_event(ev),
+        Mdns(ev) => mdns::map_in_event(ev, &mut swarm.behaviour_mut().mdns),
+        Swarm(ev) => swarm_op_exec(swarm, ev),
+    }
+}
+
+#[inline]
+fn swarm_op_exec(swarm: &mut Swarm, ev: InEvent) {
+    use InEvent::*;
     match ev {
         Dial(addr, callback) => {
             let result = swarm.dial(addr);
             handle_callback(callback, result)
         }
-        Listen(addr,callback) => {
+        Listen(addr, callback) => {
             let result = swarm.listen_on(addr);
             handle_callback(callback, result)
         }
-        AddExternalAddress(addr,callback) => {
+        AddExternalAddress(addr, callback) => {
             swarm.add_external_address(addr);
             handle_callback(callback, ())
         }
-        RemoveExternalAddress(addr,callback) => {
+        RemoveExternalAddress(addr, callback) => {
             swarm.remove_external_address(&addr);
             handle_callback(callback, ())
         }
-        DisconnectFromPeerId(peer_id,callback) => {
+        DisconnectFromPeerId(peer_id, callback) => {
             let result = swarm.disconnect_peer_id(peer_id);
             handle_callback(callback, result)
         }
@@ -146,24 +182,10 @@ fn swarm_op_exec(swarm: &mut Swarm, ev: in_event::swarm::InEvent) {
             let listener_list = swarm.listeners().cloned().collect::<Vec<Multiaddr>>();
             handle_callback(callback, listener_list)
         }
-        IsConnectedToPeerId(peer_id,callback) => {
+        IsConnectedToPeerId(peer_id, callback) => {
             let result = swarm.is_connected(&peer_id);
             handle_callback(callback, result)
         }
-    }
-}
-
-#[inline]
-async fn map_protocol_ev(
-    swarm: &mut Swarm,
-    manager: &mut Handle,
-    ev: in_event::behaviour::InEvent,
-) {
-    use in_event::behaviour::InEvent::*;
-    match ev {
-        Messaging(ev) => swarm.behaviour_mut().messaging.push_event(ev),
-        Tethering(ev) => swarm.behaviour_mut().tethering.push_event(ev),
-        Kad(ev) => kad::map_in_event(&mut swarm.behaviour_mut().kad, manager, ev).await,
     }
 }
 
@@ -219,4 +241,18 @@ where
     if let Err(v) = callback.send(result) {
         warn!("Failed to send callback: {:?}", v)
     }
+}
+
+use futures::{AsyncRead, AsyncWrite};
+fn upgrade_transport<StreamSink>(
+    transport: libp2p::core::transport::Boxed<StreamSink>,
+    ident: &super::identity::IdentityUnion,
+) -> libp2p::core::transport::Boxed<(PeerId, libp2p::core::muxing::StreamMuxerBox)>
+where
+    StreamSink: AsyncRead + AsyncWrite + Send + Unpin + 'static,
+{
+    libp2p::Transport::upgrade(transport, libp2p::core::upgrade::Version::V1)
+        .authenticate(libp2p::noise::Config::new(&ident.get_keypair()).unwrap())
+        .multiplex(libp2p::yamux::Config::default())
+        .boxed()
 }

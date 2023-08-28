@@ -1,4 +1,4 @@
-use crate::net::p2p::swarm::op::swarm::*;
+use crate::net::p2p::swarm::op::SwarmHandle;
 use libp2p::{Multiaddr, TransportError};
 
 pub fn handle_swarm(handle: &SwarmHandle, command: Vec<&str>) {

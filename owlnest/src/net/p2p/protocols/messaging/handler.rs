@@ -1,6 +1,5 @@
-use super::{protocol, Config, Error, Message, PROTOCOL_NAME};
+use super::{protocol, Config, Error, Message, PROTOCOL_NAME, OpResult};
 use crate::net::p2p::handler_prelude::*;
-use crate::net::p2p::swarm::op::behaviour::OpResult;
 use futures_timer::Delay;
 use std::{collections::VecDeque, time::Duration};
 use tokio::sync::oneshot;

@@ -1,9 +1,10 @@
-use crate::net::p2p::swarm::{self, op::behaviour::CallbackSender};
+/// A behaviour that allows remote control of a node. 
+
 use libp2p::PeerId;
 use serde::{Deserialize, Serialize};
 use std::fmt::Debug;
 use subprotocols::*;
-use tokio::sync::oneshot;
+use tokio::sync::{mpsc, oneshot};
 
 /// `Behaviour` of this protocol.
 mod behaviour;
@@ -13,12 +14,13 @@ pub mod cli;
 pub mod error;
 /// Results produced by this behaviour.
 mod result;
-/// Protocol `/owlnest/tethering` is divided into two subprotocols.
+/// Protocol `/owlnest/tethering` consists of two subprotocols.
 /// `/owlnest/tethering/exec` for operation execution,
 /// `/owlnest/tethering/push` for notification pushing.
 /// Both subprotocols will perform a handshake in TCP style(aka three-way handshake).
-pub mod subprotocols;
+mod subprotocols;
 
+pub use subprotocols::Subprotocol;
 pub use behaviour::Behaviour;
 pub use error::Error;
 pub use result::*;
@@ -27,62 +29,40 @@ pub use result::*;
 #[derive(Debug, Default)]
 pub struct Config;
 
+type CallbackSender = oneshot::Sender<Result<HandleOk, HandleError>>;
+
 #[derive(Debug)]
 pub(crate) struct InEvent {
     op: Op,
     callback: CallbackSender,
 }
 impl InEvent {
-    pub fn new(op: Op, callback: CallbackSender) -> Self {
-        Self { op, callback }
-    }
     pub fn into_inner(self) -> (Op, CallbackSender) {
         (self.op, self.callback)
-    }
-}
-impl From<InEvent> for swarm::in_event::behaviour::InEvent {
-    fn from(val: InEvent) -> Self {
-        swarm::in_event::behaviour::InEvent::Tethering(val)
     }
 }
 
 #[derive(Debug)]
 pub enum Op {
-    RemoteExec(PeerId, exec::Op, oneshot::Sender<exec::result::OpResult>),
+    RemoteExec(PeerId, exec::op::Op, oneshot::Sender<exec::result::OpResult>),
     RemoteCallback(PeerId, u128, exec::result::OpResult),
     LocalExec(TetheringOp),
     Push(PeerId, push::PushType),
 }
-impl From<Op> for swarm::op::behaviour::Op {
-    fn from(val: Op) -> Self {
-        swarm::op::behaviour::Op::Tethering(val)
-    }
-}
 
 #[derive(Debug)]
 pub enum OutEvent {
-    Exec(exec::Op, u128),
+    Exec(exec::op::Op, u128),
     IncomingNotification(String),
     ExecError(exec::handler::Error),
     PushError(push::handler::Error),
     Unsupported(PeerId, Subprotocol),
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Subprotocol {
-    Exec,
-    Push,
-}
-
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum TetheringOp {
     Trust(PeerId),
     Untrust(PeerId),
-}
-impl From<TetheringOp> for swarm::op::behaviour::Op {
-    fn from(val: TetheringOp) -> Self {
-        swarm::op::behaviour::Op::Tethering(Op::LocalExec(val))
-    }
 }
 
 #[derive(Debug, Clone)]
@@ -92,3 +72,34 @@ pub enum TetheringOpError {
 }
 
 pub fn ev_dispatch(_ev: &OutEvent) {}
+
+#[derive(Debug,Clone)]
+pub struct Handle {
+    sender: mpsc::Sender<InEvent>,
+}
+impl Handle {
+    pub(crate) fn new(buffer: usize) -> (Self, mpsc::Receiver<InEvent>) {
+        let (tx, rx) = mpsc::channel(buffer);
+        (Self { sender: tx }, rx)
+    }
+
+    pub fn blocking_trust(&self,peer_id:PeerId)->Result<HandleOk,HandleError>{
+        let (tx,rx) = oneshot::channel();
+        let ev = InEvent{
+            op:Op::LocalExec(TetheringOp::Trust(peer_id)),
+            callback:tx
+        };
+        self.sender.blocking_send(ev).unwrap();
+        rx.blocking_recv().unwrap()
+    }
+    
+    pub fn blocking_untrust(&self,peer_id:PeerId)->Result<HandleOk,HandleError>{
+        let (tx,rx) = oneshot::channel();
+        let ev = InEvent{
+            op:Op::LocalExec(TetheringOp::Untrust(peer_id)),
+            callback:tx
+        };
+        self.sender.blocking_send(ev).unwrap();
+        rx.blocking_recv().unwrap()
+    }
+}

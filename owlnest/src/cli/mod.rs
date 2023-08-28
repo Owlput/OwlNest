@@ -8,11 +8,12 @@ use crossterm::style::Stylize;
 use crossterm::terminal::{Clear, ClearType};
 use crossterm::ExecutableCommand;
 use rustyline::{error::ReadlineError, DefaultEditor};
+use crate::net::p2p::swarm::manager::Manager;
 
 use self::utils::handle_utils;
 
 /// Make current terminal interactive
-pub fn setup_interactive_shell(ident: IdentityUnion, manager: swarm::Manager) {
+pub fn setup_interactive_shell(ident: IdentityUnion, manager: Manager) {
     std::thread::spawn(move || {
         stdout().execute(Clear(ClearType::All)).unwrap();
         println!("OwlNest is now running in interactive mode, type \"help\" for more information.");
@@ -35,7 +36,7 @@ pub fn setup_interactive_shell(ident: IdentityUnion, manager: swarm::Manager) {
     });
 }
 
-fn handle_command(line: String, manager: &swarm::Manager, ident: &IdentityUnion) {
+fn handle_command(line: String, manager: &Manager, ident: &IdentityUnion) {
     let command: Vec<&str> = line.split(' ').collect();
     match command[0] {
         "help" => {
@@ -43,7 +44,7 @@ fn handle_command(line: String, manager: &swarm::Manager, ident: &IdentityUnion)
         }
         "clear" => drop(stdout().execute(Clear(ClearType::FromCursorUp))),
         "id" => println!("Local peer ID: {}", ident.get_peer_id()),
-        "swarm" => swarm::cli::handle_swarm(&manager.swarm_handle(), command),
+        "swarm" => swarm::cli::handle_swarm(&manager.swarm(), command),
 
         "tethering" => tethering::cli::handle_tethering(manager, command),
 
@@ -89,7 +90,7 @@ fn should_exit(retry_times: &mut u32, max_retry_times: u32) -> bool {
 
 const HELP_MESSAGE: &str = r#"
 OwlNest 0.0.1
-Interactive shell version 0.0.0
+Interactive shell version 0.0.1
 
 Available commands:
     help                Show this help message.

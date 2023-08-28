@@ -1,10 +1,9 @@
-use crate::net::p2p::swarm;
-use crate::net::p2p::swarm::op::behaviour::{self, CallbackSender};
 use libp2p::{kad::*, PeerId};
 use std::str::FromStr;
+use tokio::sync::{mpsc, oneshot};
 use tracing::{info, warn};
 
-use crate::event_bus::{Handle, ToEventIdentifier};
+use crate::event_bus::{Handle as EvHandle, ToEventIdentifier};
 
 use self::event_listener::Kind;
 
@@ -15,32 +14,57 @@ pub use libp2p::kad::PROTOCOL_NAME;
 pub mod cli;
 
 #[derive(Debug)]
-pub struct InEvent {
+pub(crate) struct InEvent {
     op: Op,
-    callback: CallbackSender,
+    callback: oneshot::Sender<OpResult>,
 }
 impl InEvent {
-    pub fn new(op: Op, callback: CallbackSender) -> Self {
-        Self { op, callback }
+    pub fn new(op: Op) -> (Self, oneshot::Receiver<OpResult>) {
+        let (tx, rx) = oneshot::channel();
+        (Self { op, callback: tx }, rx)
     }
-    pub fn into_inner(self) -> (Op, CallbackSender) {
+    pub fn into_inner(self) -> (Op, oneshot::Sender<OpResult>) {
         (self.op, self.callback)
     }
 }
-impl From<InEvent> for swarm::in_event::behaviour::InEvent {
-    fn from(value: InEvent) -> Self {
-        Self::Kad(value)
+
+#[derive(Debug, Clone)]
+pub struct Handle {
+    sender: mpsc::Sender<InEvent>,
+}
+impl Handle {
+    pub(crate) fn new(buffer: usize) -> (Self, mpsc::Receiver<InEvent>) {
+        let (tx, rx) = mpsc::channel(buffer);
+        (Self { sender: tx }, rx)
     }
+    pub async fn lookup(&self,peer_id:PeerId)->Result<Vec<QueryResult>, ()>{
+        let (ev, callback) = InEvent::new(Op::PeerLookup(peer_id));
+        self.sender.send(ev).await.unwrap();
+        match callback.await{
+            Ok(result) => match result{
+                OpResult::PeerLookup(v) => Ok(v),
+                OpResult::BehaviourEvent(_) => unreachable!(),
+            },
+            Err(_e) => Err(()),
+        }
+    }
+    pub fn blocking_lookup(&self,peer_id:PeerId)->Result<Vec<QueryResult>, ()>{
+        let (ev, callback) = InEvent::new(Op::PeerLookup(peer_id));
+        self.sender.blocking_send(ev).unwrap();
+        match callback.blocking_recv(){
+            Ok(result) => match result{
+                OpResult::PeerLookup(v) => Ok(v),
+                OpResult::BehaviourEvent(_) => unreachable!(),
+            },
+            Err(_e) => Err(()),
+        }
+    }
+
 }
 
 #[derive(Debug)]
 pub enum Op {
     PeerLookup(PeerId),
-}
-impl From<Op> for behaviour::Op{
-    fn from(value: Op) -> Self {
-        Self::Kad(value)
-    }
 }
 
 #[derive(Debug)]
@@ -48,13 +72,8 @@ pub enum OpResult {
     PeerLookup(Vec<QueryResult>),
     BehaviourEvent(OutEvent),
 }
-impl From<OpResult> for behaviour::OpResult{
-    fn from(value: OpResult) -> Self {
-        Self::Kad(value)
-    }
-}
 
-pub async fn map_in_event(behav: &mut Behaviour, ev_bus_handle: &Handle, ev: InEvent) {
+pub(crate) fn map_in_event(ev: InEvent,behav: &mut Behaviour, ev_bus_handle: &EvHandle, ) {
     let (op, callback) = ev.into_inner();
     match op {
         Op::PeerLookup(peer_id) => {
@@ -79,7 +98,7 @@ pub async fn map_in_event(behav: &mut Behaviour, ev_bus_handle: &Handle, ev: InE
                                 results.push(result.clone());
                                 if step.last {
                                     drop(listener);
-                                    callback.send(OpResult::PeerLookup(results).into()).unwrap();
+                                    callback.send(OpResult::PeerLookup(results)).unwrap();
                                     break;
                                 }
                             }

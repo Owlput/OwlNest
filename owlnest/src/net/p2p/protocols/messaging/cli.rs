@@ -1,6 +1,6 @@
-use super::{Message, Op, OpResult, PROTOCOL_NAME};
+use super::{Message, PROTOCOL_NAME};
 use crate::net::p2p::identity::IdentityUnion;
-use crate::net::p2p::swarm::Manager;
+use crate::net::p2p::swarm::manager::Manager;
 
 pub fn handle_messaging(manager: &Manager, ident: &IdentityUnion, command: Vec<&str>) {
     if command.len() < 2 {
@@ -32,23 +32,15 @@ pub fn handle_message_send(manager: &Manager, ident: &IdentityUnion, command: Ve
             return;
         }
     };
-    let op = Op::SendMessage(
-        target_peer,
+    let msg = 
         Message::new(
             ident.get_peer_id(),
             target_peer,
-            command.split_at(3).1.join(" "),
-        ),
+            command.split_at(3).1.join(" ")
     );
-    let result = manager.blocking_behaviour_exec(op.into()).try_into();
+    let result = manager.messaging().blocking_send_message(target_peer,msg);
     if let Ok(result) = result {
-        match result {
-            OpResult::SuccessfulPost(rtt) => println!(
-                "Message successfully sent, estimated round trip time {}ms",
-                rtt.as_millis()
-            ),
-            OpResult::Error(e) => println!("Failed to send message: {}", e),
-        }
+        println!("Successfully sent message, RTT {}ms",result.as_millis())        
     }
 }
 

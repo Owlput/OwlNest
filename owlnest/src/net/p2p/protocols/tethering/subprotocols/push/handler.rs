@@ -1,24 +1,28 @@
 use super::{inbound_upgrade, outbound_upgrade, protocol, PUSH_PROTOCOL_NAME};
 use crate::net::p2p::handler_prelude::*;
+use crate::net::p2p::protocols::tethering::{HandleOk,HandleError};
 use serde::{Deserialize, Serialize};
+use tokio::sync::oneshot;
 use std::time::Duration;
 use std::{collections::VecDeque, fmt::Display};
 use tracing::warn;
 
+type HandleCallback = oneshot::Sender<Result<HandleOk,HandleError>>;
+
 #[derive(Debug)]
 pub struct InEvent {
     push_type: PushType,
-    callback: CallbackSender,
+    handle_callback: HandleCallback,
 }
 impl InEvent {
-    pub fn new(push_type: PushType, callback: CallbackSender) -> Self {
+    pub fn new(push_type: PushType, callback: HandleCallback) -> Self {
         InEvent {
             push_type,
-            callback,
+            handle_callback: callback,
         }
     }
-    pub fn into_inner(self) -> (PushType, CallbackSender) {
-        (self.push_type, self.callback)
+    pub fn into_inner(self) -> (PushType, HandleCallback) {
+        (self.push_type, self.handle_callback)
     }
 }
 
@@ -66,8 +70,7 @@ impl std::error::Error for Error {
     }
 }
 
-#[derive(Debug)]
-pub enum HandleError {}
+
 
 enum State {
     Inactive { reported: bool },
@@ -273,5 +276,5 @@ type PendingSend = BoxFuture<'static, Result<(Stream, Duration), io::Error>>;
 enum OutboundState {
     OpenStream,
     Idle(Stream),
-    Busy(PendingSend, CallbackSender),
+    Busy(PendingSend, oneshot::Sender<Result<HandleOk,HandleError>>),
 }

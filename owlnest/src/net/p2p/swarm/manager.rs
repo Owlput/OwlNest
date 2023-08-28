@@ -1,52 +1,110 @@
-use super::in_event;
-use super::op::*;
-use super::op::swarm::SwarmHandle;
-use tokio::sync::{mpsc, oneshot};
+use super::op::SwarmHandle;
 
-/// Mailbox for the actual task that manages the swarm.
-#[derive(Debug, Clone)]
-pub struct Manager {
-    pub swarm_sender: mpsc::Sender<in_event::swarm::InEvent>,
-    pub behaviour_sender: mpsc::Sender<in_event::behaviour::InEvent>,
+macro_rules! generate_manager {
+    {$($behaviour_name:ident:$variant_ident:ident,)+} => {
+        use std::sync::Arc;
+        use tokio::sync::mpsc;
+        use futures::{Stream,Future, stream::FusedStream};
+        use crate::net::p2p::swarm;
+        use core::task::Poll;
+        use core::task::Context;
+        use core::pin::Pin;
+
+        $(use crate::net::p2p::protocols::$behaviour_name;)*
+
+        pub(crate) struct RxBundle{
+            pub swarm:mpsc::Receiver<swarm::InEvent>,
+            $(pub $behaviour_name:mpsc::Receiver<$behaviour_name::InEvent>,)*
+        }
+        impl Future for RxBundle{
+            type Output = Rx;
+
+            fn poll(self:Pin<&mut Self>,cx: &mut Context<'_>)->Poll<Self::Output>{
+                let mutable_self = self.get_mut();
+                match mutable_self.swarm.poll_recv(cx){
+                    Poll::Pending => {}
+                    Poll::Ready(Some(message)) => return Poll::Ready(Rx::Swarm(message)),
+                    Poll::Ready(None) => unreachable!()
+                }
+                $(
+                    match mutable_self.$behaviour_name.poll_recv(cx){
+                        Poll::Pending => {}
+                        Poll::Ready(Some(message)) => return Poll::Ready(Rx::$variant_ident(message)),
+                        Poll::Ready(None) => unreachable!()
+                    }
+                )+
+                Poll::Pending
+            }
+        }
+        impl Stream for RxBundle{
+            type Item = Rx;
+
+            fn poll_next(self:Pin<&mut Self>,cx: &mut Context<'_>)->Poll<Option<Self::Item>>{
+                let mutable_self = self.get_mut();
+                match mutable_self.swarm.poll_recv(cx){
+                    Poll::Pending => {}
+                    Poll::Ready(Some(message)) => return Poll::Ready(Some(Rx::Swarm(message))),
+                    Poll::Ready(None) => unreachable!()
+                }
+                $(
+                    match mutable_self.$behaviour_name.poll_recv(cx){
+                        Poll::Pending => {}
+                        Poll::Ready(Some(message)) => return Poll::Ready(Some(Rx::$variant_ident(message))),
+                        Poll::Ready(None) => unreachable!()
+                    }
+                )+
+                Poll::Pending
+            }
+        }
+        impl FusedStream for RxBundle{
+            fn is_terminated(&self)->bool{false}
+        }
+
+        pub(crate) enum Rx{
+            $($variant_ident($behaviour_name::InEvent),)+
+            Swarm(swarm::InEvent)
+        }
+
+        pub(crate) struct HandleBundle{
+            swarm:SwarmHandle,
+            $(pub $behaviour_name:$behaviour_name::Handle,)*
+        }
+        impl HandleBundle{
+            pub fn new(buffer: usize)->(Self,RxBundle){
+                let swarm = SwarmHandle::new(buffer);
+                $(let $behaviour_name = $behaviour_name::Handle::new(buffer);)*
+                (Self{
+                    swarm:swarm.0.clone(),
+                    $($behaviour_name:$behaviour_name.0.clone(),)*
+                }, RxBundle{
+                    swarm:swarm.1,
+                    $($behaviour_name:$behaviour_name.1,)*
+                })
+            }
+        }
+
+        pub struct Manager{
+            handle_bundle:Arc<HandleBundle>,
+        }
+
+        impl Manager{
+            pub(crate) fn new(handle_bundle:Arc<HandleBundle>)->Self
+            {
+                Self { handle_bundle }
+            }
+            pub fn swarm(&self)-> &SwarmHandle{
+                &self.handle_bundle.swarm
+            }
+            $(pub fn $behaviour_name(&self)->&$behaviour_name::Handle{
+                &self.handle_bundle.$behaviour_name
+            })*
+        }
+    };
 }
 
-impl Manager {
-    pub(crate) fn new(
-        swarm_sender: mpsc::Sender<in_event::swarm::InEvent>,
-        behaviour_sender: mpsc::Sender<in_event::behaviour::InEvent>,
-    ) -> Self {
-        Self {
-            swarm_sender,
-            behaviour_sender,
-        }
-    }
-
-    /// Get a handle for the swarm.
-    pub fn swarm_handle(&self)->SwarmHandle{
-        SwarmHandle{
-            sender:self.swarm_sender.clone()
-        }
-    }
-
-    /// Send event to manage behaviours.
-    /// ### Panic
-    /// Panics when receiver in the swarm task get dropped or
-    /// callback sender get dropped.
-    pub async fn behaviour_exec(&self, op: behaviour::Op) -> behaviour::OpResult {
-        let (tx, rx) = oneshot::channel();
-        self.behaviour_sender.send(op.into_event(tx)).await.unwrap();
-        rx.await.unwrap()
-    }
-
-    /// Blocking version of `behaviour_exec`.
-    /// ### Panic
-    /// Panics when receiver in the swarm task get dropped or
-    /// callback sender get dropped.
-    pub fn blocking_behaviour_exec(&self, op: behaviour::Op) -> behaviour::OpResult {
-        let (tx, rx) = oneshot::channel();
-        self.behaviour_sender
-            .blocking_send(op.into_event(tx))
-            .unwrap();
-        rx.blocking_recv().unwrap()
-    }
+generate_manager!{
+    kad:Kad,
+    messaging:Messaging,
+    tethering:Tethering,
+    mdns:Mdns,
 }

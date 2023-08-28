@@ -8,7 +8,6 @@ pub mod result;
 use super::EXEC_PROTOCOL_NAME;
 pub use handler::InEvent;
 pub use handler::OutEvent;
-pub use op::Op;
 pub use result::*;
 
 mod protocol {

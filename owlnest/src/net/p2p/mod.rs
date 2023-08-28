@@ -21,7 +21,6 @@ impl SwarmConfig {
 }
 
 mod handler_prelude {
-    pub use crate::net::p2p::swarm::op::behaviour::CallbackSender;
     pub use futures::{future::BoxFuture, FutureExt};
     pub use libp2p::swarm::{
         handler::{

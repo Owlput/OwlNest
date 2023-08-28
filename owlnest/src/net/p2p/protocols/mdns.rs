@@ -1,47 +1,47 @@
+use crate::generate_handler_method;
 use crate::net::p2p::swarm::Swarm;
 pub use libp2p::mdns::tokio::Behaviour;
 pub use libp2p::mdns::Config;
 pub use libp2p::mdns::Event as OutEvent;
 use libp2p::PeerId;
-use tokio::sync::oneshot;
+use tokio::sync::{mpsc, oneshot::*};
 
-pub struct InEvent {
-    op: Op,
-    callback: oneshot::Sender<OpResult>,
+pub enum InEvent {
+    ListDiscoveredNodes(Sender<Vec<PeerId>>),
+    ForceExpire(PeerId, Sender<()>),
+    HasNode(PeerId, Sender<bool>),
 }
 
-pub enum Op {
-    ListDiscoveredNodes,
-    ForceExpire(PeerId),
-    HasNode(PeerId),
+#[derive(Debug, Clone)]
+pub struct Handle {
+    sender: mpsc::Sender<InEvent>,
 }
-
-#[derive(Debug)]
-/// Result type that collects all possible results.
-pub enum OpResult {
-    Ok,
-    ListDiscoveredNodes(Vec<PeerId>),
-    HasNode(bool),
+impl Handle {
+    pub fn new(buffer: usize) -> (Self, mpsc::Receiver<InEvent>) {
+        let (tx, rx) = mpsc::channel(buffer);
+        (Self { sender: tx }, rx)
+    }
+    generate_handler_method! {
+        ListDiscoveredNodes:list_discovered_nodes()->Vec<PeerId>;
+        ForceExpire:force_expire(peer_id:PeerId)->();
+        HasNode:has_node(peer_id:PeerId)->bool;
+    }
 }
 
 pub(crate) fn map_in_event(ev: InEvent, behav: &mut Behaviour) {
-    let InEvent { op, callback } = ev;
-    match op {
-        Op::ListDiscoveredNodes => {
-            let node_list = behav
-                .discovered_nodes().copied()
-                .collect::<Vec<PeerId>>();
-            callback
-                .send(OpResult::ListDiscoveredNodes(node_list))
-                .unwrap();
+    use InEvent::*;
+    match ev {
+        ListDiscoveredNodes(callback) => {
+            let node_list = behav.discovered_nodes().copied().collect::<Vec<PeerId>>();
+            callback.send(node_list).unwrap();
         }
-        Op::ForceExpire(peer_id) => {
+        ForceExpire(peer_id, callback) => {
             behav.expire_node(&peer_id);
-            callback.send(OpResult::Ok).unwrap();
+            callback.send(()).unwrap();
         }
-        Op::HasNode(peer_id) => {
+        HasNode(peer_id, callback) => {
             let has_node = behav.has_node(&peer_id);
-            callback.send(OpResult::HasNode(has_node)).unwrap();
+            callback.send(has_node).unwrap();
         }
     }
 }

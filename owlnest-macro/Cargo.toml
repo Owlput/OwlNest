@@ -1,0 +1,10 @@
+[package]
+name = "owlnest-macro"
+version = "0.1.0"
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+libp2p = { path = "../../../rust-libp2p/libp2p", features = ["full"] }
+libp2p-swarm = { path = "../../../rust-libp2p/swarm" }

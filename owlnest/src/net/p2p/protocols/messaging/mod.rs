@@ -3,7 +3,6 @@ use owlnest_proc::generate_kind;
 use serde::{Deserialize, Serialize};
 use std::time::Duration;
 use tracing::{debug, info, warn};
-use crate::net::p2p::swarm::{op::behaviour::CallbackSender,self};
 
 mod behaviour;
 mod cli;
@@ -24,16 +23,12 @@ pub use protocol::PROTOCOL_NAME;
 #[derive(Debug)]
 pub struct InEvent {
     op: Op,
-    callback: CallbackSender,
+    callback: oneshot::Sender<OpResult>,
 }
 impl InEvent {
-    pub fn new(op: Op, callback: CallbackSender) -> Self {
-        Self { op, callback }
-    }
-}
-impl From<InEvent> for swarm::in_event::behaviour::InEvent{
-    fn from(value: InEvent) -> Self {
-        Self::Messaging(value)
+    pub fn new(op: Op) -> (Self, oneshot::Receiver<OpResult>) {
+        let (tx, rx) = oneshot::channel();
+        (Self { op, callback: tx }, rx)
     }
 }
 
@@ -52,10 +47,6 @@ pub fn ev_dispatch(ev: &OutEvent) {
     match ev {
         OutEvent::IncomingMessage { .. } => {
             println!("Incoming message: {:?}", ev);
-            // match dispatch.send(ev).await {
-            //     Ok(_) => {}
-            //     Err(e) => println!("Failed to send message with error {}", e),
-            // };
         }
         OutEvent::Error(e) => warn!("{:#?}", e),
         OutEvent::Unsupported(peer) => {
@@ -75,4 +66,42 @@ pub fn ev_dispatch(ev: &OutEvent) {
 mod protocol {
     pub const PROTOCOL_NAME: &str = "/owlnest/messaging/0.0.1";
     pub use crate::net::p2p::protocols::universal::protocol::{recv, send};
+}
+
+use tokio::sync::{mpsc, oneshot};
+#[derive(Debug, Clone)]
+pub struct Handle {
+    sender: mpsc::Sender<InEvent>,
+}
+impl Handle {
+    pub fn new(buffer: usize) -> (Self, mpsc::Receiver<InEvent>) {
+        let (tx, rx) = mpsc::channel(buffer);
+        (Self { sender: tx }, rx)
+    }
+    pub async fn send_message(&self, peer_id: PeerId, message: Message) -> Result<Duration, Error> {
+        let (ev, rx) = InEvent::new(Op::SendMessage(peer_id, message));
+        if let Err(_) = self.sender.send(ev).await {
+            return Err(Error::Channel);
+        }
+        match rx.await {
+            Ok(result) => match result {
+                OpResult::Error(e) => Err(e),
+                OpResult::SuccessfulPost(rtt) => Ok(rtt),
+            },
+            Err(_) => Err(Error::Channel),
+        }
+    }
+    pub fn blocking_send_message(&self, peer_id: PeerId, message: Message) -> Result<Duration, Error> {
+        let (ev, rx) = InEvent::new(Op::SendMessage(peer_id, message));
+        if let Err(_) = self.sender.blocking_send(ev) {
+            return Err(Error::Channel);
+        }
+        match rx.blocking_recv() {
+            Ok(result) => match result {
+                OpResult::Error(e) => Err(e),
+                OpResult::SuccessfulPost(rtt) => Ok(rtt),
+            },
+            Err(_) => Err(Error::Channel),
+        }
+    }
 }

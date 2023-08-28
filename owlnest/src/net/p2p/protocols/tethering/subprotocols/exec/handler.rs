@@ -1,6 +1,6 @@
-use super::{inbound_upgrade, outbound_upgrade, protocol, Op, OpResult};
+use super::{inbound_upgrade, outbound_upgrade, protocol, op::Op, OpResult};
 use crate::net::p2p::handler_prelude::*;
-use crate::net::p2p::protocols::tethering::{subprotocols::EXEC_PROTOCOL_NAME, HandleOk};
+use crate::net::p2p::protocols::tethering::{subprotocols::EXEC_PROTOCOL_NAME, HandleOk, HandleError};
 use libp2p::Stream;
 use serde::{Deserialize, Serialize};
 use std::time::Duration;
@@ -15,12 +15,12 @@ use tracing::warn;
 #[derive(Debug)]
 pub struct InEvent {
     inner: Inner,
-    handle_callback: CallbackSender,
+    handle_callback: oneshot::Sender<Result<HandleOk,HandleError>>,
 }
 impl InEvent {
     pub fn new_exec(
         op: Op,
-        handle_callback: CallbackSender,
+        handle_callback: oneshot::Sender<Result<HandleOk,HandleError>>,
         result_callback: oneshot::Sender<OpResult>,
     ) -> Self {
         InEvent {
@@ -28,13 +28,13 @@ impl InEvent {
             handle_callback,
         }
     }
-    pub fn new_callback(stamp: u128, result: OpResult, handle_callback: CallbackSender) -> Self {
+    pub fn new_callback(stamp: u128, result: OpResult, handle_callback: oneshot::Sender<Result<HandleOk,HandleError>>) -> Self {
         InEvent {
             inner: Inner::Callback(stamp, result),
             handle_callback,
         }
     }
-    pub fn into_inner(self) -> (Inner, CallbackSender) {
+    pub fn into_inner(self) -> (Inner, oneshot::Sender<Result<HandleOk,HandleError>>) {
         (self.inner, self.handle_callback)
     }
 }
@@ -233,7 +233,7 @@ impl ConnectionHandler for ExecHandler {
                         break;
                     }
                     Poll::Ready(Ok((stream, rtt))) => {
-                        let result = HandleOk::RemoteExec(rtt).into();
+                        let result = Ok(HandleOk::RemoteExec(rtt));
                         callback.send(result).unwrap();
                         self.outbound = Some(OutboundState::Idle(stream));
                     }
@@ -321,5 +321,5 @@ type PendingSend = BoxFuture<'static, Result<(Stream, Duration), io::Error>>;
 enum OutboundState {
     OpenStream,
     Idle(Stream),
-    Busy(PendingSend, CallbackSender),
+    Busy(PendingSend, oneshot::Sender<Result<HandleOk,HandleError>>),
 }
