@@ -82,7 +82,7 @@ macro_rules! generate_manager {
                 })
             }
         }
-
+        #[derive(Clone)]
         pub struct Manager{
             handle_bundle:Arc<HandleBundle>,
         }

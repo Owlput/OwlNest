@@ -1,6 +1,7 @@
 mod utils;
 
 use std::io::stdout;
+use std::sync::Arc;
 
 use crate::net::p2p::protocols::*;
 use crate::net::p2p::{identity::IdentityUnion, swarm};
@@ -8,12 +9,13 @@ use crossterm::style::Stylize;
 use crossterm::terminal::{Clear, ClearType};
 use crossterm::ExecutableCommand;
 use rustyline::{error::ReadlineError, DefaultEditor};
+use tokio::sync::Notify;
 use crate::net::p2p::swarm::manager::Manager;
 
 use self::utils::handle_utils;
 
 /// Make current terminal interactive
-pub fn setup_interactive_shell(ident: IdentityUnion, manager: Manager) {
+pub fn setup_interactive_shell(ident: IdentityUnion, manager: Manager, shutdown_notifier:Arc<Notify>) {
     std::thread::spawn(move || {
         stdout().execute(Clear(ClearType::All)).unwrap();
         println!("OwlNest is now running in interactive mode, type \"help\" for more information.");
@@ -33,6 +35,8 @@ pub fn setup_interactive_shell(ident: IdentityUnion, manager: Manager) {
                 }
             }
         }
+        println!("shutdown criteria reached, shutting down this peer...");
+        shutdown_notifier.notify_one()
     });
 }
 
@@ -67,7 +71,7 @@ fn handle_err(e: ReadlineError, retry_times: &mut u32) -> bool {
             should_exit(retry_times, 5)
         }
         ReadlineError::Interrupted => {
-            println!("Interrupt signal received, exiting interactive shell. Repeat to exit the whole process.");
+            println!("Interrupt signal received.");
             true
         }
         ReadlineError::WindowResized => false,

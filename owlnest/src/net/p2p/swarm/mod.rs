@@ -65,8 +65,10 @@ impl Builder {
         );
 
         let (handle_bundle, mut rx_bundle) = HandleBundle::new(buffer_size);
-
+        let manager = manager::Manager::new(Arc::new(handle_bundle));
+        let manager_clone = manager.clone();
         tokio::spawn(async move {
+            let _manager = manager_clone;
             let mut swarm = libp2p::swarm::SwarmBuilder::with_tokio_executor(
                 transport,
                 behaviour,
@@ -82,7 +84,7 @@ impl Builder {
                 };
             }
         });
-        manager::Manager::new(Arc::new(handle_bundle))
+        manager
     }
 }
 
