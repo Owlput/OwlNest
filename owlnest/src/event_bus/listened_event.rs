@@ -1,14 +1,12 @@
 use super::Error;
-use crate::net::p2p::protocols::*;
-use crate::net::p2p::swarm;
 use std::{any::Any, sync::Arc};
 use tokio::sync::{broadcast, oneshot};
 
 #[derive(Clone)]
-pub struct ListenedEvent(String, Arc<Box<dyn Any + Send + Sync + 'static>>);
+pub struct ListenedEvent(String, Arc<dyn Any + Send + Sync + 'static>);
 impl ListenedEvent {
     pub fn new(ident: String, event: impl Any + Send + Sync) -> Self {
-        Self(ident, Arc::new(Box::new(event)))
+        Self(ident, Arc::new(event))
     }
     pub fn kind(&self) -> String {
         self.0.clone()
@@ -31,25 +29,9 @@ pub(crate) enum EventListenerOp {
     ),
 }
 
-/// Top-lever wrapper enum around listeners available from different modules.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum EventKind {
-    /// Variant for operations on behaviour level.
-    Behaviours(BehaviourEventKind),
-    /// Variant for operations on swarm level.
-    Swarm(swarm::event_listener::Kind),
-}
-
-/// Behaviour-level wrapper around listener operations.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum BehaviourEventKind {
-    /// Listener operations for `owlnest/messaging`
-    Messaging(messaging::Kind),
-    /// Listener operations for `owlnest/kad`
-    Kad(kad::event_listener::Kind),
-}
-
-pub trait AsEventKind {
-    type EventKind;
-    fn kind(&self) -> Self::EventKind;
+pub trait Listenable: Sized + Send + Sync + 'static {
+    fn into_listened(self) -> ListenedEvent {
+        ListenedEvent::new(Self::as_event_identifier(), self)
+    }
+    fn as_event_identifier() -> String;
 }

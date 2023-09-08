@@ -1,22 +1,27 @@
 use std::sync::Mutex;
 
 use owlnest::{
+    event_bus::{bus::*, Handle},
     net::p2p::{identity::IdentityUnion, protocols},
-    *, event_bus::{Handle, bus::*},
+    *,
 };
-use tracing::{Level, info};
+use tracing::Level;
+use tracing_log::LogTracer;
+use tracing_subscriber::{filter::LevelFilter, prelude::__tracing_subscriber_SubscriberExt, Layer};
 
 fn main() {
-    let rt = tokio::runtime::Builder::new_multi_thread().enable_all().build().unwrap();
-    setup_logging(&rt);
+    let rt = tokio::runtime::Builder::new_multi_thread()
+        .enable_all()
+        .build()
+        .unwrap();
+    setup_logging();
     let ident = get_ident();
     let (ev_bus_handle, ev_tap) = setup_ev_bus(rt.handle());
-    rt.block_on(setup_peer(ident, &ev_bus_handle,ev_tap));
+    rt.block_on(setup_peer(ident, &ev_bus_handle, ev_tap));
     let _ = rt.block_on(tokio::signal::ctrl_c());
-    std::thread::sleep(std::time::Duration::from_secs(10));
 }
 
-async fn setup_peer(ident: IdentityUnion, event_bus_handle:&Handle, ev_tap:EventTap) {
+async fn setup_peer(ident: IdentityUnion, event_bus_handle: &Handle, ev_tap: EventTap) {
     let swarm_config = net::p2p::SwarmConfig {
         local_ident: ident.clone(),
         kad: protocols::kad::Config::default(),
@@ -26,14 +31,13 @@ async fn setup_peer(ident: IdentityUnion, event_bus_handle:&Handle, ev_tap:Event
         tethering: protocols::tethering::Config,
         relay_server: protocols::relay_server::Config::default(),
     };
-    let mgr = net::p2p::swarm::Builder::new(swarm_config).build(8,event_bus_handle.clone(),ev_tap);
+    let mgr =
+        net::p2p::swarm::Builder::new(swarm_config).build(8, event_bus_handle.clone(), ev_tap);
     cli::setup_interactive_shell(ident, mgr);
 }
 
-fn setup_logging(rt:&tokio::runtime::Runtime) {
-    
+fn setup_logging() {
     let time = chrono::Local::now().timestamp_micros();
-    #[cfg(target_os = "linux")]
     let log_file_handle = match std::fs::create_dir("./logs") {
         Ok(_) => std::fs::File::create(format!("./logs/{}.log", time)).unwrap(),
         Err(e) => {
@@ -45,24 +49,17 @@ fn setup_logging(rt:&tokio::runtime::Runtime) {
             }
         }
     };
-    #[cfg(target_os = "windows")]
-    let log_file_handle = match std::fs::create_dir(".\\logs") {
-        Ok(_) => std::fs::File::create(format!(".\\logs\\{}.log", time)).unwrap(),
-        Err(e) => {
-            let error = format!("{:?}", e);
-            if error.contains("AlreadyExists") {
-                std::fs::File::create(format!(".\\logs\\{}.log", time)).unwrap()
-            } else {
-                panic!("{}",e)
-            }
-        }
-    };
-    let _ = rt.enter();
-    tracing_subscriber::fmt::fmt()
-        .with_max_level(Level::DEBUG)
+    let filter = tracing_subscriber::filter::Targets::new()
+        .with_target("owlnest", Level::DEBUG)
+        .with_target("rustyline", LevelFilter::ERROR)
+        .with_target("", Level::DEBUG);
+    let layer = tracing_subscriber::fmt::Layer::default()
         .with_ansi(false)
         .with_writer(Mutex::new(log_file_handle))
-        .init();
+        .with_filter(filter);
+    let reg = tracing_subscriber::registry().with(layer);
+    tracing::subscriber::set_global_default(reg).expect("you can only set global default once");
+    LogTracer::init().unwrap()
 }
 
 fn get_ident() -> IdentityUnion {

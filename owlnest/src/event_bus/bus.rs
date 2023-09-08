@@ -7,6 +7,7 @@ use tokio::{
     time::MissedTickBehavior,
 };
 
+/// A tap for sending various event to the central event bus.
 #[derive(Debug, Clone)]
 pub struct EventTap(mpsc::Sender<ListenedEvent>);
 impl EventTap {

@@ -1,4 +1,4 @@
-use crate::{event_bus, net::p2p::swarm::manager::HandleBundle};
+use crate::{event_bus::{self, bus::EventTap}, net::p2p::swarm::manager::HandleBundle};
 use futures::StreamExt;
 use libp2p::{core::ConnectedPoint, Multiaddr, PeerId};
 use std::{fmt::Debug, sync::Arc};
@@ -36,7 +36,7 @@ impl Builder {
         self,
         buffer_size: usize,
         ev_bus_handle: event_bus::Handle,
-        ev_tap: event_bus::bus::EventTap,
+        ev_tap: EventTap,
     ) -> Manager {
         let ident = self.config.local_ident.clone();
 
@@ -77,10 +77,7 @@ impl Builder {
                 select! {
                     Some(ev) = rx_bundle.next() => handle_incoming_event(ev, &mut swarm, &ev_bus_handle),
                     out_event = swarm.select_next_some() => {
-                        handle_swarm_event(&out_event,&mut swarm);
-                        if let libp2p_swarm::SwarmEvent::Behaviour(ev) = out_event{
-                            ev_tap.send(ev.into()).await.unwrap()
-                        }
+                        handle_swarm_event(&out_event,&mut swarm,&ev_tap);
                     }
                 };
             }
@@ -90,9 +87,9 @@ impl Builder {
 }
 
 #[inline]
-fn handle_swarm_event(ev: &SwarmEvent, swarm: &mut Swarm) {
+fn handle_swarm_event(ev: &SwarmEvent, swarm: &mut Swarm, ev_tap:&EventTap) {
     match ev {
-        SwarmEvent::Behaviour(event) => handle_behaviour_event(swarm, event),
+        SwarmEvent::Behaviour(event) => handle_behaviour_event(swarm, event,ev_tap),
         SwarmEvent::NewListenAddr { address, .. } => info!("Listening on {:?}", address),
         SwarmEvent::ConnectionEstablished {
             peer_id, endpoint, ..
@@ -190,11 +187,11 @@ fn swarm_op_exec(swarm: &mut Swarm, ev: InEvent) {
 }
 
 #[inline]
-fn handle_behaviour_event(swarm: &mut Swarm, ev: &ToSwarmEvent) {
+fn handle_behaviour_event(swarm: &mut Swarm, ev: &ToSwarmEvent,ev_tap:&EventTap) {
     use super::protocols::*;
     use out_event::ToSwarmEvent::*;
     match ev {
-        Kad(ev) => kad::ev_dispatch(ev),
+        Kad(ev) => kad::ev_dispatch(ev,ev_tap),
         Identify(ev) => identify::ev_dispatch(ev),
         Mdns(ev) => mdns::ev_dispatch(ev, swarm),
         Messaging(ev) => messaging::ev_dispatch(ev),

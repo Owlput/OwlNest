@@ -65,7 +65,6 @@ impl From<ConversionError> for Error {
 }
 
 pub mod prelude {
-    pub use super::listened_event::{AsEventKind, BehaviourEventKind, EventKind};
     pub use super::ListenedEvent;
     pub use super::{ConversionError, Error};
 }

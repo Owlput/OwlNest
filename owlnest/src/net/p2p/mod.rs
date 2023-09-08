@@ -32,9 +32,3 @@ mod handler_prelude {
     pub use std::io;
     pub use std::task::Poll;
 }
-
-pub trait OpExec {
-    type Executor;
-    type CallbackHandle;
-    async fn exec(&self, executor: Self::Executor) -> Self::CallbackHandle;
-}

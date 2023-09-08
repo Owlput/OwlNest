@@ -3,9 +3,7 @@ use std::str::FromStr;
 use tokio::sync::{mpsc, oneshot};
 use tracing::{info, warn};
 
-use crate::event_bus::{Handle as EvHandle, ToEventIdentifier};
-
-use self::event_listener::Kind;
+use crate::event_bus::{listened_event::Listenable, Handle as EvHandle};
 
 pub type Behaviour = Kademlia<store::MemoryStore>;
 pub type Config = KademliaConfig;
@@ -37,29 +35,28 @@ impl Handle {
         let (tx, rx) = mpsc::channel(buffer);
         (Self { sender: tx }, rx)
     }
-    pub async fn lookup(&self,peer_id:PeerId)->Result<Vec<QueryResult>, ()>{
+    pub async fn lookup(&self, peer_id: PeerId) -> Result<Vec<QueryResult>, ()> {
         let (ev, callback) = InEvent::new(Op::PeerLookup(peer_id));
         self.sender.send(ev).await.unwrap();
-        match callback.await{
-            Ok(result) => match result{
+        match callback.await {
+            Ok(result) => match result {
                 OpResult::PeerLookup(v) => Ok(v),
                 OpResult::BehaviourEvent(_) => unreachable!(),
             },
             Err(_e) => Err(()),
         }
     }
-    pub fn blocking_lookup(&self,peer_id:PeerId)->Result<Vec<QueryResult>, ()>{
+    pub fn blocking_lookup(&self, peer_id: PeerId) -> Result<Vec<QueryResult>, ()> {
         let (ev, callback) = InEvent::new(Op::PeerLookup(peer_id));
         self.sender.blocking_send(ev).unwrap();
-        match callback.blocking_recv(){
-            Ok(result) => match result{
+        match callback.blocking_recv() {
+            Ok(result) => match result {
                 OpResult::PeerLookup(v) => Ok(v),
                 OpResult::BehaviourEvent(_) => unreachable!(),
             },
             Err(_e) => Err(()),
         }
     }
-
 }
 
 #[derive(Debug)]
@@ -73,13 +70,11 @@ pub enum OpResult {
     BehaviourEvent(OutEvent),
 }
 
-pub(crate) fn map_in_event(ev: InEvent,behav: &mut Behaviour, ev_bus_handle: &EvHandle, ) {
+pub(crate) fn map_in_event(ev: InEvent, behav: &mut Behaviour, ev_bus_handle: &EvHandle) {
     let (op, callback) = ev.into_inner();
     match op {
         Op::PeerLookup(peer_id) => {
-            let mut listener = ev_bus_handle
-                .add(Kind::OnOutboundQueryProgressed.event_identifier())
-                .unwrap();
+            let mut listener = ev_bus_handle.add(format!("{}", PROTOCOL_NAME)).unwrap();
             let query_id = behav.get_record(record::Key::new(&peer_id.to_bytes()));
             tokio::spawn(async move {
                 let mut results = Vec::new();
@@ -111,7 +106,8 @@ pub(crate) fn map_in_event(ev: InEvent,behav: &mut Behaviour, ev_bus_handle: &Ev
     }
 }
 
-pub fn ev_dispatch(ev: &OutEvent) {
+pub fn ev_dispatch(ev: &OutEvent,ev_tap:&crate::event_bus::bus::EventTap) {
+    
     match ev{
         KademliaEvent::InboundRequest { request } => info!("Incoming request: {:?}",request),
         KademliaEvent::OutboundQueryProgressed { id, result, stats, step } => info!("Outbound query {:?} progressed, stats: {:?}, step: {:?}, result: {:?}",id,stats,step,result),
@@ -120,6 +116,11 @@ pub fn ev_dispatch(ev: &OutEvent) {
         KademliaEvent::RoutablePeer { peer, address } => info!("Peer {} is reachable with address {}",peer,address),
         KademliaEvent::PendingRoutablePeer { peer, address } => info!("Pending peer {} with address {}",peer,address),
     }
+    ev_tap.blocking_send(ev.clone().into_listened()).unwrap();
 }
 
-pub mod event_listener;
+impl Listenable for OutEvent {
+    fn as_event_identifier() -> String {
+        PROTOCOL_NAME.to_string()
+    }
+}

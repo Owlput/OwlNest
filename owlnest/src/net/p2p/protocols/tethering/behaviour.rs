@@ -1,5 +1,4 @@
 use super::*;
-use crate::net::p2p::swarm;
 use libp2p::swarm::{derive_prelude::*, NotifyHandler};
 use owlnest_macro::connection_handler_select;
 use std::{
@@ -113,7 +112,7 @@ impl NetworkBehaviour for Behaviour {
                         TetheringOp::Trust(peer_id) => self.trust(peer_id),
                         TetheringOp::Untrust(peer_id) => self.untrust(peer_id),
                     };
-                    handle_callback.send(Ok(HandleOk::Ok)).unwrap();
+                    handle_callback.send(result.map(|_|HandleOk::Ok)).unwrap();
                 }
             }
         }
