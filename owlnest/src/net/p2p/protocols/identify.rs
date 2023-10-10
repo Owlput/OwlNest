@@ -24,8 +24,8 @@ pub fn ev_dispatch(ev: &OutEvent) {
     }
 }
 
-impl Listenable for OutEvent{
-    fn as_event_identifier()->String {
+impl Listenable for OutEvent {
+    fn as_event_identifier() -> String {
         PROTOCOL_NAME.to_string()
     }
 }

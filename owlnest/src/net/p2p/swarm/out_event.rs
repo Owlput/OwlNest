@@ -1,10 +1,10 @@
 use std::{io, num::NonZeroU32};
 
-use super::{*, behaviour::Behaviour};
+use super::{behaviour::Behaviour, *};
 pub use behaviour::ToSwarmEvent;
 use libp2p::{
     swarm::{derive_prelude::ListenerId, ConnectionError, DialError, ListenError},
-    TransportError, Multiaddr,
+    Multiaddr, TransportError,
 };
 use tokio::sync::mpsc;
 
@@ -132,7 +132,8 @@ impl TryFrom<super::SwarmEvent> for SwarmEvent {
                 endpoint,
                 num_established,
                 concurrent_dial_errors,
-                established_in,..
+                established_in,
+                ..
             } => Self::ConnectionEstablished {
                 peer_id,
                 endpoint,
@@ -144,7 +145,8 @@ impl TryFrom<super::SwarmEvent> for SwarmEvent {
                 peer_id,
                 endpoint,
                 num_established,
-                cause,..
+                cause,
+                ..
             } => Self::ConnectionClosed {
                 peer_id,
                 endpoint,
@@ -153,7 +155,8 @@ impl TryFrom<super::SwarmEvent> for SwarmEvent {
             },
             libp2p::swarm::SwarmEvent::IncomingConnection {
                 local_addr,
-                send_back_addr,..
+                send_back_addr,
+                ..
             } => Self::IncomingConnection {
                 local_addr,
                 send_back_addr,
@@ -161,17 +164,15 @@ impl TryFrom<super::SwarmEvent> for SwarmEvent {
             libp2p::swarm::SwarmEvent::IncomingConnectionError {
                 local_addr,
                 send_back_addr,
-                error,..
+                error,
+                ..
             } => Self::IncomingConnectionError {
                 local_addr,
                 send_back_addr,
                 error,
             },
-            libp2p::swarm::SwarmEvent::OutgoingConnectionError { peer_id, error,.. } => {
-                Self::OutgoingConnectionError {
-                    peer_id,
-                    error,
-                }
+            libp2p::swarm::SwarmEvent::OutgoingConnectionError { peer_id, error, .. } => {
+                Self::OutgoingConnectionError { peer_id, error }
             }
             libp2p::swarm::SwarmEvent::NewListenAddr {
                 listener_id,
@@ -197,17 +198,13 @@ impl TryFrom<super::SwarmEvent> for SwarmEvent {
                 reason,
             },
             libp2p::swarm::SwarmEvent::ListenerError { listener_id, error } => {
-                Self::ListenerError {
-                    listener_id,
-                    error,
-                }
+                Self::ListenerError { listener_id, error }
             }
             libp2p::swarm::SwarmEvent::Dialing { peer_id, .. } => Self::Dialing(peer_id),
         };
         Ok(ev)
     }
 }
-
 
 use crate::net::p2p::protocols::*;
 pub struct OutEventBundle {

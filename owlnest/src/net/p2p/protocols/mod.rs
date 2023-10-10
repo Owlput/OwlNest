@@ -20,6 +20,9 @@ pub mod relay_client;
 /// A wrapper around reference implementation of libp2p relay server.
 pub mod relay_server;
 
+/// An extension on top reference implementation of libp2p relay server and client.
+pub mod relay_ext;
+
 /// A mock up of reference implementation of libp2p allow-block list. 
 pub mod allow_block_list;
 

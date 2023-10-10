@@ -20,7 +20,7 @@ impl std::fmt::Display for Error {
             PeerNotFound(peer) => f.write_str(&format!("Peer {} not connected", peer)),
             UnrecognizedMessage(msg) => f.write_str(msg),
             IO(msg) => f.write_str(msg),
-            Channel => f.write_str("Callback channel closed unexpectedly")
+            Channel => f.write_str("Callback channel closed unexpectedly"),
         }
     }
 }

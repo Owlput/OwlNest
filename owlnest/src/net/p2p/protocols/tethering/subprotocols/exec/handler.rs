@@ -1,60 +1,56 @@
-use super::{inbound_upgrade, outbound_upgrade, protocol, op::Op, OpResult};
+use super::{inbound_upgrade, op::Op, outbound_upgrade, protocol, OpResult};
 use crate::net::p2p::handler_prelude::*;
-use crate::net::p2p::protocols::tethering::{subprotocols::EXEC_PROTOCOL_NAME, HandleOk, HandleError};
+use crate::net::p2p::protocols::tethering::subprotocols::EXEC_PROTOCOL_NAME;
 use libp2p::Stream;
 use serde::{Deserialize, Serialize};
 use std::time::Duration;
 use std::{
-    collections::{HashMap, VecDeque},
+    collections::{HashSet, VecDeque},
     fmt::Display,
-    time::SystemTime,
 };
-use tokio::sync::oneshot;
 use tracing::warn;
 
 #[derive(Debug)]
 pub struct InEvent {
     inner: Inner,
-    handle_callback: oneshot::Sender<Result<HandleOk,HandleError>>,
+    id: u64,
 }
 impl InEvent {
-    pub fn new_exec(
-        op: Op,
-        handle_callback: oneshot::Sender<Result<HandleOk,HandleError>>,
-        result_callback: oneshot::Sender<OpResult>,
-    ) -> Self {
+    pub fn new_exec(op: Op, id: u64) -> Self {
         InEvent {
-            inner: Inner::Exec(op, result_callback),
-            handle_callback,
+            inner: Inner::Exec(op, id),
+            id,
         }
     }
-    pub fn new_callback(stamp: u128, result: OpResult, handle_callback: oneshot::Sender<Result<HandleOk,HandleError>>) -> Self {
+    pub fn new_callback(id: u64, result: OpResult) -> Self {
         InEvent {
-            inner: Inner::Callback(stamp, result),
-            handle_callback,
+            inner: Inner::Callback(id, result),
+            id: 0,
         }
     }
-    pub fn into_inner(self) -> (Inner, oneshot::Sender<Result<HandleOk,HandleError>>) {
-        (self.inner, self.handle_callback)
+    pub fn into_inner(self) -> (Inner, u64) {
+        (self.inner, self.id)
     }
 }
 
 #[derive(Debug)]
 pub enum Inner {
-    Exec(Op, oneshot::Sender<OpResult>),
-    Callback(u128, OpResult),
+    Exec(Op, u64),
+    Callback(u64, OpResult),
 }
 
 /// Data structure be sent through the wire.
 #[derive(Debug, Serialize, Deserialize)]
 enum Packet {
-    Op(Op, u128),
-    Callback(OpResult, u128),
+    Op(Op, u64),
+    Callback(OpResult, u64),
 }
 
 #[derive(Debug)]
 pub enum OutEvent {
-    Exec(Op, u128),
+    RemoteExecReq(Op, u64),
+    HandleResult(Result<(), ()>, u64),
+    CallbackResult(OpResult, u64),
     Error(Error),
     Unsupported,
 }
@@ -63,7 +59,7 @@ pub enum OutEvent {
 pub enum Error {
     Corrupted(serde_json::Error, Vec<u8>),
     IO(io::Error),
-    CallbackNotFound(u128, OpResult),
+    CallbackNotFound(u64, OpResult),
     CallbackFailed(OpResult),
 }
 impl Display for Error {
@@ -101,7 +97,7 @@ pub enum State {
 pub struct ExecHandler {
     pending_in_events: VecDeque<InEvent>,
     pending_out_events: VecDeque<OutEvent>,
-    pending_callbacks: HashMap<u128, oneshot::Sender<OpResult>>,
+    pending_callbacks: HashSet<u64>,
     inbound: Option<PendingInbound>,
     outbound: Option<OutboundState>,
     state: State,
@@ -178,7 +174,9 @@ impl ConnectionHandler for ExecHandler {
             }
             State::Inactive { reported: false } => {
                 self.state = State::Inactive { reported: true };
-                return Poll::Ready(ConnectionHandlerEvent::NotifyBehaviour(OutEvent::Unsupported));
+                return Poll::Ready(ConnectionHandlerEvent::NotifyBehaviour(
+                    OutEvent::Unsupported,
+                ));
             }
             State::Active => {}
         }
@@ -194,26 +192,24 @@ impl ConnectionHandler for ExecHandler {
                     let packet = match serde_json::from_slice::<Packet>(&bytes) {
                         Ok(packet) => packet,
                         Err(e) => {
-                            return Poll::Ready(ConnectionHandlerEvent::NotifyBehaviour(OutEvent::Error(
-                                Error::Corrupted(e, bytes),
-                            )))
+                            return Poll::Ready(ConnectionHandlerEvent::NotifyBehaviour(
+                                OutEvent::Error(Error::Corrupted(e, bytes)),
+                            ))
                         }
                     };
                     match packet {
-                        Packet::Op(op, stamp) => {
-                            return Poll::Ready(ConnectionHandlerEvent::NotifyBehaviour(OutEvent::Exec(
-                                op, stamp,
-                            )))
+                        Packet::Op(op, id) => {
+                            return Poll::Ready(ConnectionHandlerEvent::NotifyBehaviour(
+                                OutEvent::RemoteExecReq(op, id),
+                            ))
                         }
-                        Packet::Callback(result, stamp) => {
-                            if let Some(callback) = self.pending_callbacks.remove(&stamp) {
-                                if let Err(result) = callback.send(result) {
-                                    self.pending_out_events
-                                        .push_front(OutEvent::Error(Error::CallbackFailed(result)))
-                                }
+                        Packet::Callback(result, id) => {
+                            if self.pending_callbacks.remove(&id) {
+                                self.pending_out_events
+                                    .push_back(OutEvent::CallbackResult(result, id))
                             } else {
                                 self.pending_out_events.push_front(OutEvent::Error(
-                                    Error::CallbackNotFound(stamp, result),
+                                    Error::CallbackNotFound(id, result),
                                 ))
                             }
                         }
@@ -227,14 +223,14 @@ impl ConnectionHandler for ExecHandler {
                 return Poll::Ready(ConnectionHandlerEvent::NotifyBehaviour(ev));
             }
             match self.outbound.take() {
-                Some(OutboundState::Busy(mut task, callback)) => match task.poll_unpin(cx) {
+                Some(OutboundState::Busy(mut task, id)) => match task.poll_unpin(cx) {
                     Poll::Pending => {
-                        self.outbound = Some(OutboundState::Busy(task, callback));
+                        self.outbound = Some(OutboundState::Busy(task, id));
                         break;
                     }
-                    Poll::Ready(Ok((stream, rtt))) => {
-                        let result = Ok(HandleOk::RemoteExec(rtt));
-                        callback.send(result).unwrap();
+                    Poll::Ready(Ok((stream, _))) => {
+                        self.pending_out_events
+                            .push_back(OutEvent::HandleResult(Ok(()), id));
                         self.outbound = Some(OutboundState::Idle(stream));
                     }
                     Poll::Ready(Err(e)) => {
@@ -247,13 +243,9 @@ impl ConnectionHandler for ExecHandler {
                     Some(ev) => {
                         let (inner, callback) = ev.into_inner();
                         let bytes = match inner {
-                            Inner::Exec(op, callback) => {
-                                let stamp = SystemTime::now()
-                                    .duration_since(SystemTime::UNIX_EPOCH)
-                                    .unwrap()
-                                    .as_nanos();
-                                self.pending_callbacks.insert(stamp, callback);
-                                serde_json::to_vec(&Packet::Op(op, stamp)).unwrap()
+                            Inner::Exec(op, id) => {
+                                self.pending_callbacks.insert(id);
+                                serde_json::to_vec(&Packet::Op(op, id)).unwrap()
                             }
                             Inner::Callback(stamp, result) => {
                                 serde_json::to_vec(&Packet::Callback(result, stamp)).unwrap()
@@ -321,5 +313,5 @@ type PendingSend = BoxFuture<'static, Result<(Stream, Duration), io::Error>>;
 enum OutboundState {
     OpenStream,
     Idle(Stream),
-    Busy(PendingSend, oneshot::Sender<Result<HandleOk,HandleError>>),
+    Busy(PendingSend, u64),
 }

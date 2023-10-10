@@ -70,9 +70,9 @@ macro_rules! generate_manager {
             $(pub $behaviour_name:$behaviour_name::Handle,)*
         }
         impl HandleBundle{
-            pub fn new(buffer: usize)->(Self,RxBundle){
+            pub fn new(buffer: usize, event_bus_handle:&crate::event_bus::Handle)->(Self,RxBundle){
                 let swarm = SwarmHandle::new(buffer);
-                $(let $behaviour_name = $behaviour_name::Handle::new(buffer);)*
+                $(let $behaviour_name = $behaviour_name::Handle::new(buffer, event_bus_handle);)*
                 (Self{
                     swarm:swarm.0.clone(),
                     $($behaviour_name:$behaviour_name.0.clone(),)*
@@ -85,12 +85,16 @@ macro_rules! generate_manager {
         #[derive(Clone)]
         pub struct Manager{
             handle_bundle:Arc<HandleBundle>,
+            executor:tokio::runtime::Handle,
         }
 
         impl Manager{
-            pub(crate) fn new(handle_bundle:Arc<HandleBundle>)->Self
+            pub(crate) fn new(handle_bundle:Arc<HandleBundle>,executor:tokio::runtime::Handle)->Self
             {
-                Self { handle_bundle }
+                Self { handle_bundle, executor }
+            }
+            pub fn executor(&self)->&tokio::runtime::Handle{
+                &self.executor
             }
             pub fn swarm(&self)-> &SwarmHandle{
                 &self.handle_bundle.swarm
@@ -102,9 +106,10 @@ macro_rules! generate_manager {
     };
 }
 
-generate_manager!{
+generate_manager! {
     kad:Kad,
     messaging:Messaging,
     tethering:Tethering,
     mdns:Mdns,
+    relay_ext:RelayExt,
 }

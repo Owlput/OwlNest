@@ -28,10 +28,8 @@ fn handle_kad_lookup(manager: &Manager, command: Vec<&str>) {
             return;
         }
     };
-    match manager.kad().blocking_lookup(peer_id){
-        Ok(v) => println!("{:?}",v),
-        Err(_) => println!("Lookup failed"),
-    }
+    let result = manager.executor().block_on(manager.kad().lookup(peer_id));
+    println!("{:?}",result)
 }
 
 /// Top-level help message for `kad` command.

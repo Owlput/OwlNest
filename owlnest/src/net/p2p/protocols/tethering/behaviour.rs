@@ -27,18 +27,18 @@ impl Behaviour {
     pub(crate) fn push_event(&mut self, ev: InEvent) {
         self.in_events.push_front(ev)
     }
-    pub fn trust(&mut self, peer_id: PeerId) -> Result<(), HandleError> {
+    pub fn trust(&mut self, peer_id: PeerId) -> Result<(), ()> {
         if self.trusted_peer.insert(peer_id) {
             Ok(())
         } else {
-            Err(HandleError::LocalExec(TetheringOpError::AlreadyTrusted))
+            Err(())
         }
     }
-    pub fn untrust(&mut self, peer_id: PeerId) -> Result<(), HandleError> {
+    pub fn untrust(&mut self, peer_id: PeerId) -> Result<(), ()> {
         if self.trusted_peer.remove(&peer_id) {
             Ok(())
         } else {
-            Err(HandleError::LocalExec(TetheringOpError::NotFound))
+            Err(())
         }
     }
 }
@@ -73,46 +73,39 @@ impl NetworkBehaviour for Behaviour {
             return Poll::Ready(ToSwarm::GenerateEvent(ev));
         }
         if let Some(ev) = self.in_events.pop_back() {
-            let (op, handle_callback) = ev.into_inner();
-            match op {
-                Op::RemoteExec(peer_id, op, result_callback) => {
+            use InEvent::*;
+            match ev {
+                RemoteExec(peer_id, op, id) => {
                     return Poll::Ready(ToSwarm::NotifyHandler {
                         peer_id,
                         handler: NotifyHandler::Any,
-                        event: handler::FromBehaviourSelect::Exec(exec::InEvent::new_exec(
-                            op,
-                            handle_callback,
-                            result_callback,
-                        )),
+                        event: handler::FromBehaviourSelect::Exec(exec::InEvent::new_exec(op, id)),
                     })
                 }
-                Op::RemoteCallback(peer_id, stamp, result) => {
+                RemoteCallback(peer_id, stamp, result) => {
                     return Poll::Ready(ToSwarm::NotifyHandler {
                         peer_id,
                         handler: NotifyHandler::Any,
                         event: handler::FromBehaviourSelect::Exec(exec::InEvent::new_callback(
-                            stamp,
-                            result,
-                            handle_callback,
+                            stamp, result,
                         )),
                     })
                 }
-                Op::Push(to, push_type) => {
+                Push(to, push_type, id) => {
                     return Poll::Ready(ToSwarm::NotifyHandler {
                         peer_id: to,
                         handler: NotifyHandler::Any,
                         event: handler::FromBehaviourSelect::Push(push::InEvent::new(
-                            push_type,
-                            handle_callback,
+                            push_type, id,
                         )),
                     })
                 }
-                Op::LocalExec(op) => {
+                LocalExec(op, id) => {
                     let result = match op {
                         TetheringOp::Trust(peer_id) => self.trust(peer_id),
                         TetheringOp::Untrust(peer_id) => self.untrust(peer_id),
                     };
-                    handle_callback.send(result.map(|_|HandleOk::Ok)).unwrap();
+                    self.out_events.push_back(OutEvent::LocalExec(result, id));
                 }
             }
         }
@@ -149,13 +142,16 @@ impl NetworkBehaviour for Behaviour {
 }
 
 fn map_exec_out_event(peer_id: PeerId, ev: exec::OutEvent) -> behaviour::OutEvent {
+    use exec::OutEvent::*;
     match ev {
-        exec::OutEvent::Exec(op, stamp) => behaviour::OutEvent::Exec(op, stamp),
-        exec::OutEvent::Error(e) => behaviour::OutEvent::ExecError(e),
-        exec::OutEvent::Unsupported => {
+        RemoteExecReq(op, stamp) => behaviour::OutEvent::Exec(op, stamp),
+        Error(e) => behaviour::OutEvent::ExecError(e),
+        Unsupported => {
             println!("unsupported: exec");
             behaviour::OutEvent::Unsupported(peer_id, behaviour::Subprotocol::Exec)
         }
+        HandleResult(result, id) => behaviour::OutEvent::LocalExec(result, id),
+        CallbackResult(result, id) => behaviour::OutEvent::RemoteExecResult(result, id),
     }
 }
 fn map_push_out_event(peer_id: PeerId, ev: push::OutEvent) -> behaviour::OutEvent {

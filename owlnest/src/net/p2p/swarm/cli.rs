@@ -8,8 +8,24 @@ pub fn handle_swarm(handle: &SwarmHandle, command: Vec<&str>) {
     }
     match command[1] {
         "help" => println!("{}", TOP_HELP_MESSAGE),
-        "dial" => handle_swarm_dial(handle, command),
-        "listen" => handle_swarm_listen(handle, command),
+        "dial" => {
+            if command.len() < 3 {
+                println!(
+                    "Error: Missing required argument <address>, syntax: `swarm dial <address>`"
+                );
+                return;
+            }
+            handle_swarm_dial(handle, command[2])
+        }
+        "listen" => {
+            if command.len() < 3 {
+                println!(
+                    "Error: Missing required argument <address>, syntax: `swarm listen <address>`"
+                );
+                return;
+            }
+            handle_swarm_listen(handle, command[2])
+        }
         "listener" => handle_swarm_listener(handle, command),
         _ => println!(
             "Failed to execute: unrecognized subcommand. Type \"swarm help\" for more information."
@@ -17,15 +33,11 @@ pub fn handle_swarm(handle: &SwarmHandle, command: Vec<&str>) {
     }
 }
 
-fn handle_swarm_dial(handle: &SwarmHandle, command: Vec<&str>) {
-    if command.len() < 3 {
-        println!("Error: Missing required argument <address>, syntax: `swarm dial <address>`");
-        return;
-    }
-    let addr = match command[2].parse::<Multiaddr>() {
+pub fn handle_swarm_dial(handle: &SwarmHandle, addr: &str) {
+    let addr = match addr.parse::<Multiaddr>() {
         Ok(addr) => addr,
         Err(e) => {
-            println!("Error: Failed parsing address `{}`: {}", command[1], e);
+            println!("Error: Failed parsing address `{}`: {}", addr, e);
             return;
         }
     };
@@ -36,15 +48,11 @@ fn handle_swarm_dial(handle: &SwarmHandle, command: Vec<&str>) {
     }
 }
 
-fn handle_swarm_listen(handle: &SwarmHandle, command: Vec<&str>) {
-    if command.len() < 3 {
-        println!("Error: Missing required argument <address>, syntax: `swarm listen <address>`");
-        return;
-    }
-    let addr = match command[2].parse::<Multiaddr>() {
+pub fn handle_swarm_listen(handle: &SwarmHandle, addr: &str) {
+    let addr = match addr.parse::<Multiaddr>() {
         Ok(addr) => addr,
         Err(e) => {
-            println!("Error: Failed parsing address `{}`: {}", command[1], e);
+            println!("Error: Failed parsing address `{}`: {}", addr, e);
             return;
         }
     };

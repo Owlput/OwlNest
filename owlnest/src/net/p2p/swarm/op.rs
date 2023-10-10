@@ -10,9 +10,9 @@ pub struct SwarmHandle {
     sender: mpsc::Sender<InEvent>,
 }
 impl SwarmHandle {
-    pub fn new(buffer:usize) -> (Self,mpsc::Receiver<InEvent>) {
-        let (tx,rx) = mpsc::channel(buffer);
-        (Self { sender:tx },rx)
+    pub fn new(buffer: usize) -> (Self, mpsc::Receiver<InEvent>) {
+        let (tx, rx) = mpsc::channel(buffer);
+        (Self { sender: tx }, rx)
     }
     pub fn dial(&self, addr: &Multiaddr) -> Result<(), DialError> {
         let (tx, rx) = channel();

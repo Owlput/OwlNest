@@ -1,4 +1,3 @@
-use super::op::*;
 use super::*;
 use libp2p::swarm::{ConnectionId, NetworkBehaviour, NotifyHandler, ToSwarm};
 use libp2p::PeerId;
@@ -40,8 +39,9 @@ impl NetworkBehaviour for Behaviour {
         _connection_id: ConnectionId,
         event: <Self::ConnectionHandler as libp2p::swarm::ConnectionHandler>::ToBehaviour,
     ) {
+        use handler::ToBehaviourEvent::*;
         match event {
-            handler::ToBehaviourEvent::IncomingMessage(bytes) => {
+            IncomingMessage(bytes) => {
                 match serde_json::from_slice::<Message>(&bytes) {
                     Ok(msg) => self.out_events.push_front(OutEvent::IncomingMessage {
                         from: msg.from,
@@ -49,7 +49,7 @@ impl NetworkBehaviour for Behaviour {
                     }),
                     Err(e) => {
                         self.out_events
-                            .push_front(OutEvent::Error(Error::UnrecognizedMessage(format!(
+                            .push_front(OutEvent::Error(super::Error::UnrecognizedMessage(format!(
                                 "Unrecognized message: {}, raw data: {}",
                                 e,
                                 String::from_utf8_lossy(&bytes)
@@ -57,17 +57,20 @@ impl NetworkBehaviour for Behaviour {
                     }
                 }
             }
-            handler::ToBehaviourEvent::Error(e) => self.out_events.push_front(OutEvent::Error(e)),
-            handler::ToBehaviourEvent::Unsupported => {
-                self.out_events.push_front(OutEvent::Unsupported(peer_id))
+            Error(e) => self.out_events.push_front(OutEvent::Error(e)),
+            Unsupported => {
+                self.out_events.push_back(OutEvent::Unsupported(peer_id))
             }
-            handler::ToBehaviourEvent::InboundNegotiated => {
+            InboundNegotiated => {
                 self.out_events
-                    .push_front(OutEvent::InboundNegotiated(peer_id));
+                    .push_back(OutEvent::InboundNegotiated(peer_id));
             }
-            handler::ToBehaviourEvent::OutboundNegotiated => {
+            OutboundNegotiated => {
                 self.out_events
-                    .push_front(OutEvent::OutboundNegotiated(peer_id));
+                    .push_back(OutEvent::OutboundNegotiated(peer_id));
+            }
+            SuccessfulSend(id)=>{
+                self.out_events.push_back(OutEvent::SuccessfulSend(id))
             }
         }
     }
@@ -81,10 +84,9 @@ impl NetworkBehaviour for Behaviour {
         }
         if let Some(ev) = self.in_events.pop_back() {
             debug!("Received event {:#?}", ev);
-            let InEvent { op, callback } = ev;
-
-            match op {
-                Op::SendMessage(target, msg) => {
+            use InEvent::*;
+            match ev {
+                SendMessage(target, msg, id) => {
                     println!(
                         "{:?}",
                         self.connected_peers.clone().into_iter().collect::<Vec<_>>()
@@ -93,11 +95,10 @@ impl NetworkBehaviour for Behaviour {
                         return Poll::Ready(ToSwarm::NotifyHandler {
                             peer_id: target,
                             handler: NotifyHandler::Any,
-                            event: handler::FromBehaviourEvent::PostMessage(msg, callback),
+                            event: handler::FromBehaviourEvent::PostMessage(msg, id),
                         });
                     } else {
-                        let result = OpResult::Error(Error::PeerNotFound(target));
-                        callback.send(result.into()).unwrap();
+                        self.out_events.push_back(OutEvent::Error(Error::PeerNotFound(target)))
                     }
                 }
             }

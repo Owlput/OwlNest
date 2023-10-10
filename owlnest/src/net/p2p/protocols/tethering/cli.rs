@@ -31,16 +31,13 @@ fn handle_trust_peer(manager: &Manager, command: Vec<&str>) {
         }
     };
 
-    let result = manager.tethering().blocking_trust(peer_to_trust);
-    if let Err(e) = result {
-        match e.try_into().unwrap() {
-            super::TetheringOpError::AlreadyTrusted => {
-                println!("Peer {} is already in trust list", peer_to_trust)
-            }
-            _ => unreachable!(),
-        }
+    let result = manager
+        .executor()
+        .block_on(manager.tethering().trust(peer_to_trust));
+    if result.is_ok() {
+        println!("Successfully trusted peer {}", peer_to_trust)
     } else {
-        println!("Successfully trusted peer {}",peer_to_trust)
+        println!("Peer {} is already in trust list", peer_to_trust)
     }
 }
 
@@ -61,17 +58,19 @@ fn handle_untrust_peer(manager: &Manager, command: Vec<&str>) {
             return;
         }
     };
-    let result = manager.tethering().blocking_untrust(peer_to_untrust);
-    if let Err(e) = result {
-        match e.try_into().unwrap() {
-            super::TetheringOpError::NotFound => println!(
-                "Error: Failed to untrust peer {}: Peer not found.",
-                peer_to_untrust
-            ),
-            _ => unreachable!(),
-        }
+    let result = manager
+        .executor()
+        .block_on(manager.tethering().untrust(peer_to_untrust));
+    if result.is_ok() {
+        println!(
+            "Successfully removed peer {} from trust list",
+            peer_to_untrust
+        )
     } else {
-        println!("Successfully removed peer {} from trust list",peer_to_untrust)
+        println!(
+            "Error: Failed to untrust peer {}: Peer not found.",
+            peer_to_untrust
+        )
     }
 }
 

@@ -1,10 +1,10 @@
 use libp2p::relay::client;
 use tracing::{debug, info};
+use crate::event_bus::listened_event::Listenable;
 
 /// `Behaviour` of libp2p's `relay` protocol.
 pub use client::Behaviour;
 pub use client::Event as OutEvent;
-
 
 pub fn ev_dispatch(ev: &client::Event) {
     use client::Event::*;
@@ -50,5 +50,11 @@ pub fn ev_dispatch(ev: &client::Event) {
             "Iutbound circuit from source peer {} can't be denied, error:{:?}",
             src_peer_id, error
         ),
+    }
+}
+
+impl Listenable for OutEvent{
+    fn as_event_identifier() -> String {
+        "/libp2p/relay_client:OutEvent".into()
     }
 }

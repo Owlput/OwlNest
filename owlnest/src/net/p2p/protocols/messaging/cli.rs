@@ -32,15 +32,17 @@ pub fn handle_message_send(manager: &Manager, ident: &IdentityUnion, command: Ve
             return;
         }
     };
-    let msg = 
-        Message::new(
-            ident.get_peer_id(),
-            target_peer,
-            command.split_at(3).1.join(" ")
+    let msg = Message::new(
+        ident.get_peer_id(),
+        target_peer,
+        command.split_at(3).1.join(" "),
     );
-    let result = manager.messaging().blocking_send_message(target_peer,msg);
-    if let Ok(result) = result {
-        println!("Successfully sent message, RTT {}ms",result.as_millis())        
+    let result = manager
+        .executor()
+        .block_on(manager.messaging().send_message(target_peer, msg));
+    match result{
+        Ok(_) => println!("Message has been successfully sent"),
+        Err(e) => println!("Error occurred when sending message: {}",e)
     }
 }
 

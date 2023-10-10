@@ -18,13 +18,13 @@ fn main() {
     setup_logging();
     let ident = get_ident();
     let (ev_bus_handle, ev_tap) = setup_ev_bus(rt.handle());
-    let mgr = rt.block_on(setup_peer(ident.clone(), &ev_bus_handle, ev_tap));
+    let mgr = rt.block_on(setup_peer(ident.clone(), &ev_bus_handle, ev_tap, rt.handle().clone()));
     let shutdown_notifier = std::sync::Arc::new(Notify::const_new());
     cli::setup_interactive_shell(ident.clone(), mgr, shutdown_notifier.clone());
     let _ = rt.block_on(shutdown_notifier.notified());
 }
 
-async fn setup_peer(ident: IdentityUnion, event_bus_handle: &Handle, ev_tap: EventTap) -> Manager {
+async fn setup_peer(ident: IdentityUnion, event_bus_handle: &Handle, ev_tap: EventTap, executor:tokio::runtime::Handle) -> Manager {
     let swarm_config = net::p2p::SwarmConfig {
         local_ident: ident.clone(),
         kad: protocols::kad::Config::default(),
@@ -34,7 +34,7 @@ async fn setup_peer(ident: IdentityUnion, event_bus_handle: &Handle, ev_tap: Eve
         tethering: protocols::tethering::Config,
         relay_server: protocols::relay_server::Config::default(),
     };
-    net::p2p::swarm::Builder::new(swarm_config).build(8, event_bus_handle.clone(), ev_tap)
+    net::p2p::swarm::Builder::new(swarm_config).build(8, event_bus_handle.clone(), ev_tap, executor)
 }
 
 fn setup_logging() {

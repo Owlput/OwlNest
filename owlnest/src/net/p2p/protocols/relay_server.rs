@@ -1,3 +1,4 @@
+use crate::event_bus::listened_event::Listenable;
 pub use libp2p::relay::Config;
 use tracing::{debug, info};
 
@@ -74,5 +75,11 @@ pub fn ev_dispatch(ev: &OutEvent) {
             "Circuit from {} to {} closed, error?: {:?}",
             src_peer_id, dst_peer_id, error
         ),
+    }
+}
+
+impl Listenable for OutEvent {
+    fn as_event_identifier() -> String {
+        "/libp2p/relay_server:OutEvent".into()
     }
 }

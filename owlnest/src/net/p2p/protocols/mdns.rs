@@ -1,3 +1,4 @@
+use crate::event_bus::listened_event::Listenable;
 use crate::generate_handler_method;
 use crate::net::p2p::swarm::Swarm;
 pub use libp2p::mdns::tokio::Behaviour;
@@ -11,18 +12,34 @@ pub enum InEvent {
     ForceExpire(PeerId, Sender<()>),
     HasNode(PeerId, Sender<bool>),
 }
+impl Listenable for OutEvent {
+    fn as_event_identifier() -> String {
+        "/libp2p/mdns:OutEvent".into()
+    }
+}
 
 #[derive(Debug, Clone)]
 pub struct Handle {
     sender: mpsc::Sender<InEvent>,
+    #[allow(unused)]
+    event_bus_handle: crate::event_bus::Handle,
 }
 impl Handle {
-    pub fn new(buffer: usize) -> (Self, mpsc::Receiver<InEvent>) {
+    pub fn new(
+        buffer: usize,
+        event_bus_handle: &crate::event_bus::Handle,
+    ) -> (Self, mpsc::Receiver<InEvent>) {
         let (tx, rx) = mpsc::channel(buffer);
-        (Self { sender: tx }, rx)
+        (
+            Self {
+                sender: tx,
+                event_bus_handle: event_bus_handle.clone(),
+            },
+            rx,
+        )
     }
     generate_handler_method! {
-        ListDiscoveredNodes:list_discovered_nodes()->Vec<PeerId>;
+        ListDiscoveredNodes:list_discovered_node()->Vec<PeerId>;
         ForceExpire:force_expire(peer_id:PeerId)->();
         HasNode:has_node(peer_id:PeerId)->bool;
     }

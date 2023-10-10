@@ -1,17 +1,17 @@
-use super::{protocol, Config, Error, Message, PROTOCOL_NAME, OpResult};
+use super::{protocol, Config, Error, Message, PROTOCOL_NAME};
 use crate::net::p2p::handler_prelude::*;
 use futures_timer::Delay;
-use std::{collections::VecDeque, time::Duration};
-use tokio::sync::oneshot;
+use std::{collections::VecDeque, time::Duration}; 
 use tracing::{debug, warn};
 
 #[derive(Debug)]
 pub enum FromBehaviourEvent {
-    PostMessage(Message, oneshot::Sender<OpResult>),
+    PostMessage(Message, u64),
 }
 #[derive(Debug)]
 pub enum ToBehaviourEvent {
     IncomingMessage(Vec<u8>),
+    SuccessfulSend(u64),
     Error(Error),
     Unsupported,
     InboundNegotiated,
@@ -126,41 +126,27 @@ impl ConnectionHandler for Handler {
         }
         loop {
             match self.outbound.take() {
-                Some(OutboundState::Busy(mut task, callback, mut timer)) => {
+                Some(OutboundState::Busy(mut task, id, mut timer)) => {
                     match task.poll_unpin(cx) {
                         Poll::Pending => {
                             if timer.poll_unpin(cx).is_ready() {
-                                let result = super::OpResult::Error(Error::Timeout).into();
-                                match callback.send(result) {
-                                    Ok(_) => {}
-                                    Err(res) => warn!("Failed to send callback {:?}", res),
-                                };
+                                self.pending_out_events.push_back(ToBehaviourEvent::Error(Error::Timeout))
                             } else {
                                 // Put the future back
-                                self.outbound = Some(OutboundState::Busy(task, callback, timer));
+                                self.outbound = Some(OutboundState::Busy(task, id, timer));
                                 // End the loop because the outbound is busy
                                 break;
                             }
                         }
                         // Ready
-                        Poll::Ready(Ok((stream, rtt))) => {
-                            let result = super::OpResult::SuccessfulPost(rtt).into();
-                            match callback.send(result) {
-                                Ok(_) => {}
-                                Err(res) => warn!("Failed to send callback {:?}", res),
-                            };
+                        Poll::Ready(Ok((stream,_))) => {
+                            self.pending_out_events.push_back(ToBehaviourEvent::SuccessfulSend(id.unwrap()));
                             // Free the outbound
                             self.outbound = Some(OutboundState::Idle(stream));
                         }
                         // Ready but resolved to an error
                         Poll::Ready(Err(e)) => {
-                            let result =
-                                super::OpResult::Error(Error::IO(format!("IO Error: {:?}", e)))
-                                    .into();
-                            match callback.send(result) {
-                                Ok(_) => {}
-                                Err(res) => warn!("Failed to send result to callback: {:?}", res),
-                            }
+                            self.pending_out_events.push_back(ToBehaviourEvent::Error(Error::IO(e.to_string())));
                         }
                     }
                 }
@@ -168,11 +154,11 @@ impl ConnectionHandler for Handler {
                 Some(OutboundState::Idle(stream)) => {
                     if let Some(ev) = self.pending_in_events.pop_back() {
                         match ev {
-                            FromBehaviourEvent::PostMessage(msg, callback) => {
+                            FromBehaviourEvent::PostMessage(msg, id) => {
                                 // Put Outbound into send state
                                 self.outbound = Some(OutboundState::Busy(
                                     protocol::send(stream, msg.as_bytes()).boxed(),
-                                    callback,
+                                    Some(id),
                                     Delay::new(self.timeout),
                                 ))
                             }
@@ -242,5 +228,5 @@ type PendingSend = BoxFuture<'static, Result<(Stream, Duration), io::Error>>;
 enum OutboundState {
     OpenStream,
     Idle(Stream),
-    Busy(PendingSend, oneshot::Sender<OpResult>, Delay),
+    Busy(PendingSend, Option<u64>, Delay),
 }

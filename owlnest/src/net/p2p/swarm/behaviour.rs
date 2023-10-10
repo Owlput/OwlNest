@@ -6,6 +6,7 @@ behaviour_select! {
     tethering: Tethering,
     relay_server: RelayServer,
     relay_client: RelayClient,
+    relay_ext:RelayExt,
     kad: Kad,
     identify: Identify,
     mdns: Mdns,

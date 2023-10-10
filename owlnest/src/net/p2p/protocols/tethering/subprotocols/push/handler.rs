@@ -1,28 +1,21 @@
 use super::{inbound_upgrade, outbound_upgrade, protocol, PUSH_PROTOCOL_NAME};
 use crate::net::p2p::handler_prelude::*;
-use crate::net::p2p::protocols::tethering::{HandleOk,HandleError};
 use serde::{Deserialize, Serialize};
-use tokio::sync::oneshot;
 use std::time::Duration;
 use std::{collections::VecDeque, fmt::Display};
 use tracing::warn;
 
-type HandleCallback = oneshot::Sender<Result<HandleOk,HandleError>>;
-
 #[derive(Debug)]
 pub struct InEvent {
     push_type: PushType,
-    handle_callback: HandleCallback,
+    id: u64,
 }
 impl InEvent {
-    pub fn new(push_type: PushType, callback: HandleCallback) -> Self {
-        InEvent {
-            push_type,
-            handle_callback: callback,
-        }
+    pub fn new(push_type: PushType, id: u64) -> Self {
+        InEvent { push_type, id }
     }
-    pub fn into_inner(self) -> (PushType, HandleCallback) {
-        (self.push_type, self.handle_callback)
+    pub fn into_inner(self) -> (PushType, u64) {
+        (self.push_type, self.id)
     }
 }
 
@@ -69,8 +62,6 @@ impl std::error::Error for Error {
         }
     }
 }
-
-
 
 enum State {
     Inactive { reported: bool },
@@ -156,7 +147,9 @@ impl ConnectionHandler for PushHandler {
             }
             State::Inactive { reported: false } => {
                 self.state = State::Inactive { reported: true };
-                return Poll::Ready(ConnectionHandlerEvent::NotifyBehaviour(OutEvent::Unsupported));
+                return Poll::Ready(ConnectionHandlerEvent::NotifyBehaviour(
+                    OutEvent::Unsupported,
+                ));
             }
             State::Active => {}
         }
@@ -172,17 +165,17 @@ impl ConnectionHandler for PushHandler {
                     let packet = match serde_json::from_slice::<Packet>(&bytes) {
                         Ok(packet) => packet,
                         Err(e) => {
-                            return Poll::Ready(ConnectionHandlerEvent::NotifyBehaviour(OutEvent::Error(
-                                Error::Corrupted(e, bytes),
-                            )))
+                            return Poll::Ready(ConnectionHandlerEvent::NotifyBehaviour(
+                                OutEvent::Error(Error::Corrupted(e, bytes)),
+                            ))
                         }
                     };
                     self.inbound = Some(protocol::recv(stream).boxed());
                     match packet {
                         Packet::Msg(msg) => {
-                            return Poll::Ready(ConnectionHandlerEvent::NotifyBehaviour(OutEvent::Message(
-                                msg,
-                            )))
+                            return Poll::Ready(ConnectionHandlerEvent::NotifyBehaviour(
+                                OutEvent::Message(msg),
+                            ))
                         }
                     }
                 }
@@ -276,5 +269,5 @@ type PendingSend = BoxFuture<'static, Result<(Stream, Duration), io::Error>>;
 enum OutboundState {
     OpenStream,
     Idle(Stream),
-    Busy(PendingSend, oneshot::Sender<Result<HandleOk,HandleError>>),
+    Busy(PendingSend, u64),
 }

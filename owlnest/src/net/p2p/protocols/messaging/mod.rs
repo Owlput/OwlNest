@@ -1,7 +1,13 @@
 use libp2p::PeerId;
-use owlnest_proc::generate_kind;
 use serde::{Deserialize, Serialize};
-use std::time::Duration;
+use std::{
+    pin::pin,
+    sync::{
+        atomic::{AtomicU64, Ordering},
+        Arc,
+    },
+    time::Duration,
+};
 use tracing::{debug, info, warn};
 
 mod behaviour;
@@ -17,49 +23,47 @@ pub(crate) use cli::handle_messaging;
 pub use config::Config;
 pub use error::Error;
 pub use message::Message;
-pub use op::{Op, OpResult};
 pub use protocol::PROTOCOL_NAME;
 
 #[derive(Debug)]
-pub struct InEvent {
-    op: Op,
-    callback: oneshot::Sender<OpResult>,
-}
-impl InEvent {
-    pub fn new(op: Op) -> (Self, oneshot::Receiver<OpResult>) {
-        let (tx, rx) = oneshot::channel();
-        (Self { op, callback: tx }, rx)
-    }
+pub enum InEvent {
+    SendMessage(PeerId, Message, u64),
 }
 
-const EVENT_IDENT: &str = PROTOCOL_NAME;
 #[derive(Debug, Clone, Serialize, Deserialize)]
-#[generate_kind]
 pub enum OutEvent {
     IncomingMessage { from: PeerId, msg: Message },
+    SuccessfulSend(u64),
     Error(Error),
     Unsupported(PeerId),
     InboundNegotiated(PeerId),
     OutboundNegotiated(PeerId),
 }
+impl Listenable for OutEvent {
+    fn as_event_identifier() -> String {
+        format!("{}:OutEvent", PROTOCOL_NAME)
+    }
+}
 
 pub fn ev_dispatch(ev: &OutEvent) {
+    use OutEvent::*;
     match ev {
-        OutEvent::IncomingMessage { .. } => {
+        IncomingMessage { .. } => {
             println!("Incoming message: {:?}", ev);
         }
-        OutEvent::Error(e) => warn!("{:#?}", e),
-        OutEvent::Unsupported(peer) => {
+        Error(e) => warn!("{:#?}", e),
+        Unsupported(peer) => {
             info!("Peer {} doesn't support /owlput/messaging/0.0.1", peer)
         }
-        OutEvent::InboundNegotiated(peer) => debug!(
+        InboundNegotiated(peer) => debug!(
             "Successfully negotiated inbound connection from peer {}",
             peer
         ),
-        OutEvent::OutboundNegotiated(peer) => debug!(
+        OutboundNegotiated(peer) => debug!(
             "Successfully negotiated outbound connection to peer {}",
             peer
         ),
+        SuccessfulSend(_) => {}
     }
 }
 
@@ -68,40 +72,54 @@ mod protocol {
     pub use crate::net::p2p::protocols::universal::protocol::{recv, send};
 }
 
-use tokio::sync::{mpsc, oneshot};
+use tokio::sync::mpsc;
+
+use crate::{event_bus::listened_event::Listenable, net::p2p::with_timeout, single_value_filter};
 #[derive(Debug, Clone)]
 pub struct Handle {
     sender: mpsc::Sender<InEvent>,
+    event_bus_handle: crate::event_bus::Handle,
+    counter: Arc<AtomicU64>,
 }
 impl Handle {
-    pub fn new(buffer: usize) -> (Self, mpsc::Receiver<InEvent>) {
+    pub fn new(
+        buffer: usize,
+        event_bus_handle: &crate::event_bus::Handle,
+    ) -> (Self, mpsc::Receiver<InEvent>) {
         let (tx, rx) = mpsc::channel(buffer);
-        (Self { sender: tx }, rx)
-    }
-    pub async fn send_message(&self, peer_id: PeerId, message: Message) -> Result<Duration, Error> {
-        let (ev, rx) = InEvent::new(Op::SendMessage(peer_id, message));
-        if let Err(_) = self.sender.send(ev).await {
-            return Err(Error::Channel);
-        }
-        match rx.await {
-            Ok(result) => match result {
-                OpResult::Error(e) => Err(e),
-                OpResult::SuccessfulPost(rtt) => Ok(rtt),
+        (
+            Self {
+                sender: tx,
+                event_bus_handle: event_bus_handle.clone(),
+                counter: Arc::new(AtomicU64::new(1)),
             },
-            Err(_) => Err(Error::Channel),
-        }
+            rx,
+        )
     }
-    pub fn blocking_send_message(&self, peer_id: PeerId, message: Message) -> Result<Duration, Error> {
-        let (ev, rx) = InEvent::new(Op::SendMessage(peer_id, message));
-        if let Err(_) = self.sender.blocking_send(ev) {
-            return Err(Error::Channel);
+    pub async fn send_message(&self, peer_id: PeerId, message: Message) -> Result<(), Error> {
+        let op_id = self.counter.fetch_add(1, Ordering::SeqCst);
+        let ev = InEvent::SendMessage(peer_id, message, op_id);
+        let mut listener = self
+            .event_bus_handle
+            .add(OutEvent::as_event_identifier())
+            .await
+            .expect("listener registartion to succeed");
+        self.sender.send(ev).await.expect("send to succeed");
+        let fut = single_value_filter!(listener::<OutEvent>, |ev| {
+            if let OutEvent::SuccessfulSend(id) = &ev {
+                return *id == op_id;
+            };
+            if let OutEvent::Error(Error::PeerNotFound(ev_peer_id)) = &ev {
+                return *ev_peer_id == peer_id;
+            };
+            false
+        });
+        if let OutEvent::Error(e) = with_timeout(pin!(fut), 10)
+            .await
+            .expect("listen to succeed")
+        {
+            return Err(e)
         }
-        match rx.blocking_recv() {
-            Ok(result) => match result {
-                OpResult::Error(e) => Err(e),
-                OpResult::SuccessfulPost(rtt) => Ok(rtt),
-            },
-            Err(_) => Err(Error::Channel),
-        }
+        Ok(())
     }
 }

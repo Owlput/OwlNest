@@ -37,7 +37,7 @@ pub fn setup_ev_bus(rt: &runtime::Handle) -> (Handle, EventTap) {
     let mut listener_store: HashMap<String, broadcast::Sender<ListenedEvent>> = HashMap::new();
 
     rt.spawn(async move {
-        let mut interval = tokio::time::interval(Duration::from_secs(20));
+        let mut interval = tokio::time::interval(Duration::from_secs(60));
         interval.set_missed_tick_behavior(MissedTickBehavior::Skip);
         loop {
             select! {
@@ -60,7 +60,7 @@ pub fn setup_ev_bus(rt: &runtime::Handle) -> (Handle, EventTap) {
                     }
                 }
                 _ = interval.tick()=>{
-                    listener_store.extract_if(|_,v|v.receiver_count() == 0).count();
+                    listener_store.retain(|_,v|v.receiver_count() != 0);
                 }
             }
         }

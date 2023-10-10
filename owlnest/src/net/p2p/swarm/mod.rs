@@ -8,13 +8,11 @@ use tracing::{debug, info, warn};
 
 pub mod behaviour;
 pub mod cli;
-pub mod event_listener;
 pub(crate) mod in_event;
 pub mod manager;
 pub mod op;
 pub mod out_event;
 
-pub use event_listener::*;
 pub use in_event::*;
 pub use out_event::ToSwarmEvent;
 
@@ -37,6 +35,7 @@ impl Builder {
         buffer_size: usize,
         ev_bus_handle: event_bus::Handle,
         ev_tap: EventTap,
+        executor:tokio::runtime::Handle,
     ) -> Manager {
         let ident = self.config.local_ident.clone();
 
@@ -55,6 +54,7 @@ impl Builder {
                 self.config.relay_server,
             ),
             relay_client,
+            relay_ext: relay_ext::Behaviour::new()
         };
         let transport = upgrade_transport(
             libp2p::Transport::boxed(libp2p::core::transport::OrTransport::new(
@@ -64,8 +64,8 @@ impl Builder {
             &ident,
         );
 
-        let (handle_bundle, mut rx_bundle) = HandleBundle::new(buffer_size);
-        let manager = manager::Manager::new(Arc::new(handle_bundle));
+        let (handle_bundle, mut rx_bundle) = HandleBundle::new(buffer_size,&ev_bus_handle);
+        let manager = manager::Manager::new(Arc::new(handle_bundle),executor);
         let manager_clone = manager.clone();
         tokio::spawn(async move {
             let _manager = manager_clone;
@@ -79,7 +79,7 @@ impl Builder {
                 select! {
                     Some(ev) = rx_bundle.next() => handle_incoming_event(ev, &mut swarm, &ev_bus_handle),
                     out_event = swarm.select_next_some() => {
-                        handle_swarm_event(&out_event,&mut swarm,&ev_tap);
+                        handle_swarm_event(&out_event,&mut swarm,&ev_tap).await;
                     }
                 };
             }
@@ -89,9 +89,9 @@ impl Builder {
 }
 
 #[inline]
-fn handle_swarm_event(ev: &SwarmEvent, swarm: &mut Swarm, ev_tap:&EventTap) {
+async fn handle_swarm_event(ev: &SwarmEvent, swarm: &mut Swarm, ev_tap:&EventTap) {
     match ev {
-        SwarmEvent::Behaviour(event) => handle_behaviour_event(swarm, event,ev_tap),
+        SwarmEvent::Behaviour(event) => handle_behaviour_event(swarm, event,ev_tap).await,
         SwarmEvent::NewListenAddr { address, .. } => info!("Listening on {:?}", address),
         SwarmEvent::ConnectionEstablished {
             peer_id, endpoint, ..
@@ -143,6 +143,7 @@ fn handle_incoming_event(ev: Rx, swarm: &mut Swarm, ev_bus_handle: &event_bus::H
         Tethering(ev) => swarm.behaviour_mut().tethering.push_event(ev),
         Mdns(ev) => mdns::map_in_event(ev, &mut swarm.behaviour_mut().mdns),
         Swarm(ev) => swarm_op_exec(swarm, ev),
+        _=>{}
     }
 }
 
@@ -189,17 +190,18 @@ fn swarm_op_exec(swarm: &mut Swarm, ev: InEvent) {
 }
 
 #[inline]
-fn handle_behaviour_event(swarm: &mut Swarm, ev: &ToSwarmEvent,ev_tap:&EventTap) {
+async fn handle_behaviour_event(swarm: &mut Swarm, ev: &ToSwarmEvent,ev_tap:&EventTap) {
     use super::protocols::*;
     use out_event::ToSwarmEvent::*;
     match ev {
-        Kad(ev) => kad::ev_dispatch(ev,ev_tap),
+        Kad(ev) => kad::ev_dispatch(ev,ev_tap).await,
         Identify(ev) => identify::ev_dispatch(ev),
         Mdns(ev) => mdns::ev_dispatch(ev, swarm),
         Messaging(ev) => messaging::ev_dispatch(ev),
         Tethering(ev) => tethering::ev_dispatch(ev),
         RelayServer(ev) => relay_server::ev_dispatch(ev),
         RelayClient(ev) => relay_client::ev_dispatch(ev),
+        _ =>{}
     }
 }
 

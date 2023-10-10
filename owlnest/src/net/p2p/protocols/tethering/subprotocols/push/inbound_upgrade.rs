@@ -1,5 +1,5 @@
-use crate::net::p2p::protocols::tethering::subprotocols::{read_u64, write_flush};
 use super::PUSH_PROTOCOL_NAME;
+use crate::net::p2p::protocols::tethering::subprotocols::{read_u64, write_flush};
 use futures::{future::BoxFuture, FutureExt};
 use libp2p::{core::upgrade, swarm::Stream};
 

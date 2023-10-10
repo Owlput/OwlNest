@@ -4,18 +4,22 @@ use std::io::stdout;
 use std::sync::Arc;
 
 use crate::net::p2p::protocols::*;
+use crate::net::p2p::swarm::manager::Manager;
 use crate::net::p2p::{identity::IdentityUnion, swarm};
 use crossterm::style::Stylize;
 use crossterm::terminal::{Clear, ClearType};
 use crossterm::ExecutableCommand;
 use rustyline::{error::ReadlineError, DefaultEditor};
 use tokio::sync::Notify;
-use crate::net::p2p::swarm::manager::Manager;
 
 use self::utils::handle_utils;
 
 /// Make current terminal interactive
-pub fn setup_interactive_shell(ident: IdentityUnion, manager: Manager, shutdown_notifier:Arc<Notify>) {
+pub fn setup_interactive_shell(
+    ident: IdentityUnion,
+    manager: Manager,
+    shutdown_notifier: Arc<Notify>,
+) {
     std::thread::spawn(move || {
         stdout().execute(Clear(ClearType::All)).unwrap();
         println!("OwlNest is now running in interactive mode, type \"help\" for more information.");
@@ -48,12 +52,27 @@ fn handle_command(line: String, manager: &Manager, ident: &IdentityUnion) {
         }
         "clear" => drop(stdout().execute(Clear(ClearType::FromCursorUp))),
         "id" => println!("Local peer ID: {}", ident.get_peer_id()),
+        "dial" => {
+            if command.len() < 2 {
+                println!("Error: Missing required argument <address>, syntax: `dial <address>`");
+                return;
+            }
+            swarm::cli::handle_swarm_dial(&manager.swarm(), command[1])
+        }
+        "listen" => {
+            if command.len() < 2 {
+                println!("Error: Missing required argument <address>, syntax: `listen <address>`");
+                return;
+            }
+            swarm::cli::handle_swarm_listen(&manager.swarm(), command[1])
+        }
         "swarm" => swarm::cli::handle_swarm(&manager.swarm(), command),
 
         "tethering" => tethering::cli::handle_tethering(manager, command),
 
         "messaging" => messaging::handle_messaging(manager, ident, command),
         "kad" => kad::cli::handle_kad(manager, command),
+        "relay_ext" => relay_ext::cli::handle_relay_ext(manager, command),
         "utils" => handle_utils(command),
         "" => {}
         _ => println!("Unrecognized command"),
@@ -102,6 +121,7 @@ Available commands:
     id                  Show the peer ID of this node.
     listen <address>    Listen on the given address, in Multiaddr format.
     dial <address>      Dial the given address, in Multiaddr format.
+    swarm               Subcommand for accessing features on the swarm.
     kad                 Subcommand for `/ipfs/kad/1.0.0` protocol.
     messaging           Subcommand for `messaging` protocol.
     tethering           Subcommand for `tethering` protocol.

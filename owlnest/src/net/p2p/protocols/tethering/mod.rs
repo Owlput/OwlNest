@@ -1,62 +1,65 @@
-/// A behaviour that allows remote control of a node. 
-
+/// A behaviour that allows remote control of a node.
 use libp2p::PeerId;
 use serde::{Deserialize, Serialize};
-use std::fmt::Debug;
+use std::{
+    fmt::Debug,
+    sync::{
+        atomic::{AtomicU64, Ordering},
+        Arc,
+    },
+};
 use subprotocols::*;
-use tokio::sync::{mpsc, oneshot};
+use tokio::sync::mpsc;
 
 /// `Behaviour` of this protocol.
 mod behaviour;
+
 /// Command-line interface for this protocol.
 pub mod cli;
+
 /// Errors produced by this behaviour.
 pub mod error;
-/// Results produced by this behaviour.
-mod result;
+
 /// Protocol `/owlnest/tethering` consists of two subprotocols.
 /// `/owlnest/tethering/exec` for operation execution,
 /// `/owlnest/tethering/push` for notification pushing.
-/// Both subprotocols will perform a handshake in TCP style(aka three-way handshake).
+/// Both subprotocols will per a handshake in TCP style(aka three-way handshake).
 mod subprotocols;
 
-pub use subprotocols::Subprotocol;
 pub use behaviour::Behaviour;
 pub use error::Error;
-pub use result::*;
+pub use subprotocols::Subprotocol;
+
+use crate::{event_bus::listened_event::Listenable, net::p2p::with_timeout, single_value_filter};
+use self::subprotocols::exec::OpResult;
 
 /// A placeholder struct waiting to be used for interface consistency.
 #[derive(Debug, Default)]
 pub struct Config;
 
-type CallbackSender = oneshot::Sender<Result<HandleOk, HandleError>>;
-
+#[allow(unused)]
 #[derive(Debug)]
-pub(crate) struct InEvent {
-    op: Op,
-    callback: CallbackSender,
-}
-impl InEvent {
-    pub fn into_inner(self) -> (Op, CallbackSender) {
-        (self.op, self.callback)
-    }
-}
-
-#[derive(Debug)]
-pub enum Op {
-    RemoteExec(PeerId, exec::op::Op, oneshot::Sender<exec::result::OpResult>),
-    RemoteCallback(PeerId, u128, exec::result::OpResult),
-    LocalExec(TetheringOp),
-    Push(PeerId, push::PushType),
+pub(crate) enum InEvent {
+    RemoteExec(PeerId, exec::op::Op, u64),
+    RemoteCallback(PeerId, u64, exec::result::OpResult),
+    LocalExec(TetheringOp, u64),
+    Push(PeerId, push::PushType, u64),
 }
 
 #[derive(Debug)]
 pub enum OutEvent {
-    Exec(exec::op::Op, u128),
+    LocalExec(Result<(), ()>, u64),
+    Exec(exec::op::Op, u64),
+    RemoteExecResult(OpResult, u64),
     IncomingNotification(String),
     ExecError(exec::handler::Error),
     PushError(push::handler::Error),
     Unsupported(PeerId, Subprotocol),
+}
+impl Listenable for OutEvent {
+    fn as_event_identifier() -> String {
+        "{/owlnest/tethering/0.0.1}:OutEvent".into()
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -73,33 +76,63 @@ pub enum TetheringOpError {
 
 pub fn ev_dispatch(_ev: &OutEvent) {}
 
-#[derive(Debug,Clone)]
+#[derive(Debug, Clone)]
 pub struct Handle {
     sender: mpsc::Sender<InEvent>,
+    event_bus_handle: crate::event_bus::Handle,
+    counter: Arc<AtomicU64>,
 }
 impl Handle {
-    pub(crate) fn new(buffer: usize) -> (Self, mpsc::Receiver<InEvent>) {
+    pub(crate) fn new(
+        buffer: usize,
+        event_bus_handle: &crate::event_bus::Handle,
+    ) -> (Self, mpsc::Receiver<InEvent>) {
         let (tx, rx) = mpsc::channel(buffer);
-        (Self { sender: tx }, rx)
+        (
+            Self {
+                sender: tx,
+                event_bus_handle: event_bus_handle.clone(),
+                counter: Arc::new(AtomicU64::new(1)),
+            },
+            rx,
+        )
     }
 
-    pub fn blocking_trust(&self,peer_id:PeerId)->Result<HandleOk,HandleError>{
-        let (tx,rx) = oneshot::channel();
-        let ev = InEvent{
-            op:Op::LocalExec(TetheringOp::Trust(peer_id)),
-            callback:tx
-        };
-        self.sender.blocking_send(ev).unwrap();
-        rx.blocking_recv().unwrap()
+    pub async fn trust(&self, peer_id: PeerId) -> Result<(), ()> {
+        let ev_id = self.counter.fetch_add(1, Ordering::SeqCst);
+        let ev = InEvent::LocalExec(TetheringOp::Trust(peer_id), ev_id);
+        self.sender.send(ev).await.expect("send to succeed");
+        let mut listener = self
+            .event_bus_handle
+            .add(OutEvent::as_event_identifier())
+            .await
+            .expect("listener registration to succeed");
+        let fut = single_value_filter!(
+            listener::<OutEvent>,
+            |v| {
+                if let OutEvent::LocalExec(_, id) = v {
+                    if *id != ev_id {
+                        return false;
+                    }
+                    return true;
+                }
+                false
+            },
+            |ev| {
+                if let OutEvent::LocalExec(result, _) = ev {
+                    result.clone()
+                } else {
+                    unreachable!()
+                }
+            }
+        );
+        with_timeout(std::pin::pin!(fut), 10).await
     }
-    
-    pub fn blocking_untrust(&self,peer_id:PeerId)->Result<HandleOk,HandleError>{
-        let (tx,rx) = oneshot::channel();
-        let ev = InEvent{
-            op:Op::LocalExec(TetheringOp::Untrust(peer_id)),
-            callback:tx
-        };
-        self.sender.blocking_send(ev).unwrap();
-        rx.blocking_recv().unwrap()
+
+    pub async fn untrust(&self, peer_id: PeerId) -> Result<(), ()> {
+        let ev_id = self.counter.fetch_add(1, Ordering::SeqCst);
+        let ev = InEvent::LocalExec(TetheringOp::Untrust(peer_id), ev_id);
+        self.sender.send(ev).await.expect("send to succeed");
+        Ok(())
     }
 }

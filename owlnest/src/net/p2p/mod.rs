@@ -2,8 +2,9 @@ pub mod identity;
 pub mod protocols;
 pub mod swarm;
 
-use self::identity::IdentityUnion;
+use identity::IdentityUnion;
 use crate::net::p2p::protocols::*;
+use futures::Future;
 
 pub struct SwarmConfig {
     pub local_ident: IdentityUnion,
@@ -31,4 +32,17 @@ mod handler_prelude {
     };
     pub use std::io;
     pub use std::task::Poll;
+}
+
+async fn with_timeout<T>(mut future: impl Future<Output = T> + Unpin, timeout: u64) -> T {
+    let mut timer = futures_timer::Delay::new(std::time::Duration::from_secs(timeout));
+    tokio::select! {
+        _ = &mut timer =>{
+            tracing::warn!("A timeout for an event listener related task reached");
+        }
+        v = &mut future => {
+            return v;
+        }
+    }
+    future.await
 }
