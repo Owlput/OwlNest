@@ -10,6 +10,7 @@ behaviour_select! {
     kad: Kad,
     identify: Identify,
     mdns: Mdns,
+    dcutr: Dcutr,
 }
 
 impl Into<ListenedEvent> for ToSwarmEvent {

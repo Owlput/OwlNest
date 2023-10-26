@@ -1,19 +1,19 @@
-use libp2p::{kad::*, PeerId};
+use libp2p::{kad, PeerId};
 use std::str::FromStr;
 use tokio::sync::{mpsc, oneshot};
 use tracing::{info, warn};
 
 use crate::event_bus::{listened_event::Listenable, Handle as EvHandle};
 
-pub type Behaviour = Kademlia<store::MemoryStore>;
-pub type Config = KademliaConfig;
-pub type OutEvent = KademliaEvent;
+pub use kad::Config;
+pub type Behaviour = kad::Behaviour<kad::store::MemoryStore>;
+pub type OutEvent = kad::Event;
 pub use libp2p::kad::PROTOCOL_NAME;
 pub mod cli;
 
 #[derive(Debug)]
 pub(crate) enum InEvent {
-    PeerLookup(PeerId, oneshot::Sender<QueryId>),
+    PeerLookup(PeerId, oneshot::Sender<kad::QueryId>),
 }
 
 #[derive(Debug, Clone)]
@@ -32,7 +32,7 @@ impl Handle {
             rx,
         )
     }
-    pub async fn lookup(&self, peer_id: PeerId) -> Vec<QueryResult> {
+    pub async fn lookup(&self, peer_id: PeerId) -> Vec<kad::QueryResult> {
         let mut listener = self
             .event_bus_handle
             .add(OutEvent::as_event_identifier())
@@ -77,20 +77,22 @@ pub(crate) fn map_in_event(ev: InEvent, behav: &mut Behaviour, _ev_bus_handle: &
     use InEvent::*;
     match ev {
         PeerLookup(peer_id, callback) => {
-            let query_id = behav.get_record(record::Key::new(&peer_id.to_bytes()));
+            let query_id = behav.get_record(kad::RecordKey::new(&peer_id.to_bytes()));
             callback.send(query_id).expect("callback to succeed")
         }
     }
 }
 
 pub async fn ev_dispatch(ev: &OutEvent, ev_tap: &crate::event_bus::bus::EventTap) {
+    use kad::Event::*;
     match ev{
-        KademliaEvent::InboundRequest { request } => info!("Incoming request: {:?}",request),
-        KademliaEvent::OutboundQueryProgressed { id, result, stats, step } => info!("Outbound query {:?} progressed, stats: {:?}, step: {:?}, result: {:?}",id,stats,step,result),
-        KademliaEvent::RoutingUpdated { peer, is_new_peer, addresses, bucket_range, old_peer } => info!("Peer {} updated the table, is new peer: {}, addresses: {:?}, bucket range: {:?}, old peer?: {:?}",peer, is_new_peer,addresses,bucket_range,old_peer),
-        KademliaEvent::UnroutablePeer { peer } => info!("Peer {} is now unreachable",peer),
-        KademliaEvent::RoutablePeer { peer, address } => info!("Peer {} is reachable with address {}",peer,address),
-        KademliaEvent::PendingRoutablePeer { peer, address } => info!("Pending peer {} with address {}",peer,address),
+        InboundRequest { request } => info!("Incoming request: {:?}",request),
+        OutboundQueryProgressed { id, result, stats, step } => info!("Outbound query {:?} progressed, stats: {:?}, step: {:?}, result: {:?}",id,stats,step,result),
+        RoutingUpdated { peer, is_new_peer, addresses, bucket_range, old_peer } => info!("Peer {} updated the table, is new peer: {}, addresses: {:?}, bucket range: {:?}, old peer?: {:?}",peer, is_new_peer,addresses,bucket_range,old_peer),
+        UnroutablePeer { peer } => info!("Peer {} is now unreachable",peer),
+        RoutablePeer { peer, address } => info!("Peer {} is reachable with address {}",peer,address),
+        PendingRoutablePeer { peer, address } => info!("Pending peer {} with address {}",peer,address),
+        ModeChanged { new_mode } => info!("The mode of this peer has been changed to {}",new_mode)
     }
     ev_tap.send(ev.clone().into_listened()).await.unwrap();
 }

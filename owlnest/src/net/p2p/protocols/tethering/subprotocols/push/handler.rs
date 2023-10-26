@@ -127,8 +127,8 @@ impl ConnectionHandler for PushHandler {
     fn on_behaviour_event(&mut self, event: Self::FromBehaviour) {
         self.pending_in_events.push_front(event);
     }
-    fn connection_keep_alive(&self) -> libp2p::swarm::KeepAlive {
-        KeepAlive::Yes
+    fn connection_keep_alive(&self) -> bool {
+        true
     }
     fn poll(
         &mut self,

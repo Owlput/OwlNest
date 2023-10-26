@@ -77,7 +77,6 @@ impl NetworkBehaviour for Behaviour {
     fn poll(
         &mut self,
         _cx: &mut std::task::Context<'_>,
-        _params: &mut impl libp2p::swarm::PollParameters,
     ) -> Poll<ToSwarm<super::OutEvent, handler::FromBehaviourEvent>> {
         if let Some(ev) = self.out_events.pop_back() {
             return Poll::Ready(ToSwarm::GenerateEvent(ev));
@@ -87,10 +86,6 @@ impl NetworkBehaviour for Behaviour {
             use InEvent::*;
             match ev {
                 SendMessage(target, msg, id) => {
-                    println!(
-                        "{:?}",
-                        self.connected_peers.clone().into_iter().collect::<Vec<_>>()
-                    );
                     if self.connected_peers.contains(&target) {
                         return Poll::Ready(ToSwarm::NotifyHandler {
                             peer_id: target,

@@ -57,7 +57,6 @@ pub mod behaviour {
         fn poll(
             &mut self,
             cx: &mut std::task::Context<'_>,
-            _params: &mut impl libp2p::swarm::PollParameters,
         ) -> std::task::Poll<
             libp2p::swarm::ToSwarm<Self::ToSwarm, libp2p::swarm::THandlerInEvent<Self>>,
         > {

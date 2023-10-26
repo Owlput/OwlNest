@@ -27,7 +27,7 @@ mod handler_prelude {
         handler::{
             ConnectionEvent, DialUpgradeError, FullyNegotiatedInbound, FullyNegotiatedOutbound,
         },
-        ConnectionHandler, ConnectionHandlerEvent, KeepAlive, Stream, StreamUpgradeError,
+        ConnectionHandler, ConnectionHandlerEvent, Stream, StreamUpgradeError,
         SubstreamProtocol,
     };
     pub use std::io;

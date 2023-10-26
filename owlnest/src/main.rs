@@ -53,7 +53,7 @@ fn setup_logging() {
     let filter = tracing_subscriber::filter::Targets::new()
         .with_target("owlnest", Level::DEBUG)
         .with_target("rustyline", LevelFilter::ERROR)
-        .with_target("", Level::DEBUG);
+        .with_target("", Level::TRACE);
     let layer = tracing_subscriber::fmt::Layer::default()
         .with_ansi(false)
         .with_writer(Mutex::new(log_file_handle))

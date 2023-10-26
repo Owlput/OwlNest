@@ -10,6 +10,9 @@ crate-type = ["lib"]
 tokio = { version = "1", features = ["full"] }
 libp2p = { path = "../../../rust-libp2p/libp2p", features = ["full"] }
 libp2p-swarm = { path = "../../../rust-libp2p/swarm" }
+libp2p-tls = { path = "../../../rust-libp2p/transports/tls" }
+libp2p-noise = { path = "../../../rust-libp2p/transports/noise" }
+libp2p-yamux = { path = "../../../rust-libp2p/muxers/yamux" }
 tracing = "0.1"
 tracing-subscriber = {version = "0.3", features = ["env-filter"]}
 tracing-log = "0.1.3"

@@ -68,7 +68,7 @@ impl Handler {
 }
 
 use libp2p::core::upgrade::ReadyUpgrade;
-use libp2p::swarm::{ConnectionHandlerEvent, KeepAlive, SubstreamProtocol};
+use libp2p::swarm::{ConnectionHandlerEvent, SubstreamProtocol};
 impl ConnectionHandler for Handler {
     type FromBehaviour = FromBehaviourEvent;
     type ToBehaviour = ToBehaviourEvent;
@@ -86,8 +86,8 @@ impl ConnectionHandler for Handler {
         debug!("Received event {:#?}", event);
         self.pending_in_events.push_front(event)
     }
-    fn connection_keep_alive(&self) -> KeepAlive {
-        KeepAlive::Yes
+    fn connection_keep_alive(&self) -> bool {
+        true
     }
     fn poll(
         &mut self,

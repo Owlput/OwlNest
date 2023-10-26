@@ -6,6 +6,7 @@ use tokio::{
     sync::{broadcast, mpsc},
     time::MissedTickBehavior,
 };
+use tracing::debug;
 
 /// A tap for sending various event to the central event bus.
 #[derive(Debug, Clone)]
@@ -42,6 +43,7 @@ pub fn setup_ev_bus(rt: &runtime::Handle) -> (Handle, EventTap) {
         loop {
             select! {
                 Some(op) = op_rx.recv()=>{
+                    debug!("Event listener registration reveived {:?}",op);
                     match op{
                         EventListenerOp::Add(kind, callback_tx) => {
                             if let Some((_,listener)) = listener_store.get_key_value(&kind){
@@ -55,6 +57,7 @@ pub fn setup_ev_bus(rt: &runtime::Handle) -> (Handle, EventTap) {
                     };
                 }
                 Some(ev) = ev_rx.recv()=>{
+                    debug!("An event was sent to tap {:?}",ev);
                     if let Some(listener) = listener_store.get(&ev.kind()){
                         let _ = listener.send(ev);
                     }

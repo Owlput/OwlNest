@@ -9,7 +9,6 @@ use tokio::sync::{mpsc, oneshot::*};
 
 pub enum InEvent {
     ListDiscoveredNodes(Sender<Vec<PeerId>>),
-    ForceExpire(PeerId, Sender<()>),
     HasNode(PeerId, Sender<bool>),
 }
 impl Listenable for OutEvent {
@@ -40,7 +39,6 @@ impl Handle {
     }
     generate_handler_method! {
         ListDiscoveredNodes:list_discovered_node()->Vec<PeerId>;
-        ForceExpire:force_expire(peer_id:PeerId)->();
         HasNode:has_node(peer_id:PeerId)->bool;
     }
 }
@@ -52,12 +50,8 @@ pub(crate) fn map_in_event(ev: InEvent, behav: &mut Behaviour) {
             let node_list = behav.discovered_nodes().copied().collect::<Vec<PeerId>>();
             callback.send(node_list).unwrap();
         }
-        ForceExpire(peer_id, callback) => {
-            behav.expire_node(&peer_id);
-            callback.send(()).unwrap();
-        }
         HasNode(peer_id, callback) => {
-            let has_node = behav.has_node(&peer_id);
+            let has_node = behav.discovered_nodes().any(|peer|*peer == peer_id );
             callback.send(has_node).unwrap();
         }
     }

@@ -67,8 +67,8 @@ macro_rules! connection_handler_select {
                 $(let $name = self.$name.listen_protocol().into_upgrade();)*
                 generate_substream_protocol($($name,)*)
             }
-            fn connection_keep_alive(&self) -> ::libp2p::swarm::KeepAlive {
-                vec![$(self.$name.connection_keep_alive(),)*].iter().max().unwrap_or(&::libp2p::swarm::KeepAlive::Yes).clone()
+            fn connection_keep_alive(&self) -> bool {
+                vec![$(self.$name.connection_keep_alive(),)*].iter().max().unwrap_or(&true).clone()
             }
 
             fn poll(

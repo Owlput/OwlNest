@@ -1,4 +1,7 @@
-use crate::{event_bus::{self, bus::EventTap}, net::p2p::swarm::manager::HandleBundle};
+use crate::{
+    event_bus::{self, bus::EventTap},
+    net::p2p::swarm::manager::HandleBundle,
+};
 use futures::StreamExt;
 use libp2p::{core::ConnectedPoint, Multiaddr, PeerId};
 use std::{fmt::Debug, sync::Arc};
@@ -35,46 +38,50 @@ impl Builder {
         buffer_size: usize,
         ev_bus_handle: event_bus::Handle,
         ev_tap: EventTap,
-        executor:tokio::runtime::Handle,
+        executor: tokio::runtime::Handle,
     ) -> Manager {
         let ident = self.config.local_ident.clone();
 
         use crate::net::p2p::protocols::*;
         use libp2p::kad::store::MemoryStore;
         let kad_store = MemoryStore::new(ident.get_peer_id());
-        let (relayed_transport, relay_client) = libp2p::relay::client::new(ident.get_peer_id());
-        let behaviour = behaviour::Behaviour {
-            kad: kad::Behaviour::new(ident.get_peer_id(), kad_store),
-            mdns: mdns::Behaviour::new(self.config.mdns, ident.get_peer_id()).unwrap(),
-            identify: identify::Behaviour::new(self.config.identify),
-            messaging: messaging::Behaviour::new(self.config.messaging),
-            tethering: tethering::Behaviour::new(self.config.tethering),
-            relay_server: libp2p::relay::Behaviour::new(
-                self.config.local_ident.get_peer_id(),
-                self.config.relay_server,
-            ),
-            relay_client,
-            relay_ext: relay_ext::Behaviour::new()
-        };
-        let transport = upgrade_transport(
-            libp2p::Transport::boxed(libp2p::core::transport::OrTransport::new(
-                libp2p::tcp::tokio::Transport::default(),
-                relayed_transport,
-            )),
-            &ident,
-        );
 
-        let (handle_bundle, mut rx_bundle) = HandleBundle::new(buffer_size,&ev_bus_handle);
-        let manager = manager::Manager::new(Arc::new(handle_bundle),executor);
+        let (handle_bundle, mut rx_bundle) = HandleBundle::new(buffer_size, &ev_bus_handle);
+        let manager = manager::Manager::new(Arc::new(handle_bundle), executor);
         let manager_clone = manager.clone();
         tokio::spawn(async move {
             let _manager = manager_clone;
-            let mut swarm = libp2p::swarm::SwarmBuilder::with_tokio_executor(
-                transport,
-                behaviour,
-                ident.get_peer_id(),
-            )
-            .build();
+            let mut swarm = libp2p::SwarmBuilder::with_existing_identity(ident.get_keypair())
+                .with_tokio()
+                .with_tcp(
+                    Default::default(),
+                     libp2p_noise::Config::new,
+                    libp2p_yamux::Config::default,
+                )
+                .expect("transport upgrade to succeed")
+                .with_quic()
+                .with_relay_client(
+                    libp2p_noise::Config::new,
+                    libp2p_yamux::Config::default,
+                )
+                .expect("transport upgrade to succeed")
+                .with_behaviour(|_key, relay| behaviour::Behaviour {
+                    kad: kad::Behaviour::new(ident.get_peer_id(), kad_store),
+                    mdns: mdns::Behaviour::new(self.config.mdns, ident.get_peer_id()).unwrap(),
+                    identify: identify::Behaviour::new(self.config.identify),
+                    messaging: messaging::Behaviour::new(self.config.messaging),
+                    tethering: tethering::Behaviour::new(self.config.tethering),
+                    relay_server: libp2p::relay::Behaviour::new(
+                        self.config.local_ident.get_peer_id(),
+                        self.config.relay_server,
+                    ),
+                    relay_client:relay,
+                    relay_ext: relay_ext::Behaviour::new(),
+                    dcutr: dcutr::Behaviour::new(ident.get_peer_id())
+                })
+                .expect("behaviour incorporation to succeed")
+                .build();
+
             loop {
                 select! {
                     Some(ev) = rx_bundle.next() => handle_incoming_event(ev, &mut swarm, &ev_bus_handle),
@@ -89,9 +96,9 @@ impl Builder {
 }
 
 #[inline]
-async fn handle_swarm_event(ev: &SwarmEvent, swarm: &mut Swarm, ev_tap:&EventTap) {
+async fn handle_swarm_event(ev: &SwarmEvent, swarm: &mut Swarm, ev_tap: &EventTap) {
     match ev {
-        SwarmEvent::Behaviour(event) => handle_behaviour_event(swarm, event,ev_tap).await,
+        SwarmEvent::Behaviour(event) => handle_behaviour_event(swarm, event, ev_tap).await,
         SwarmEvent::NewListenAddr { address, .. } => info!("Listening on {:?}", address),
         SwarmEvent::ConnectionEstablished {
             peer_id, endpoint, ..
@@ -143,7 +150,7 @@ fn handle_incoming_event(ev: Rx, swarm: &mut Swarm, ev_bus_handle: &event_bus::H
         Tethering(ev) => swarm.behaviour_mut().tethering.push_event(ev),
         Mdns(ev) => mdns::map_in_event(ev, &mut swarm.behaviour_mut().mdns),
         Swarm(ev) => swarm_op_exec(swarm, ev),
-        _=>{}
+        _ => {}
     }
 }
 
@@ -190,18 +197,18 @@ fn swarm_op_exec(swarm: &mut Swarm, ev: InEvent) {
 }
 
 #[inline]
-async fn handle_behaviour_event(swarm: &mut Swarm, ev: &ToSwarmEvent,ev_tap:&EventTap) {
+async fn handle_behaviour_event(swarm: &mut Swarm, ev: &ToSwarmEvent, ev_tap: &EventTap) {
     use super::protocols::*;
     use out_event::ToSwarmEvent::*;
     match ev {
-        Kad(ev) => kad::ev_dispatch(ev,ev_tap).await,
+        Kad(ev) => kad::ev_dispatch(ev, ev_tap).await,
         Identify(ev) => identify::ev_dispatch(ev),
         Mdns(ev) => mdns::ev_dispatch(ev, swarm),
-        Messaging(ev) => messaging::ev_dispatch(ev),
+        Messaging(ev) => messaging::ev_dispatch(ev,ev_tap).await,
         Tethering(ev) => tethering::ev_dispatch(ev),
         RelayServer(ev) => relay_server::ev_dispatch(ev),
         RelayClient(ev) => relay_client::ev_dispatch(ev),
-        _ =>{}
+        _ => {}
     }
 }
 
@@ -244,16 +251,16 @@ where
     }
 }
 
-use futures::{AsyncRead, AsyncWrite};
-fn upgrade_transport<StreamSink>(
-    transport: libp2p::core::transport::Boxed<StreamSink>,
-    ident: &super::identity::IdentityUnion,
-) -> libp2p::core::transport::Boxed<(PeerId, libp2p::core::muxing::StreamMuxerBox)>
-where
-    StreamSink: AsyncRead + AsyncWrite + Send + Unpin + 'static,
-{
-    libp2p::Transport::upgrade(transport, libp2p::core::upgrade::Version::V1)
-        .authenticate(libp2p::noise::Config::new(&ident.get_keypair()).unwrap())
-        .multiplex(libp2p::yamux::Config::default())
-        .boxed()
-}
+// use futures::{AsyncRead, AsyncWrite};
+// fn upgrade_transport<StreamSink>(
+//     transport: libp2p::core::transport::Boxed<StreamSink>,
+//     keypair: &Keypair,
+// ) -> libp2p::core::transport::Boxed<(PeerId, libp2p::core::muxing::StreamMuxerBox)>
+// where
+//     StreamSink: AsyncRead + AsyncWrite + Send + Unpin + 'static,
+// {
+//     libp2p::Transport::upgrade(transport, libp2p::core::upgrade::Version::V1)
+//         .authenticate(libp2p::noise::Config::new(keypair).unwrap())
+//         .multiplex(libp2p::yamux::Config::default())
+//         .boxed()
+// }

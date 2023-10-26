@@ -45,8 +45,9 @@ impl Listenable for OutEvent {
     }
 }
 
-pub fn ev_dispatch(ev: &OutEvent) {
+pub async fn ev_dispatch(ev: &OutEvent, ev_tap:&EventTap) {
     use OutEvent::*;
+    ev_tap.send(ev.clone().into_listened()).await.expect("Event sent to tap to succeed");
     match ev {
         IncomingMessage { .. } => {
             println!("Incoming message: {:?}", ev);
@@ -74,7 +75,7 @@ mod protocol {
 
 use tokio::sync::mpsc;
 
-use crate::{event_bus::listened_event::Listenable, net::p2p::with_timeout, single_value_filter};
+use crate::{event_bus::{listened_event::Listenable, bus::EventTap}, net::p2p::with_timeout, single_value_filter};
 #[derive(Debug, Clone)]
 pub struct Handle {
     sender: mpsc::Sender<InEvent>,
@@ -107,6 +108,7 @@ impl Handle {
         self.sender.send(ev).await.expect("send to succeed");
         let fut = single_value_filter!(listener::<OutEvent>, |ev| {
             if let OutEvent::SuccessfulSend(id) = &ev {
+                debug!("received target event with id {}",*id);
                 return *id == op_id;
             };
             if let OutEvent::Error(Error::PeerNotFound(ev_peer_id)) = &ev {

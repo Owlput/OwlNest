@@ -130,7 +130,6 @@ macro_rules! behaviour_select {
             fn poll(
                 &mut self,
                 cx: &mut std::task::Context,
-                poll_params: &mut impl ::libp2p::swarm::derive_prelude::PollParameters,
             ) -> std::task::Poll<
                 ::libp2p::swarm::derive_prelude::ToSwarm<
                     Self::ToSwarm,
@@ -141,7 +140,6 @@ macro_rules! behaviour_select {
                     match ::libp2p::swarm::NetworkBehaviour::poll(
                         &mut self.$name,
                         cx,
-                        poll_params,
                     ){
                         std::task::Poll::Ready(
                             ::libp2p::swarm::derive_prelude::ToSwarm::GenerateEvent(

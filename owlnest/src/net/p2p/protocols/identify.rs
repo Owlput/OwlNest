@@ -14,9 +14,9 @@ pub fn ev_dispatch(ev: &OutEvent) {
             "Identification information has been sent to peer {} as response",
             peer_id
         ),
-        Pushed { peer_id } => info!(
-            "Identification information has been sent to peer {} for identification",
-            peer_id
+        Pushed { peer_id, info } => info!(
+            "Identification information {:?} has been sent to peer {} for identification",
+            info, peer_id
         ),
         Error { peer_id, error } => {
             info!("Error when identifying peer {} with {}", peer_id, error)

@@ -26,6 +26,8 @@ pub mod relay_ext;
 /// A mock up of reference implementation of libp2p allow-block list. 
 pub mod allow_block_list;
 
+pub mod dcutr;
+
 pub mod event_listener {}
 #[allow(unused)]
 mod universal;

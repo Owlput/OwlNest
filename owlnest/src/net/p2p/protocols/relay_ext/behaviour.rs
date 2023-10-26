@@ -81,7 +81,6 @@ impl NetworkBehaviour for Behaviour {
     fn poll(
         &mut self,
         _cx: &mut std::task::Context<'_>,
-        _params: &mut impl libp2p::swarm::PollParameters,
     ) -> Poll<ToSwarm<super::OutEvent, handler::FromBehaviourEvent>> {
         if let Some((peer_id, connection_id)) = self.pending_query_answer.pop_front() {
             if self.is_providing {
