@@ -34,15 +34,15 @@ mod handler_prelude {
     pub use std::task::Poll;
 }
 
-async fn with_timeout<T>(mut future: impl Future<Output = T> + Unpin, timeout: u64) -> T {
+async fn with_timeout<T>(mut future: impl Future<Output = T> + Unpin, timeout: u64) -> Result<T,()> {
     let mut timer = futures_timer::Delay::new(std::time::Duration::from_secs(timeout));
     tokio::select! {
         _ = &mut timer =>{
             tracing::warn!("A timeout for an event listener related task reached");
+            Err(())
         }
         v = &mut future => {
-            return v;
+            return Ok(v);
         }
     }
-    future.await
 }

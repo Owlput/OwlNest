@@ -1,5 +1,5 @@
 use crate::net::p2p::swarm::op::SwarmHandle;
-use libp2p::{Multiaddr, TransportError};
+use libp2p::{Multiaddr, PeerId, TransportError};
 
 pub fn handle_swarm(handle: &SwarmHandle, command: Vec<&str>) {
     if command.len() < 2 {
@@ -27,6 +27,7 @@ pub fn handle_swarm(handle: &SwarmHandle, command: Vec<&str>) {
             handle_swarm_listen(handle, command[2])
         }
         "listener" => handle_swarm_listener(handle, command),
+        "isconnected" => handle_swarm_isconnected(handle, command),
         _ => println!(
             "Failed to execute: unrecognized subcommand. Type \"swarm help\" for more information."
         ),
@@ -80,6 +81,21 @@ fn handle_swarm_listener(handle: &SwarmHandle, command: Vec<&str>) {
         "help" => println!("{}",LISTENER_SUBCOMMAND_HELP),
         _=>println!("Failed to execute: unrecognized subcommand. Type \"swarm listener help\" for more information.")
     }
+}
+
+fn handle_swarm_isconnected(handle: &SwarmHandle, command: Vec<&str>) {
+    if command.len() < 3 {
+        println!("Missing argument <PeerId>. Syntax: swarm isconnected <PeerId>");
+        return;
+    }
+    let peer_id = match command[2].parse::<PeerId>() {
+        Ok(v) => v,
+        Err(e) => {
+            println!("Failed to parse peer ID for input {}: {}", command[2], e);
+            return;
+        }
+    };
+    println!("{}", handle.is_connected(&peer_id))
 }
 
 fn format_transport_error(e: TransportError<std::io::Error>) -> String {

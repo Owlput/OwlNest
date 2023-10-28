@@ -116,12 +116,17 @@ impl Handle {
             };
             false
         });
-        if let OutEvent::Error(e) = with_timeout(pin!(fut), 10)
-            .await
-            .expect("listen to succeed")
-        {
-            return Err(e)
+        match with_timeout(pin!(fut), 10).await{
+            Ok(v) => {
+                if let OutEvent::Error(e) = v.expect("listen to succeed"){
+                    return Err(e)
+                } 
+                Ok(())
+            }
+            Err(_) => {
+                warn!("a timeout reached for a timed future");
+                Err(Error::Timeout)
+            },
         }
-        Ok(())
     }
 }

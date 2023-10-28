@@ -160,7 +160,7 @@ impl Handle {
         self.sender.send(ev).await.expect("send to succeed");
         if let OutEvent::StartedProviding = with_timeout(pin!(fut), 10)
             .await
-            .expect("listen to succeed")
+            .expect("listen to succeed").unwrap()
         {
             return true;
         }

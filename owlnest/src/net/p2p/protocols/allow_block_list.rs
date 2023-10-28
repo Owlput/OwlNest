@@ -30,7 +30,7 @@ pub mod behaviour {
 
         type ToSwarm = super::OutEvent;
 
-        fn on_swarm_event(&mut self, _event: libp2p::swarm::FromSwarm<Self::ConnectionHandler>) {}
+        fn on_swarm_event(&mut self, _event: libp2p::swarm::FromSwarm) {}
 
         fn on_connection_handler_event(
             &mut self,

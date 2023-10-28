@@ -209,9 +209,7 @@ macro_rules! behaviour_select {
             }
             fn on_swarm_event(
                 &mut self,
-                event: ::libp2p::swarm::derive_prelude::FromSwarm<
-                    Self::ConnectionHandler,
-                >,
+                event: ::libp2p::swarm::derive_prelude::FromSwarm,
             ) {
                 match event {
                     ::libp2p::swarm::derive_prelude::FromSwarm::ConnectionEstablished(
@@ -257,18 +255,15 @@ macro_rules! behaviour_select {
                             peer_id,
                             connection_id,
                             endpoint,
-                            handler: handlers,
                             remaining_established,
                         },
                     ) => {
-                        let ($($name,)*) = handlers.into_inner();
                         $(self.$name
                             .on_swarm_event(
                                 ::libp2p::swarm::derive_prelude::FromSwarm::ConnectionClosed(::libp2p::swarm::derive_prelude::ConnectionClosed {
                                     peer_id,
                                     connection_id,
                                     endpoint,
-                                    handler:$name,
                                     remaining_established,
                                 }),
                             );)*

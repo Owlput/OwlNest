@@ -126,7 +126,7 @@ impl Handle {
                 }
             }
         );
-        with_timeout(std::pin::pin!(fut), 10).await
+        with_timeout(std::pin::pin!(fut), 10).await.unwrap()
     }
 
     pub async fn untrust(&self, peer_id: PeerId) -> Result<(), ()> {

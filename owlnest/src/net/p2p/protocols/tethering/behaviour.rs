@@ -111,7 +111,7 @@ impl NetworkBehaviour for Behaviour {
         Poll::Pending
     }
 
-    fn on_swarm_event(&mut self, _event: libp2p::swarm::FromSwarm<Self::ConnectionHandler>) {}
+    fn on_swarm_event(&mut self, _event: libp2p::swarm::FromSwarm) {}
 
     fn handle_established_inbound_connection(
         &mut self,
