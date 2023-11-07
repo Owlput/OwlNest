@@ -26,7 +26,8 @@ pub fn handle_swarm(handle: &SwarmHandle, command: Vec<&str>) {
             }
             handle_swarm_listen(handle, command[2])
         }
-        "listener" => handle_swarm_listener(handle, command),
+        "listener" => listener::handle_swarm_listener(handle, command),
+        "external-addr" => external_address::handle_swarm_externaladdress(handle, command),
         "isconnected" => handle_swarm_isconnected(handle, command),
         _ => println!(
             "Failed to execute: unrecognized subcommand. Type \"swarm help\" for more information."
@@ -71,16 +72,99 @@ pub fn handle_swarm_listen(handle: &SwarmHandle, addr: &str) {
     }
 }
 
-fn handle_swarm_listener(handle: &SwarmHandle, command: Vec<&str>) {
-    if command.len() < 3 {
-        println!("Missing subcommands. Type \"swarm listener help\" for more information");
-        return;
+mod listener {
+    use super::SwarmHandle;
+
+    pub fn handle_swarm_listener(handle: &SwarmHandle, command: Vec<&str>) {
+        if command.len() < 3 {
+            println!("Missing subcommands. Type \"swarm listener help\" for more information");
+            return;
+        }
+        match command[2]{
+            "ls" => println!("Active listeners: {:?}",handle.list_listeners()),
+            "help" => println!("{}",HELP_MESSAGE),
+            _=>println!("Failed to execute: unrecognized subcommand. Type \"swarm listener help\" for more information.")
+        }
     }
-    match command[2]{
-        "ls" => println!("Active listeners: {:?}",handle.list_listeners()),
-        "help" => println!("{}",LISTENER_SUBCOMMAND_HELP),
-        _=>println!("Failed to execute: unrecognized subcommand. Type \"swarm listener help\" for more information.")
+
+    const HELP_MESSAGE: &str = r"
+    swarm listener: Subcommand for managing listeners of this swarm
+
+    Available Subcommands:
+        ls
+            List all listeners of this swarm.
+
+        help
+            Show this help message.
+    ";
+}
+
+mod external_address {
+    use super::*;
+    pub fn handle_swarm_externaladdress(handle: &SwarmHandle, command: Vec<&str>) {
+        if command.len() < 3 {
+            println!("Missing subcommands. Type \"swarm external help\" for more information");
+            return;
+        }
+        match command[2] {
+            "add" => add(handle, command),
+            "remove" => remove(handle, command),
+            "ls" => ls(handle),
+            "help" => println!("{}", HELP_MESSAGE),
+            _ => {}
+        }
     }
+    fn add(handle: &SwarmHandle, command: Vec<&str>) {
+        if command.len() < 4 {
+            println!("Missing argument <address>. Syntax: swarm external-addr add <PeerId>");
+            return;
+        }
+        let addr = match command[3].parse::<Multiaddr>() {
+            Ok(addr) => addr,
+            Err(e) => {
+                println!("Error: Failed parsing address `{}`: {}", command[3], e);
+                return;
+            }
+        };
+        handle.add_external_address(&addr);
+        println!("External address `{}` added", addr)
+    }
+    fn remove(handle: &SwarmHandle, command: Vec<&str>) {
+        if command.len() < 4 {
+            println!("Missing argument <address>. Syntax: swarm external-addr remove <PeerId>");
+            return;
+        }
+        let addr = match command[3].parse::<Multiaddr>() {
+            Ok(addr) => addr,
+            Err(e) => {
+                println!("Error: Failed parsing address `{}`: {}", command[3], e);
+                return;
+            }
+        };
+        handle.remove_external_address(&addr);
+        println!("External address `{}` removed", addr)
+    }
+    fn ls(handle: &SwarmHandle) {
+        let addresses = handle.list_external_addresses();
+        println!("External addresses: {:?}", addresses)
+    }
+
+    const HELP_MESSAGE: &str = r"
+    swarm external-addr: Subcommand for managing external addresses of the swarm
+
+    Available subcommands:
+        add <address>
+            Add the <address> to external address(bind).
+        
+        remove <address>
+            Remove the <address> from external address.
+
+        ls
+            List all external address of this swarm.
+        
+        help
+            Show this help message.
+    ";
 }
 
 fn handle_swarm_isconnected(handle: &SwarmHandle, command: Vec<&str>) {
@@ -98,6 +182,36 @@ fn handle_swarm_isconnected(handle: &SwarmHandle, command: Vec<&str>) {
     println!("{}", handle.is_connected(&peer_id))
 }
 
+const TOP_HELP_MESSAGE: &str = r#"
+swarm: Subcommand for managing libp2p swarm.
+
+Available subcommands:
+    dial <address>          
+        Dial <address>, in multiaddr format.
+        Dial result may not shown directly after command issued.
+
+    listen <address>        
+        Listen on <address>, in multiaddr format.
+
+    listener <subcommand>
+        Managing connection listeners.
+
+    external-addr <subcommand>           
+        Managing external addresses.
+
+    disconnect <peer ID>
+        Terminate connections from the given peer.
+
+    isconnected <peer ID>
+        Check whether the swarm has connected to the given peer.
+
+    ban <peer ID>
+        Ban the given peer, refuse further connections from that peer.
+                
+    unban <peer ID>
+        Unban the given peer.
+"#;
+
 fn format_transport_error(e: TransportError<std::io::Error>) -> String {
     match e {
         TransportError::MultiaddrNotSupported(addr) => {
@@ -112,39 +226,3 @@ fn format_transport_error(e: TransportError<std::io::Error>) -> String {
         }
     }
 }
-
-const TOP_HELP_MESSAGE: &str = r#"
-swarm: Subcommand for managing libp2p swarm.
-
-Available subcommands:
-    dial <address>          
-                Dial the given address in multiaddr format.
-                Dial result may not shown directly after
-                command issued.
-
-    listen <address>        
-                Listen on the given address in multiaddr
-                format.
-
-    listener <subcommand>
-                Managing connection listeners.
-
-    external-addr <subcommand>           
-                Managing external addresses.
-
-    disconnect <peer ID>
-                Terminate connections from the given peer.
-
-    isconnected <peer ID>
-                Check whether the swarm has connected to 
-                the given peer.
-
-    ban <peer ID>
-                Ban the given peer, refuse further 
-                connections from that peer.
-                
-    unban <peer ID>
-                Unban the given peer.
-"#;
-
-const LISTENER_SUBCOMMAND_HELP: &str = r#""#;

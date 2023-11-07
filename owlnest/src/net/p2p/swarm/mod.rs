@@ -17,14 +17,13 @@ pub mod op;
 pub mod out_event;
 
 pub use in_event::*;
-pub use out_event::ToSwarmEvent;
 
-use self::manager::{Manager, Rx};
+use self::{manager::{Manager, Rx}, behaviour::BehaviourEvent};
 
 use super::SwarmConfig;
 
 pub type Swarm = libp2p::Swarm<behaviour::Behaviour>;
-pub(crate) type SwarmEvent = libp2p::swarm::SwarmEvent<ToSwarmEvent,<<behaviour::Behaviour as libp2p::swarm::NetworkBehaviour>::ConnectionHandler as libp2p::swarm::ConnectionHandler>::Error>;
+pub(crate) type SwarmEvent = libp2p::swarm::SwarmEvent<BehaviourEvent,<<behaviour::Behaviour as libp2p::swarm::NetworkBehaviour>::ConnectionHandler as libp2p::swarm::ConnectionHandler>::Error>;
 
 pub struct Builder {
     config: SwarmConfig,
@@ -197,9 +196,9 @@ fn swarm_op_exec(swarm: &mut Swarm, ev: InEvent) {
 }
 
 #[inline]
-async fn handle_behaviour_event(swarm: &mut Swarm, ev: &ToSwarmEvent, ev_tap: &EventTap) {
+async fn handle_behaviour_event(swarm: &mut Swarm, ev: &BehaviourEvent, ev_tap: &EventTap) {
     use super::protocols::*;
-    use out_event::ToSwarmEvent::*;
+    use behaviour::BehaviourEvent::*;
     match ev {
         Kad(ev) => kad::ev_dispatch(ev, ev_tap).await,
         Identify(ev) => identify::ev_dispatch(ev),

@@ -1,11 +1,10 @@
 use libp2p::PeerId;
 use serde::{Deserialize, Serialize};
-use std::pin::pin;
 use tokio::sync::mpsc;
 
 use crate::{
     event_bus::{self, listened_event::Listenable,},
-    net::p2p::with_timeout, single_value_filter,
+    with_timeout, single_value_filter,
 };
 
 pub mod behaviour;
@@ -128,8 +127,8 @@ impl Handle {
         });
         let ev = InEvent::StartProviding;
         self.sender.send(ev).await.expect("send to succeed");
-        with_timeout(pin!(fut), 10)
-            .await
+        with_timeout!(fut, 10)
+            .expect("request to finish in 10 seconds")
             .expect("listen to succeed");
     }
     pub async fn stop_providing(&self) {
@@ -143,8 +142,8 @@ impl Handle {
         });
         let ev = InEvent::StopProviding;
         self.sender.send(ev).await.expect("send to succeed");
-        with_timeout(pin!(fut), 10)
-            .await
+        with_timeout!(fut, 10)
+            .expect("request to finish in 10 seconds")
             .expect("listen to succeed");
     }
     pub async fn provider_status(&self) -> bool {
@@ -158,8 +157,7 @@ impl Handle {
         });
         let ev = InEvent::QueryProviderStatus;
         self.sender.send(ev).await.expect("send to succeed");
-        if let OutEvent::StartedProviding = with_timeout(pin!(fut), 10)
-            .await
+        if let OutEvent::StartedProviding = with_timeout!(fut, 10)
             .expect("listen to succeed").unwrap()
         {
             return true;

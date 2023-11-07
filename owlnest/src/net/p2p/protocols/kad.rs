@@ -1,24 +1,33 @@
-use libp2p::{kad, PeerId};
+use libp2p::{
+    kad::{self, Mode, NoKnownPeers, QueryId},
+    PeerId,
+};
 use std::str::FromStr;
 use tokio::sync::{mpsc, oneshot};
 use tracing::{info, warn};
 
-use crate::event_bus::{listened_event::Listenable, Handle as EvHandle};
+use crate::{
+    event_bus::{listened_event::Listenable, Handle as EvHandle},
+    single_value_filter, with_timeout,
+};
 
 pub use kad::Config;
 pub type Behaviour = kad::Behaviour<kad::store::MemoryStore>;
 pub type OutEvent = kad::Event;
 pub use libp2p::kad::PROTOCOL_NAME;
+
 pub mod cli;
 
 #[derive(Debug)]
 pub(crate) enum InEvent {
     PeerLookup(PeerId, oneshot::Sender<kad::QueryId>),
+    BootStrap(oneshot::Sender<Result<QueryId, NoKnownPeers>>),
+    SetMode(Option<Mode>),
 }
 
 #[derive(Debug, Clone)]
 pub struct Handle {
-    sender: mpsc::Sender<InEvent>,
+    sender_swarm: mpsc::Sender<InEvent>,
     event_bus_handle: EvHandle,
 }
 impl Handle {
@@ -26,11 +35,20 @@ impl Handle {
         let (tx, rx) = mpsc::channel(buffer);
         (
             Self {
-                sender: tx,
+                sender_swarm: tx,
                 event_bus_handle: ev_bus_handle.clone(),
             },
             rx,
         )
+    }
+    pub async fn bootstrap(&self) -> Result<(), NoKnownPeers> {
+        let (tx, rx) = oneshot::channel();
+        let ev = InEvent::BootStrap(tx);
+        self.sender_swarm
+            .send(ev)
+            .await
+            .expect("sending event to succeed");
+        rx.await.expect("callback to succeed").map(|_| ())
     }
     pub async fn lookup(&self, peer_id: PeerId) -> Vec<kad::QueryResult> {
         let mut listener = self
@@ -39,7 +57,7 @@ impl Handle {
             .await
             .expect("listener registration to succeed");
         let (callback_tx, callback_rx) = oneshot::channel();
-        self.sender
+        self.sender_swarm
             .send(InEvent::PeerLookup(peer_id, callback_tx))
             .await
             .expect("sending event to succeed");
@@ -71,14 +89,45 @@ impl Handle {
         }
         results
     }
+    async fn set_mode(&self, mode: Option<Mode>) -> Result<Mode, ()> {
+        let ev = InEvent::SetMode(mode);
+        let mut listener = self
+            .event_bus_handle
+            .add(OutEvent::as_event_identifier())
+            .await
+            .expect("listener registration to succeed");
+        self.sender_swarm.send(ev).await.expect("send to succeed");
+        let fut = single_value_filter!(listener::<OutEvent>, |ev| {
+            if let OutEvent::ModeChanged { .. } = ev {
+                return true;
+            }
+            false
+        });
+        let ev = match with_timeout!(fut,10){
+            Ok(result)=> result.expect("listen to succeed"),
+            Err(_) => return Err(())
+        };
+        if let OutEvent::ModeChanged { new_mode } = ev{
+            return Ok(new_mode)
+        }
+        unreachable!()
+    }
 }
 
 pub(crate) fn map_in_event(ev: InEvent, behav: &mut Behaviour, _ev_bus_handle: &EvHandle) {
     use InEvent::*;
+
     match ev {
         PeerLookup(peer_id, callback) => {
             let query_id = behav.get_record(kad::RecordKey::new(&peer_id.to_bytes()));
             callback.send(query_id).expect("callback to succeed")
+        }
+        BootStrap(callback) => {
+            let result = behav.bootstrap();
+            callback.send(result).expect("callback to succeed");
+        }
+        SetMode(mode) => {
+            behav.set_mode(mode)
         }
     }
 }

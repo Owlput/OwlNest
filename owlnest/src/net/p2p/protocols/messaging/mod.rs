@@ -1,7 +1,6 @@
 use libp2p::PeerId;
 use serde::{Deserialize, Serialize};
 use std::{
-    pin::pin,
     sync::{
         atomic::{AtomicU64, Ordering},
         Arc,
@@ -45,12 +44,15 @@ impl Listenable for OutEvent {
     }
 }
 
-pub async fn ev_dispatch(ev: &OutEvent, ev_tap:&EventTap) {
+pub async fn ev_dispatch(ev: &OutEvent, ev_tap: &EventTap) {
     use OutEvent::*;
-    ev_tap.send(ev.clone().into_listened()).await.expect("Event sent to tap to succeed");
+    ev_tap
+        .send(ev.clone().into_listened())
+        .await
+        .expect("Event sent to tap to succeed");
     match ev {
         IncomingMessage { .. } => {
-            println!("Incoming message: {:?}", ev);
+            println!("Incoming message: {:?}\n", ev);
         }
         Error(e) => warn!("{:#?}", e),
         Unsupported(peer) => {
@@ -75,7 +77,10 @@ mod protocol {
 
 use tokio::sync::mpsc;
 
-use crate::{event_bus::{listened_event::Listenable, bus::EventTap}, net::p2p::with_timeout, single_value_filter};
+use crate::{
+    event_bus::{bus::EventTap, listened_event::Listenable},
+    single_value_filter, with_timeout,
+};
 #[derive(Debug, Clone)]
 pub struct Handle {
     sender: mpsc::Sender<InEvent>,
@@ -108,7 +113,7 @@ impl Handle {
         self.sender.send(ev).await.expect("send to succeed");
         let fut = single_value_filter!(listener::<OutEvent>, |ev| {
             if let OutEvent::SuccessfulSend(id) = &ev {
-                debug!("received target event with id {}",*id);
+                debug!("received target event with id {}", *id);
                 return *id == op_id;
             };
             if let OutEvent::Error(Error::PeerNotFound(ev_peer_id)) = &ev {
@@ -116,17 +121,17 @@ impl Handle {
             };
             false
         });
-        match with_timeout(pin!(fut), 10).await{
+        match with_timeout!(fut, 10) {
             Ok(v) => {
-                if let OutEvent::Error(e) = v.expect("listen to succeed"){
-                    return Err(e)
-                } 
+                if let OutEvent::Error(e) = v.expect("listen to succeed") {
+                    return Err(e);
+                }
                 Ok(())
             }
             Err(_) => {
                 warn!("a timeout reached for a timed future");
                 Err(Error::Timeout)
-            },
+            }
         }
     }
 }

@@ -23,14 +23,14 @@ pub mod error;
 /// Protocol `/owlnest/tethering` consists of two subprotocols.
 /// `/owlnest/tethering/exec` for operation execution,
 /// `/owlnest/tethering/push` for notification pushing.
-/// Both subprotocols will per a handshake in TCP style(aka three-way handshake).
+/// Both subprotocols will perform a handshake in TCP style(aka three-way handshake).
 mod subprotocols;
 
 pub use behaviour::Behaviour;
 pub use error::Error;
 pub use subprotocols::Subprotocol;
 
-use crate::{event_bus::listened_event::Listenable, net::p2p::with_timeout, single_value_filter};
+use crate::{event_bus::listened_event::Listenable, with_timeout, single_value_filter};
 use self::subprotocols::exec::OpResult;
 
 /// A placeholder struct waiting to be used for interface consistency.
@@ -126,7 +126,7 @@ impl Handle {
                 }
             }
         );
-        with_timeout(std::pin::pin!(fut), 10).await.unwrap()
+        with_timeout!(fut, 10).expect("Operation to finish in 10s")
     }
 
     pub async fn untrust(&self, peer_id: PeerId) -> Result<(), ()> {

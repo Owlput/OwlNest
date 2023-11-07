@@ -67,11 +67,10 @@ fn handle_command(line: String, manager: &Manager, ident: &IdentityUnion) {
             swarm::cli::handle_swarm_listen(&manager.swarm(), command[1])
         }
         "swarm" => swarm::cli::handle_swarm(&manager.swarm(), command),
-
         "tethering" => tethering::cli::handle_tethering(manager, command),
-
         "messaging" => messaging::handle_messaging(manager, ident, command),
         "kad" => kad::cli::handle_kad(manager, command),
+        "mdns" => mdns::cli::handle_mdns(manager, command),
         "relay_ext" => relay_ext::cli::handle_relay_ext(manager, command),
         "utils" => handle_utils(command),
         "" => {}
@@ -125,5 +124,6 @@ Available commands:
     kad                 Subcommand for `/ipfs/kad/1.0.0` protocol.
     messaging           Subcommand for `messaging` protocol.
     tethering           Subcommand for `tethering` protocol.
+    mdns                Subcommand for `mdns` protocol.
     utils               Subcommand for various utilities.
 "#;

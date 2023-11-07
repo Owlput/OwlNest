@@ -41,26 +41,22 @@ impl NetworkBehaviour for Behaviour {
     ) {
         use handler::ToBehaviourEvent::*;
         match event {
-            IncomingMessage(bytes) => {
-                match serde_json::from_slice::<Message>(&bytes) {
-                    Ok(msg) => self.out_events.push_front(OutEvent::IncomingMessage {
-                        from: msg.from,
-                        msg,
-                    }),
-                    Err(e) => {
-                        self.out_events
-                            .push_front(OutEvent::Error(super::Error::UnrecognizedMessage(format!(
-                                "Unrecognized message: {}, raw data: {}",
-                                e,
-                                String::from_utf8_lossy(&bytes)
-                            ))))
-                    }
+            IncomingMessage(bytes) => match serde_json::from_slice::<Message>(&bytes) {
+                Ok(msg) => self.out_events.push_front(OutEvent::IncomingMessage {
+                    from: msg.from,
+                    msg,
+                }),
+                Err(e) => {
+                    self.out_events
+                        .push_front(OutEvent::Error(super::Error::UnrecognizedMessage(format!(
+                            "Unrecognized message: {}, raw data: {}",
+                            e,
+                            String::from_utf8_lossy(&bytes)
+                        ))))
                 }
-            }
+            },
             Error(e) => self.out_events.push_front(OutEvent::Error(e)),
-            Unsupported => {
-                self.out_events.push_back(OutEvent::Unsupported(peer_id))
-            }
+            Unsupported => self.out_events.push_back(OutEvent::Unsupported(peer_id)),
             InboundNegotiated => {
                 self.out_events
                     .push_back(OutEvent::InboundNegotiated(peer_id));
@@ -69,9 +65,7 @@ impl NetworkBehaviour for Behaviour {
                 self.out_events
                     .push_back(OutEvent::OutboundNegotiated(peer_id));
             }
-            SuccessfulSend(id)=>{
-                self.out_events.push_back(OutEvent::SuccessfulSend(id))
-            }
+            SuccessfulSend(id) => self.out_events.push_back(OutEvent::SuccessfulSend(id)),
         }
     }
     fn poll(
@@ -93,7 +87,8 @@ impl NetworkBehaviour for Behaviour {
                             event: handler::FromBehaviourEvent::PostMessage(msg, id),
                         });
                     } else {
-                        self.out_events.push_back(OutEvent::Error(Error::PeerNotFound(target)))
+                        self.out_events
+                            .push_back(OutEvent::Error(Error::PeerNotFound(target)))
                     }
                 }
             }
@@ -101,7 +96,16 @@ impl NetworkBehaviour for Behaviour {
         Poll::Pending
     }
 
-    fn on_swarm_event(&mut self, _event: libp2p::swarm::FromSwarm) {}
+    fn on_swarm_event(&mut self, event: libp2p::swarm::FromSwarm) {
+        match event {
+            libp2p_swarm::FromSwarm::ConnectionClosed(info) => {
+                if info.remaining_established < 1 {
+                    self.connected_peers.remove(&info.peer_id);
+                }
+            }
+            _ => {}
+        }
+    }
 
     fn handle_established_inbound_connection(
         &mut self,

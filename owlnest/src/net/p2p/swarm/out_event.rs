@@ -1,7 +1,6 @@
 use std::{io, num::NonZeroU32};
 
 use super::{behaviour::Behaviour, *};
-pub use behaviour::ToSwarmEvent;
 use libp2p::{
     swarm::{derive_prelude::ListenerId, ConnectionError, DialError, ListenError},
     Multiaddr, TransportError,

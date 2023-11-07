@@ -6,6 +6,12 @@ macro_rules! generate_event_select {
             $($behaviour($ev),)*
         }
     };
+    ($(#[$meta:meta])*$name:ident{$($behaviour:ident:$variant:ident,)*};) => {
+        $(#[$meta])*
+        pub enum $name{
+            $($variant(<$behaviour::Behaviour as ::libp2p::swarm::NetworkBehaviour>::ToSwarm),)*
+        }
+    };
 }
 
 #[macro_export]
@@ -20,7 +26,7 @@ macro_rules! behaviour_select {
         const EVENT_IDENT:&str = "swarmEvent";
         generate_event_select!(
             #[derive(Debug)]
-            ToSwarmEvent{
+            BehaviourEvent{
             $($behaviour:<$name::Behaviour as ::libp2p::swarm::NetworkBehaviour>::ToSwarm,)*
         });
 
@@ -29,7 +35,7 @@ macro_rules! behaviour_select {
         }
         impl ::libp2p::swarm::NetworkBehaviour for Behaviour{
             type ConnectionHandler = handler::ConnectionHandlerSelect;
-            type ToSwarm = ToSwarmEvent;
+            type ToSwarm = BehaviourEvent;
             fn handle_pending_inbound_connection(
                 &mut self,
                 connection_id: ::libp2p::swarm::ConnectionId,
@@ -148,7 +154,7 @@ macro_rules! behaviour_select {
                         ) => {
                             return std::task::Poll::Ready(
                                 ::libp2p::swarm::derive_prelude::ToSwarm::GenerateEvent(
-                                    ToSwarmEvent::$behaviour(event),
+                                    BehaviourEvent::$behaviour(event),
                                 ),
                             );
                         }

@@ -51,7 +51,7 @@ pub(crate) fn map_in_event(ev: InEvent, behav: &mut Behaviour) {
             callback.send(node_list).unwrap();
         }
         HasNode(peer_id, callback) => {
-            let has_node = behav.discovered_nodes().any(|peer|*peer == peer_id );
+            let has_node = behav.discovered_nodes().any(|peer| *peer == peer_id);
             callback.send(has_node).unwrap();
         }
     }
@@ -70,4 +70,52 @@ pub fn ev_dispatch(ev: &OutEvent, swarm: &mut Swarm) {
                 .count();
         }
     }
+}
+
+pub(crate) mod cli {
+    use std::str::FromStr;
+
+    use libp2p::PeerId;
+
+    use crate::net::p2p::swarm::manager::Manager;
+
+    pub fn handle_mdns(manager: &Manager, command: Vec<&str>) {
+        if command.len() < 2 {
+            println!("Missing subcommands. Type `mdns help` for more information");
+            return;
+        }
+        match command[1] {
+            "list-discovered" => mdns_listdiscovered(manager),
+            "has-node" => mdns_hasnode(manager, command),
+            "help" => println!("{}", TOP_HELP_MESSAGE),
+            _ => println!("Unrecoginzed command. Type `mdns help` for more information"),
+        }
+    }
+
+    fn mdns_listdiscovered(manager: &Manager) {
+        println!(
+            "{:?}",
+            manager
+                .executor()
+                .block_on(manager.mdns().list_discovered_node())
+        );
+    }
+    fn mdns_hasnode(manager: &Manager, command: Vec<&str>) {
+        if command.len() < 3 {
+            println!("Missing required argument: <peer ID>. Syntax `mdns has-node <peer ID>`");
+            return;
+        }
+        let peer_id = match PeerId::from_str(command[2]) {
+            Ok(peer_id) => peer_id,
+            Err(e) => {
+                println!("Error: Failed parsing peer ID `{}`: {}", command[1], e);
+                return;
+            }
+        };
+        let result = manager
+            .executor()
+            .block_on(manager.mdns().has_node(peer_id));
+        println!("Peer {} discovered? {}", peer_id, result)
+    }
+    const TOP_HELP_MESSAGE: &str = r"";
 }

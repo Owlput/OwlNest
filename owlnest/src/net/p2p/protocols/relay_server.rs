@@ -15,7 +15,7 @@ pub fn ev_dispatch(ev: &OutEvent) {
             "Reservation from {} accepted, IsRenew:{}",
             src_peer_id, renewed
         ),
-        ReservationReqAcceptFailed { src_peer_id, error } => info!(
+        ReservationReqAcceptFailed { src_peer_id, error } => debug!(
             "Failed to accept reservation from {}, error:{}",
             src_peer_id, error
         ),
