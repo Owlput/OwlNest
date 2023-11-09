@@ -72,7 +72,6 @@ use libp2p::swarm::{ConnectionHandlerEvent, SubstreamProtocol};
 impl ConnectionHandler for Handler {
     type FromBehaviour = FromBehaviourEvent;
     type ToBehaviour = ToBehaviourEvent;
-    type Error = Error;
     type InboundProtocol = ReadyUpgrade<&'static str>;
     type OutboundProtocol = ReadyUpgrade<&'static str>;
     type InboundOpenInfo = ();
@@ -97,7 +96,6 @@ impl ConnectionHandler for Handler {
             Self::OutboundProtocol,
             Self::OutboundOpenInfo,
             Self::ToBehaviour,
-            Self::Error,
         >,
     > {
         match self.state {
@@ -218,6 +216,7 @@ impl ConnectionHandler for Handler {
             ConnectionEvent::AddressChange(_) | ConnectionEvent::ListenUpgradeError(_) => {}
             ConnectionEvent::LocalProtocolsChange(_) => {}
             ConnectionEvent::RemoteProtocolsChange(_) => {}
+            _ => unimplemented!("New branch not handled!")
         }
     }
 }

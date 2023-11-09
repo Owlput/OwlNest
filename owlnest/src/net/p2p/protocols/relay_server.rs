@@ -15,17 +15,9 @@ pub fn ev_dispatch(ev: &OutEvent) {
             "Reservation from {} accepted, IsRenew:{}",
             src_peer_id, renewed
         ),
-        ReservationReqAcceptFailed { src_peer_id, error } => debug!(
-            "Failed to accept reservation from {}, error:{}",
-            src_peer_id, error
-        ),
         ReservationReqDenied { src_peer_id } => {
             info!("Denied reservation from {}", src_peer_id)
         }
-        ReservationReqDenyFailed { src_peer_id, error } => info!(
-            "Failed to deny reservation from {}, error:{}",
-            src_peer_id, error
-        ),
         ReservationTimedOut { src_peer_id } => {
             info!("Reservation expired for source peer {}", src_peer_id)
         }
@@ -36,36 +28,12 @@ pub fn ev_dispatch(ev: &OutEvent) {
             "Circuit request from {} to peer {} denied",
             src_peer_id, dst_peer_id
         ),
-        CircuitReqDenyFailed {
-            src_peer_id,
-            dst_peer_id,
-            error,
-        } => info!(
-            "Failed to deny circuit request from {} to peer {}, error: {}",
-            src_peer_id, dst_peer_id, error
-        ),
         CircuitReqAccepted {
             src_peer_id,
             dst_peer_id,
         } => debug!(
             "Circuit request from {} to peer {} accepted",
             src_peer_id, dst_peer_id
-        ),
-        CircuitReqOutboundConnectFailed {
-            src_peer_id,
-            dst_peer_id,
-            error,
-        } => info!(
-            "Failed to connect the outbound from {} to {}, error: {}",
-            src_peer_id, dst_peer_id, error
-        ),
-        CircuitReqAcceptFailed {
-            src_peer_id,
-            dst_peer_id,
-            error,
-        } => info!(
-            "Failed to accept circuit request from {} to {}, error: {}",
-            src_peer_id, dst_peer_id, error
         ),
         CircuitClosed {
             src_peer_id,
@@ -75,6 +43,7 @@ pub fn ev_dispatch(ev: &OutEvent) {
             "Circuit from {} to {} closed, error?: {:?}",
             src_peer_id, dst_peer_id, error
         ),
+        _ => {}
     }
 }
 

@@ -141,7 +141,6 @@ impl Default for ExecHandler {
 impl ConnectionHandler for ExecHandler {
     type FromBehaviour = InEvent;
     type ToBehaviour = OutEvent;
-    type Error = Error;
     type InboundProtocol = inbound_upgrade::Upgrade;
     type OutboundProtocol = outbound_upgrade::Upgrade;
     type InboundOpenInfo = ();
@@ -165,7 +164,6 @@ impl ConnectionHandler for ExecHandler {
             Self::OutboundProtocol,
             Self::OutboundOpenInfo,
             Self::ToBehaviour,
-            Self::Error,
         >,
     > {
         match self.state {
@@ -303,6 +301,7 @@ impl ConnectionHandler for ExecHandler {
             ConnectionEvent::AddressChange(_) | ConnectionEvent::ListenUpgradeError(_) => {}
             ConnectionEvent::LocalProtocolsChange(_) => {}
             ConnectionEvent::RemoteProtocolsChange(_) => {}
+            _ => unimplemented!("New branch not covered")
         }
     }
 }

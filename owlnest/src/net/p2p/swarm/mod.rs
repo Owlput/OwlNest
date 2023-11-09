@@ -23,7 +23,7 @@ use self::{manager::{Manager, Rx}, behaviour::BehaviourEvent};
 use super::SwarmConfig;
 
 pub type Swarm = libp2p::Swarm<behaviour::Behaviour>;
-pub(crate) type SwarmEvent = libp2p::swarm::SwarmEvent<BehaviourEvent,<<behaviour::Behaviour as libp2p::swarm::NetworkBehaviour>::ConnectionHandler as libp2p::swarm::ConnectionHandler>::Error>;
+pub(crate) type SwarmEvent = libp2p::swarm::SwarmEvent<BehaviourEvent>;
 
 pub struct Builder {
     config: SwarmConfig,
@@ -136,6 +136,7 @@ async fn handle_swarm_event(ev: &SwarmEvent, swarm: &mut Swarm, ev_tap: &EventTa
             info!("Listener {:?} reported an error {}", listener_id, error)
         }
         SwarmEvent::Dialing { peer_id, .. } => debug!("Dailing peer? {:?}", peer_id),
+        _ => unimplemented!("New branch not covered")
     }
 }
 

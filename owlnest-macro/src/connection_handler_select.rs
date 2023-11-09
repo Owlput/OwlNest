@@ -14,7 +14,6 @@ macro_rules! connection_handler_select {
 
         ::owlnest_macro::generate_event_select!(#[derive(Debug)]FromBehaviourSelect{$($behaviour:<$handler as ::libp2p::swarm::ConnectionHandler>::FromBehaviour,)*});
         ::owlnest_macro::generate_event_select!(#[derive(Debug)]ToBehaviourSelect{$($behaviour:<$handler as ::libp2p::swarm::ConnectionHandler>::ToBehaviour,)*});
-        ::owlnest_macro::generate_error_select_enum!(#[derive(Debug,Clone)]HandlerErrorSelect{$($behaviour:<$handler as ::libp2p::swarm::ConnectionHandler>::Error,)*});
         ::owlnest_macro::generate_inbound_upgrade_select!($($name=>$behaviour:<$handler as ::libp2p::swarm::ConnectionHandler>::InboundProtocol,)*);
         ::owlnest_macro::generate_outbound_upgrade_select!($($name=>$behaviour:<$handler as ::libp2p::swarm::ConnectionHandler>::OutboundProtocol,)*);
         ::owlnest_macro::generate_select_enum!(OutboundOpenInfoSelect{$($behaviour:<$handler as ::libp2p::swarm::ConnectionHandler>::OutboundOpenInfo,)*});
@@ -53,8 +52,6 @@ macro_rules! connection_handler_select {
 
             type ToBehaviour = ToBehaviourSelect;
 
-            type Error = HandlerErrorSelect;
-
             type InboundProtocol = inbound_upgrade_select::UpgradeSelect;
 
             type OutboundProtocol = outbound_upgrade_select::UpgradeSelect;
@@ -79,7 +76,6 @@ macro_rules! connection_handler_select {
                     Self::OutboundProtocol,
                     Self::OutboundOpenInfo,
                     Self::ToBehaviour,
-                    Self::Error,
                 >,
             > {
                 use ::std::task::Poll;
@@ -88,9 +84,6 @@ macro_rules! connection_handler_select {
                     match self.$name.poll(cx) {
                     Poll::Ready(ConnectionHandlerEvent::NotifyBehaviour(event)) => {
                         return Poll::Ready(ConnectionHandlerEvent::NotifyBehaviour(ToBehaviourSelect::$behaviour(event)));
-                    }
-                    Poll::Ready(ConnectionHandlerEvent::Close(event)) => {
-                        return Poll::Ready(ConnectionHandlerEvent::Close(HandlerErrorSelect::$behaviour(event)));
                     }
                     Poll::Ready(ConnectionHandlerEvent::OutboundSubstreamRequest { protocol }) => {
                         return Poll::Ready(ConnectionHandlerEvent::OutboundSubstreamRequest {
@@ -158,6 +151,7 @@ macro_rules! connection_handler_select {
                                 supported_protocols.clone(),
                             ));)*
                     }
+                    _ => unimplemented!("New branch not covered")
                 }
             }
         }

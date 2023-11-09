@@ -1,6 +1,6 @@
 use crate::event_bus::listened_event::Listenable;
 use libp2p::relay::client;
-use tracing::{debug, info};
+use tracing::debug;
 
 /// `Behaviour` of libp2p's `relay` protocol.
 pub use client::Behaviour;
@@ -25,20 +25,6 @@ pub fn ev_dispatch(ev: &client::Event) {
                 relay_peer_id, renewal, limit
             )
         }
-        ReservationReqFailed {
-            relay_peer_id,
-            renewal,
-            error,
-        } => {
-            println!(
-                "Reservation sent to relay {} failed, IsRenewal:{}, error:{:?}",
-                relay_peer_id, renewal, error
-            );
-            info!(
-                "Reservation sent to relay {} failed, IsRenewal:{}, error:{:?}",
-                relay_peer_id, renewal, error
-            )
-        }
         OutboundCircuitEstablished {
             relay_peer_id,
             limit,
@@ -46,23 +32,9 @@ pub fn ev_dispatch(ev: &client::Event) {
             "Outbound circuit to relay {} established, limit:{:?}",
             relay_peer_id, limit
         ),
-        OutboundCircuitReqFailed {
-            relay_peer_id,
-            error,
-        } => info!(
-            "Outbound circuit request to relay {} failed, error:{:?}",
-            relay_peer_id, error
-        ),
         InboundCircuitEstablished { src_peer_id, limit } => debug!(
             "Inbound circuit from source peer {} established, limit:{:?}",
             src_peer_id, limit
-        ),
-        InboundCircuitReqDenied { src_peer_id } => {
-            info!("An inbound circuit from {} was denied", src_peer_id)
-        }
-        InboundCircuitReqDenyFailed { src_peer_id, error } => info!(
-            "Iutbound circuit from source peer {} can't be denied, error:{:?}",
-            src_peer_id, error
         ),
     }
 }

@@ -1,6 +1,6 @@
 use std::{io, num::NonZeroU32};
 
-use super::{behaviour::Behaviour, *};
+use super::*;
 use libp2p::{
     swarm::{derive_prelude::ListenerId, ConnectionError, DialError, ListenError},
     Multiaddr, TransportError,
@@ -35,7 +35,7 @@ pub enum SwarmEvent {
         num_established: u32,
         /// Reason for the disconnection, if it was not a successful
         /// active close.
-        cause: Option<ConnectionError<<<Behaviour as libp2p::swarm::NetworkBehaviour>::ConnectionHandler as libp2p::swarm::ConnectionHandler>::Error>>,
+        cause: Option<ConnectionError>,
     },
     /// A new connection arrived on a listener and is in the process of protocol negotiation.
     ///
@@ -200,6 +200,7 @@ impl TryFrom<super::SwarmEvent> for SwarmEvent {
                 Self::ListenerError { listener_id, error }
             }
             libp2p::swarm::SwarmEvent::Dialing { peer_id, .. } => Self::Dialing(peer_id),
+            _ => unimplemented!("New branch not covered"),
         };
         Ok(ev)
     }

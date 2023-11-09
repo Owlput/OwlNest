@@ -208,6 +208,9 @@ macro_rules! behaviour_select {
                         std::task::Poll::Ready(::libp2p::swarm::derive_prelude::ToSwarm::ExternalAddrExpired(addr))=>{
                             return std::task::Poll::Ready(::libp2p::swarm::derive_prelude::ToSwarm::ExternalAddrExpired(addr));
                         }
+                        std::task::Poll::Ready(_)=>{
+                            unimplemented!("New branch not covered")
+                        }
                         std::task::Poll::Pending => {}
                     }
                 )*

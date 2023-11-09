@@ -112,7 +112,6 @@ impl Default for PushHandler {
 impl ConnectionHandler for PushHandler {
     type FromBehaviour = InEvent;
     type ToBehaviour = OutEvent;
-    type Error = Error;
     type InboundProtocol = inbound_upgrade::Upgrade;
     type OutboundProtocol = outbound_upgrade::Upgrade;
     type InboundOpenInfo = ();
@@ -138,7 +137,6 @@ impl ConnectionHandler for PushHandler {
             Self::OutboundProtocol,
             Self::OutboundOpenInfo,
             Self::ToBehaviour,
-            Self::Error,
         >,
     > {
         match self.state {
@@ -259,6 +257,7 @@ impl ConnectionHandler for PushHandler {
             ConnectionEvent::AddressChange(_) | ConnectionEvent::ListenUpgradeError(_) => {}
             ConnectionEvent::LocalProtocolsChange(_) => {}
             ConnectionEvent::RemoteProtocolsChange(_) => {}
+            _ => unimplemented!("New branch not covered")
         }
     }
 }
