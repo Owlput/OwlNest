@@ -3,7 +3,7 @@ use libp2p::swarm::{ConnectionId, NetworkBehaviour, NotifyHandler, ToSwarm};
 use libp2p::PeerId;
 use std::collections::HashSet;
 use std::{collections::VecDeque, task::Poll};
-use tracing::debug;
+use tracing::trace;
 
 pub struct Behaviour {
     /// Pending events to emit to `Swarm`
@@ -94,7 +94,7 @@ impl NetworkBehaviour for Behaviour {
             }
         }
         if let Some(ev) = self.in_events.pop_front() {
-            debug!("Received event {:#?}", ev);
+            trace!("Received event {:#?}", ev);
             use InEvent::*;
             match ev {
                 QueryAdvertisedPeer(relay) => {

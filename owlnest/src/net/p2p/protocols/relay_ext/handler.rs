@@ -4,7 +4,7 @@ use futures_timer::Delay;
 use libp2p::PeerId;
 use serde::{Deserialize, Serialize};
 use std::{collections::VecDeque, time::Duration};
-use tracing::{debug, warn, trace};
+use tracing::{trace, warn};
 
 #[derive(Debug)]
 pub enum FromBehaviourEvent {
@@ -111,7 +111,6 @@ impl ConnectionHandler for Handler {
         SubstreamProtocol::new(ReadyUpgrade::new(protocol::PROTOCOL_NAME), ())
     }
     fn on_behaviour_event(&mut self, event: Self::FromBehaviour) {
-        debug!("Received event {:#?}", event);
         self.pending_in_events.push_front(event)
     }
     fn connection_keep_alive(&self) -> bool {
@@ -181,7 +180,7 @@ impl ConnectionHandler for Handler {
                         }
                         // Ready
                         Poll::Ready(Ok((stream, rtt))) => {
-                            trace!("Successful IO send with rtt of {}ms",rtt.as_millis());
+                            trace!("Successful IO send with rtt of {}ms", rtt.as_millis());
                             // Free the outbound
                             self.outbound = Some(OutboundState::Idle(stream));
                         }
@@ -208,10 +207,17 @@ impl ConnectionHandler for Handler {
                                 ))
                             }
                             AnswerAdvertisedPeer(result) => {
-                                self.outbound = Some(OutboundState::Busy(protocol::send(stream, Packet::AnswerAdvertisedPeer(result).as_bytes()).boxed(), Delay::new(self.timeout)))
+                                self.outbound = Some(OutboundState::Busy(
+                                    protocol::send(
+                                        stream,
+                                        Packet::AnswerAdvertisedPeer(result).as_bytes(),
+                                    )
+                                    .boxed(),
+                                    Delay::new(self.timeout),
+                                ))
                             }
-                            StartAdvertiseSelf=>{}
-                            StopAdvertiseSelf=>{}
+                            StartAdvertiseSelf => {}
+                            StopAdvertiseSelf => {}
                         }
                     } else {
                         self.outbound = Some(OutboundState::Idle(stream));
@@ -268,7 +274,7 @@ impl ConnectionHandler for Handler {
             ConnectionEvent::AddressChange(_) | ConnectionEvent::ListenUpgradeError(_) => {}
             ConnectionEvent::LocalProtocolsChange(_) => {}
             ConnectionEvent::RemoteProtocolsChange(_) => {}
-            _ => unimplemented!("New branch not covered")
+            _ => unimplemented!("New branch not covered"),
         }
     }
 }

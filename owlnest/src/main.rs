@@ -18,13 +18,23 @@ fn main() {
     setup_logging();
     let ident = get_ident();
     let (ev_bus_handle, ev_tap) = setup_ev_bus(rt.handle());
-    let mgr = rt.block_on(setup_peer(ident.clone(), &ev_bus_handle, ev_tap, rt.handle().clone()));
+    let mgr = rt.block_on(setup_peer(
+        ident.clone(),
+        &ev_bus_handle,
+        ev_tap,
+        rt.handle().clone(),
+    ));
     let shutdown_notifier = std::sync::Arc::new(Notify::const_new());
     cli::setup_interactive_shell(ident.clone(), mgr, shutdown_notifier.clone());
     let _ = rt.block_on(shutdown_notifier.notified());
 }
 
-async fn setup_peer(ident: IdentityUnion, event_bus_handle: &Handle, ev_tap: EventTap, executor:tokio::runtime::Handle) -> Manager {
+async fn setup_peer(
+    ident: IdentityUnion,
+    event_bus_handle: &Handle,
+    ev_tap: EventTap,
+    executor: tokio::runtime::Handle,
+) -> Manager {
     let swarm_config = net::p2p::SwarmConfig {
         local_ident: ident.clone(),
         kad: protocols::kad::Config::default(),
@@ -53,7 +63,7 @@ fn setup_logging() {
     let filter = tracing_subscriber::filter::Targets::new()
         .with_target("owlnest", Level::DEBUG)
         .with_target("rustyline", LevelFilter::ERROR)
-        .with_target("", Level::TRACE);
+        .with_target("", Level::INFO);
     let layer = tracing_subscriber::fmt::Layer::default()
         .with_ansi(false)
         .with_writer(Mutex::new(log_file_handle))

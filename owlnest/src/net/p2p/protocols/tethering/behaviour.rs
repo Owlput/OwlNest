@@ -145,10 +145,7 @@ fn map_exec_out_event(peer_id: PeerId, ev: exec::OutEvent) -> behaviour::OutEven
     match ev {
         RemoteExecReq(op, stamp) => behaviour::OutEvent::Exec(op, stamp),
         Error(e) => behaviour::OutEvent::ExecError(e),
-        Unsupported => {
-            println!("unsupported: exec");
-            behaviour::OutEvent::Unsupported(peer_id, behaviour::Subprotocol::Exec)
-        }
+        Unsupported => behaviour::OutEvent::Unsupported(peer_id, behaviour::Subprotocol::Exec),
         HandleResult(result, id) => behaviour::OutEvent::LocalExec(result, id),
         CallbackResult(result, id) => behaviour::OutEvent::RemoteExecResult(result, id),
     }
@@ -158,7 +155,6 @@ fn map_push_out_event(peer_id: PeerId, ev: push::OutEvent) -> behaviour::OutEven
         push::OutEvent::Message(msg) => behaviour::OutEvent::IncomingNotification(msg),
         push::OutEvent::Error(e) => behaviour::OutEvent::PushError(e),
         push::OutEvent::Unsupported => {
-            println!("unsupported: push");
             behaviour::OutEvent::Unsupported(peer_id, behaviour::Subprotocol::Push)
         }
     }

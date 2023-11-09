@@ -13,8 +13,52 @@ pub fn handle_kad(manager: &Manager, command: Vec<&str>) {
         "bootstrap" => kad_bootstrap(manager),
         "set-mode" => kad_setmode(manager, command),
         "help" => println!("{}", TOP_HELP_MESSAGE),
+        "insert-default" => kad_insert_default(manager),
         _ => println!("Unrecoginzed subcommands. Type \"kad help\" for more information"),
     }
+}
+
+fn kad_insert_default(manager: &Manager) {
+    let result = manager.executor().block_on(manager.kad().insert_node(
+        PeerId::from_str("QmNnooDu7bfjPFoTZYxMNLWUQJyrVwtbZg5gBMjTezGAJN").unwrap(),
+        "/dnsaddr/bootstrap.libp2p.io".parse::<Multiaddr>().unwrap(),
+    ));
+    println!(
+        "{}:{:?}",
+        "QmNnooDu7bfjPFoTZYxMNLWUQJyrVwtbZg5gBMjTezGAJN", result
+    );
+    let result = manager.executor().block_on(manager.kad().insert_node(
+        PeerId::from_str("QmQCU2EcMqAqQPR2i9bChDtGNJchTbq5TbXJJ16u19uLTa").unwrap(),
+        "/dnsaddr/bootstrap.libp2p.io".parse::<Multiaddr>().unwrap(),
+    ));
+    println!(
+        "{}:{:?}",
+        "QmQCU2EcMqAqQPR2i9bChDtGNJchTbq5TbXJJ16u19uLTa", result
+    );
+    let result = manager.executor().block_on(manager.kad().insert_node(
+        PeerId::from_str("QmbLHAnMoJPWSCR5Zhtx6BHJX9KiKNN6tpvbUcqanj75Nb").unwrap(),
+        "/dnsaddr/bootstrap.libp2p.io".parse::<Multiaddr>().unwrap(),
+    ));
+    println!(
+        "{}:{:?}",
+        "QmbLHAnMoJPWSCR5Zhtx6BHJX9KiKNN6tpvbUcqanj75Nb", result
+    );
+    let result = manager.executor().block_on(manager.kad().insert_node(
+        PeerId::from_str("QmcZf59bWwK5XFi76CZX8cbJ4BhTzzA3gU1ZjYZcYW3dwt").unwrap(),
+        "/dnsaddr/bootstrap.libp2p.io".parse::<Multiaddr>().unwrap(),
+    ));
+    println!(
+        "{}:{:?}",
+        "QmcZf59bWwK5XFi76CZX8cbJ4BhTzzA3gU1ZjYZcYW3dwt", result
+    );
+    let result = manager.executor().block_on(manager.kad().insert_node(
+        PeerId::from_str("QmaCpDMGvV2BGHeYERUEnRQAwe3N8SzbUtfsmvsqQLuvuJ").unwrap(),
+        "/ip4/104.131.131.82/tcp/4001".parse::<Multiaddr>().unwrap(),
+    ));
+    println!(
+        "{}:{:?}",
+        "QmaCpDMGvV2BGHeYERUEnRQAwe3N8SzbUtfsmvsqQLuvuJ", result
+    );
 }
 
 /// Handler for `kad lookup` command.

@@ -1,8 +1,8 @@
 use super::{protocol, Config, Error, Message, PROTOCOL_NAME};
 use crate::net::p2p::handler_prelude::*;
 use futures_timer::Delay;
-use std::{collections::VecDeque, time::Duration}; 
-use tracing::{debug, warn};
+use std::{collections::VecDeque, time::Duration};
+use tracing::{trace, warn};
 
 #[derive(Debug)]
 pub enum FromBehaviourEvent {
@@ -58,10 +58,13 @@ impl Handler {
                 self.state = State::Inactive { reported: false };
             }
             e => {
-                warn!(
-                    "Error occurred when negotiating protocol {}: {:?}",
-                    PROTOCOL_NAME, e
-                )
+                let e = format!("{:?}", e);
+                if !e.contains("Timeout") {
+                    warn!(
+                        "Error occurred when negotiating protocol {}: {:?}",
+                        PROTOCOL_NAME, e
+                    )
+                }
             }
         }
     }
@@ -82,7 +85,7 @@ impl ConnectionHandler for Handler {
         SubstreamProtocol::new(ReadyUpgrade::new(PROTOCOL_NAME), ())
     }
     fn on_behaviour_event(&mut self, event: Self::FromBehaviour) {
-        debug!("Received event {:#?}", event);
+        trace!("Received event {:#?}", event);
         self.pending_in_events.push_front(event)
     }
     fn connection_keep_alive(&self) -> bool {
@@ -102,7 +105,9 @@ impl ConnectionHandler for Handler {
             State::Inactive { reported: true } => return Poll::Pending,
             State::Inactive { reported: false } => {
                 self.state = State::Inactive { reported: true };
-                return Poll::Ready(ConnectionHandlerEvent::NotifyBehaviour(ToBehaviourEvent::Unsupported));
+                return Poll::Ready(ConnectionHandlerEvent::NotifyBehaviour(
+                    ToBehaviourEvent::Unsupported,
+                ));
             }
             State::Active => {}
         };
@@ -117,7 +122,9 @@ impl ConnectionHandler for Handler {
                 }
                 Poll::Ready(Ok((stream, bytes))) => {
                     self.inbound = Some(super::protocol::recv(stream).boxed());
-                    let event = ConnectionHandlerEvent::NotifyBehaviour(ToBehaviourEvent::IncomingMessage(bytes));
+                    let event = ConnectionHandlerEvent::NotifyBehaviour(
+                        ToBehaviourEvent::IncomingMessage(bytes),
+                    );
                     return Poll::Ready(event);
                 }
             }
@@ -128,7 +135,8 @@ impl ConnectionHandler for Handler {
                     match task.poll_unpin(cx) {
                         Poll::Pending => {
                             if timer.poll_unpin(cx).is_ready() {
-                                self.pending_out_events.push_back(ToBehaviourEvent::Error(Error::Timeout))
+                                self.pending_out_events
+                                    .push_back(ToBehaviourEvent::Error(Error::Timeout))
                             } else {
                                 // Put the future back
                                 self.outbound = Some(OutboundState::Busy(task, id, timer));
@@ -137,14 +145,16 @@ impl ConnectionHandler for Handler {
                             }
                         }
                         // Ready
-                        Poll::Ready(Ok((stream,_))) => {
-                            self.pending_out_events.push_back(ToBehaviourEvent::SuccessfulSend(id.unwrap()));
+                        Poll::Ready(Ok((stream, _))) => {
+                            self.pending_out_events
+                                .push_back(ToBehaviourEvent::SuccessfulSend(id.unwrap()));
                             // Free the outbound
                             self.outbound = Some(OutboundState::Idle(stream));
                         }
                         // Ready but resolved to an error
                         Poll::Ready(Err(e)) => {
-                            self.pending_out_events.push_back(ToBehaviourEvent::Error(Error::IO(e.to_string())));
+                            self.pending_out_events
+                                .push_back(ToBehaviourEvent::Error(Error::IO(e.to_string())));
                         }
                     }
                 }
@@ -216,7 +226,7 @@ impl ConnectionHandler for Handler {
             ConnectionEvent::AddressChange(_) | ConnectionEvent::ListenUpgradeError(_) => {}
             ConnectionEvent::LocalProtocolsChange(_) => {}
             ConnectionEvent::RemoteProtocolsChange(_) => {}
-            _ => unimplemented!("New branch not handled!")
+            _ => unimplemented!("New branch not handled!"),
         }
     }
 }

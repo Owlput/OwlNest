@@ -4,10 +4,11 @@ use crate::{
 };
 use futures::StreamExt;
 use libp2p::{core::ConnectedPoint, Multiaddr, PeerId};
+use libp2p_swarm::DialError;
 use std::{fmt::Debug, sync::Arc};
 use tokio::select;
 use tokio::sync::oneshot;
-use tracing::{debug, info, warn};
+use tracing::{debug, info, trace, warn};
 
 pub mod behaviour;
 pub mod cli;
@@ -18,7 +19,10 @@ pub mod out_event;
 
 pub use in_event::*;
 
-use self::{manager::{Manager, Rx}, behaviour::BehaviourEvent};
+use self::{
+    behaviour::BehaviourEvent,
+    manager::{Manager, Rx},
+};
 
 use super::SwarmConfig;
 
@@ -54,15 +58,14 @@ impl Builder {
                 .with_tokio()
                 .with_tcp(
                     Default::default(),
-                     libp2p_noise::Config::new,
+                    libp2p_noise::Config::new,
                     libp2p_yamux::Config::default,
                 )
                 .expect("transport upgrade to succeed")
                 .with_quic()
-                .with_relay_client(
-                    libp2p_noise::Config::new,
-                    libp2p_yamux::Config::default,
-                )
+                .with_dns()
+                .expect("upgrade to succeed")
+                .with_relay_client(libp2p_noise::Config::new, libp2p_yamux::Config::default)
                 .expect("transport upgrade to succeed")
                 .with_behaviour(|_key, relay| behaviour::Behaviour {
                     kad: kad::Behaviour::new(ident.get_peer_id(), kad_store),
@@ -74,9 +77,9 @@ impl Builder {
                         self.config.local_ident.get_peer_id(),
                         self.config.relay_server,
                     ),
-                    relay_client:relay,
+                    relay_client: relay,
                     relay_ext: relay_ext::Behaviour::new(),
-                    dcutr: dcutr::Behaviour::new(ident.get_peer_id())
+                    dcutr: dcutr::Behaviour::new(ident.get_peer_id()),
                 })
                 .expect("behaviour incorporation to succeed")
                 .build();
@@ -98,7 +101,6 @@ impl Builder {
 async fn handle_swarm_event(ev: &SwarmEvent, swarm: &mut Swarm, ev_tap: &EventTap) {
     match ev {
         SwarmEvent::Behaviour(event) => handle_behaviour_event(swarm, event, ev_tap).await,
-        SwarmEvent::NewListenAddr { address, .. } => info!("Listening on {:?}", address),
         SwarmEvent::ConnectionEstablished {
             peer_id, endpoint, ..
         } => kad_add(swarm, *peer_id, endpoint.clone()),
@@ -122,21 +124,55 @@ async fn handle_swarm_event(ev: &SwarmEvent, swarm: &mut Swarm, ev_tap: &EventTa
             "Incoming connection error from {} on local address {}, error: {:?}",
             send_back_addr, local_addr, error
         ),
-        SwarmEvent::OutgoingConnectionError { peer_id, error, .. } => info!(
-            "Outgoing connection error to peer {:?}: {:?}",
-            peer_id, error
-        ),
+        SwarmEvent::OutgoingConnectionError { peer_id, error, .. } => {
+            use libp2p::TransportError;
+            if let DialError::Transport(transport_err) = error {
+                let closure =
+                    |err: &(Multiaddr, libp2p::TransportError<std::io::Error>)| match &err.1 {
+                        TransportError::MultiaddrNotSupported(addr) => {
+                            (addr.clone(), "MultiaddrNotSupported".to_string())
+                        }
+                        TransportError::Other(e) => (err.0.clone(), e.kind().to_string()),
+                    };
+                let info = transport_err
+                    .iter()
+                    .map(closure)
+                    .collect::<Vec<(Multiaddr, String)>>();
+                info!("Outgoing connection error: {:?}", info)
+            }
+
+            info!(
+                "Outgoing connection error to peer {:?}: {:?}",
+                peer_id, error
+            );
+        }
+        SwarmEvent::NewListenAddr { address, .. } => info!("Listening on {:?}", address),
         SwarmEvent::ExpiredListenAddr { address, .. } => {
             info!("Expired listen address: {}", address)
         }
         SwarmEvent::ListenerClosed {
             addresses, reason, ..
-        } => info!("Listener on address {:?} closed: {:?}", addresses, reason),
+        } => trace!("Listener on address {:?} closed: {:?}", addresses, reason),
         SwarmEvent::ListenerError { listener_id, error } => {
             info!("Listener {:?} reported an error {}", listener_id, error)
         }
-        SwarmEvent::Dialing { peer_id, .. } => debug!("Dailing peer? {:?}", peer_id),
-        _ => unimplemented!("New branch not covered")
+        SwarmEvent::Dialing { peer_id, .. } => trace!("Dailing peer? {:?}", peer_id),
+        SwarmEvent::NewExternalAddrCandidate { address } => {
+            info!(
+                "A possible external address has been discovered: {}",
+                address
+            );
+        }
+        SwarmEvent::ExternalAddrConfirmed { address } => {
+            info!(
+                "A possible external address has been confirmed: {}",
+                address
+            );
+        }
+        SwarmEvent::ExternalAddrExpired { address } => {
+            debug!("A possible external address has expired: {}", address);
+        }
+        _ => unimplemented!("New branch not covered"),
     }
 }
 
@@ -204,7 +240,7 @@ async fn handle_behaviour_event(swarm: &mut Swarm, ev: &BehaviourEvent, ev_tap: 
         Kad(ev) => kad::ev_dispatch(ev, ev_tap).await,
         Identify(ev) => identify::ev_dispatch(ev),
         Mdns(ev) => mdns::ev_dispatch(ev, swarm),
-        Messaging(ev) => messaging::ev_dispatch(ev,ev_tap).await,
+        Messaging(ev) => messaging::ev_dispatch(ev, ev_tap).await,
         Tethering(ev) => tethering::ev_dispatch(ev),
         RelayServer(ev) => relay_server::ev_dispatch(ev),
         RelayClient(ev) => relay_client::ev_dispatch(ev),

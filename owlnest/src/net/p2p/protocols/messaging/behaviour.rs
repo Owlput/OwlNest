@@ -3,7 +3,6 @@ use libp2p::swarm::{ConnectionId, NetworkBehaviour, NotifyHandler, ToSwarm};
 use libp2p::PeerId;
 use std::collections::HashSet;
 use std::{collections::VecDeque, task::Poll};
-use tracing::debug;
 
 pub struct Behaviour {
     config: Config,
@@ -76,7 +75,7 @@ impl NetworkBehaviour for Behaviour {
             return Poll::Ready(ToSwarm::GenerateEvent(ev));
         }
         if let Some(ev) = self.in_events.pop_back() {
-            debug!("Received event {:#?}", ev);
+            trace!("Received event {:#?}", ev);
             use InEvent::*;
             match ev {
                 SendMessage(target, msg, id) => {

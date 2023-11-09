@@ -57,7 +57,6 @@ pub fn setup_ev_bus(rt: &runtime::Handle) -> (Handle, EventTap) {
                     };
                 }
                 Some(ev) = ev_rx.recv()=>{
-                    debug!("An event was sent to tap {:?}",ev);
                     if let Some(listener) = listener_store.get(&ev.kind()){
                         let _ = listener.send(ev);
                     }

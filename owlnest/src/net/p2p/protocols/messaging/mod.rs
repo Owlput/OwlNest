@@ -7,7 +7,7 @@ use std::{
     },
     time::Duration,
 };
-use tracing::{debug, info, warn};
+use tracing::{debug, trace, warn};
 
 mod behaviour;
 mod cli;
@@ -54,15 +54,15 @@ pub async fn ev_dispatch(ev: &OutEvent, ev_tap: &EventTap) {
         IncomingMessage { .. } => {
             println!("Incoming message: {:?}\n", ev);
         }
-        Error(e) => warn!("{:#?}", e),
+        Error(e) => debug!("{:#?}", e),
         Unsupported(peer) => {
-            info!("Peer {} doesn't support /owlput/messaging/0.0.1", peer)
+            trace!("Peer {} doesn't support /owlput/messaging/0.0.1", peer)
         }
-        InboundNegotiated(peer) => debug!(
+        InboundNegotiated(peer) => trace!(
             "Successfully negotiated inbound connection from peer {}",
             peer
         ),
-        OutboundNegotiated(peer) => debug!(
+        OutboundNegotiated(peer) => trace!(
             "Successfully negotiated outbound connection to peer {}",
             peer
         ),
@@ -113,7 +113,6 @@ impl Handle {
         self.sender.send(ev).await.expect("send to succeed");
         let fut = single_value_filter!(listener::<OutEvent>, |ev| {
             if let OutEvent::SuccessfulSend(id) = &ev {
-                debug!("received target event with id {}", *id);
                 return *id == op_id;
             };
             if let OutEvent::Error(Error::PeerNotFound(ev_peer_id)) = &ev {
