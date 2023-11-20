@@ -4,11 +4,11 @@ use libp2p::{
 };
 use std::str::FromStr;
 use tokio::sync::{mpsc, oneshot};
-use tracing::{debug, info, trace, warn};
+use tracing::{debug, info, trace};
 
 use crate::{
-    event_bus::{listened_event::Listenable, Handle as EvHandle},
-    single_value_filter, with_timeout,
+    net::p2p::swarm::{behaviour::BehaviourEvent, EventSender, SwarmEvent},
+    with_timeout,
 };
 
 pub use kad::Config;
@@ -26,18 +26,31 @@ pub(crate) enum InEvent {
     SetMode(Option<Mode>),
 }
 
+macro_rules! event_op {
+    ($listener:ident,$pattern:pat,{$($ops:tt)+}) => {
+        loop{
+            let ev = crate::handle_listener_result!($listener);
+            if let SwarmEvent::Behaviour(BehaviourEvent::Kad($pattern)) = ev.as_ref() {
+                $($ops)+
+            } else {
+                continue;
+            }
+        }
+    };
+}
+
 #[derive(Debug, Clone)]
 pub struct Handle {
     sender_swarm: mpsc::Sender<InEvent>,
-    event_bus_handle: EvHandle,
+    event_tx: EventSender,
 }
 impl Handle {
-    pub(crate) fn new(buffer: usize, ev_bus_handle: &EvHandle) -> (Self, mpsc::Receiver<InEvent>) {
+    pub(crate) fn new(buffer: usize, event_tx: &EventSender) -> (Self, mpsc::Receiver<InEvent>) {
         let (tx, rx) = mpsc::channel(buffer);
         (
             Self {
                 sender_swarm: tx,
-                event_bus_handle: ev_bus_handle.clone(),
+                event_tx: event_tx.clone(),
             },
             rx,
         )
@@ -58,11 +71,7 @@ impl Handle {
         rx.await.expect("callback to succeed")
     }
     pub async fn lookup(&self, peer_id: PeerId) -> Vec<kad::QueryResult> {
-        let mut listener = self
-            .event_bus_handle
-            .add(OutEvent::as_event_identifier())
-            .await
-            .expect("listener registration to succeed");
+        let mut listener = self.event_tx.subscribe();
         let (callback_tx, callback_rx) = oneshot::channel();
         self.sender_swarm
             .send(InEvent::PeerLookup(peer_id, callback_tx))
@@ -70,58 +79,35 @@ impl Handle {
             .expect("sending event to succeed");
         let query_id = callback_rx.await.expect("callback to succeed");
         let mut results = Vec::new();
-        loop {
-            match listener.recv().await {
-                Ok(ev) => {
-                    let ev_ref = ev.downcast_ref::<OutEvent>().expect("downcast to succeed");
-                    if let OutEvent::OutboundQueryProgressed {
-                        id, result, step, ..
-                    } = ev_ref
-                    {
-                        if query_id != *id {
-                            continue;
-                        }
-                        results.push(result.clone());
-                        if step.last {
-                            drop(listener);
-                            break;
-                        }
-                    }
-                }
-                Err(e) => {
-                    warn!("{:?}", e);
-                    break;
-                }
+        event_op!(listener,OutEvent::OutboundQueryProgressed { id, result, step,.. },{
+            if query_id != *id {
+                continue;
             }
-        }
+            results.push(result.clone());
+            if step.last {
+                drop(listener);
+                break;
+            }
+        });
         results
     }
     async fn set_mode(&self, mode: Option<Mode>) -> Result<Mode, ()> {
         let ev = InEvent::SetMode(mode);
-        let mut listener = self
-            .event_bus_handle
-            .add(OutEvent::as_event_identifier())
-            .await
-            .expect("listener registration to succeed");
+        let mut listener = self.event_tx.subscribe();
         self.sender_swarm.send(ev).await.expect("send to succeed");
-        let fut = single_value_filter!(listener::<OutEvent>, |ev| {
-            if let OutEvent::ModeChanged { .. } = ev {
-                return true;
-            }
-            false
-        });
-        let ev = match with_timeout!(fut, 10) {
-            Ok(result) => result.expect("listen to succeed"),
+        let fut = async move {
+            event_op!(listener,OutEvent::ModeChanged { new_mode },{
+                break new_mode.clone();
+            })
+        };
+        match with_timeout!(fut, 10) {
+            Ok(result) => return Ok(result),
             Err(_) => return Err(()),
         };
-        if let OutEvent::ModeChanged { new_mode } = ev {
-            return Ok(new_mode);
-        }
-        unreachable!()
     }
 }
 
-pub(crate) fn map_in_event(ev: InEvent, behav: &mut Behaviour, _ev_bus_handle: &EvHandle) {
+pub(crate) fn map_in_event(ev: InEvent, behav: &mut Behaviour) {
     use InEvent::*;
 
     match ev {
@@ -141,7 +127,7 @@ pub(crate) fn map_in_event(ev: InEvent, behav: &mut Behaviour, _ev_bus_handle: &
     }
 }
 
-pub async fn ev_dispatch(ev: &OutEvent, ev_tap: &crate::event_bus::bus::EventTap) {
+pub fn ev_dispatch(ev: &OutEvent) {
     use kad::Event::*;
     match ev{
         InboundRequest { request } => info!("Incoming request: {:?}",request),
@@ -149,12 +135,5 @@ pub async fn ev_dispatch(ev: &OutEvent, ev_tap: &crate::event_bus::bus::EventTap
         RoutingUpdated { peer, is_new_peer, addresses, bucket_range, old_peer } => trace!("Peer {} updated the table, is new peer: {}, addresses: {:?}, bucket range: {:?}, old peer?: {:?}",peer, is_new_peer,addresses,bucket_range,old_peer),
         ModeChanged { new_mode } => info!("The mode of this peer has been changed to {}",new_mode),
         _=>{}
-    }
-    ev_tap.send(ev.clone().into_listened()).await.unwrap();
-}
-
-impl Listenable for OutEvent {
-    fn as_event_identifier() -> String {
-        PROTOCOL_NAME.to_string()
     }
 }

@@ -3,7 +3,7 @@ use libp2p::swarm::{ConnectionId, NetworkBehaviour, NotifyHandler, ToSwarm};
 use libp2p::PeerId;
 use std::collections::HashSet;
 use std::{collections::VecDeque, task::Poll};
-use tracing::trace;
+use tracing::{debug, trace};
 
 pub struct Behaviour {
     /// Pending events to emit to `Swarm`
@@ -29,6 +29,18 @@ impl Behaviour {
     pub fn push_event(&mut self, msg: InEvent) {
         self.in_events.push_front(msg)
     }
+    pub fn is_advertising(&self, peer: &PeerId) -> bool {
+        self.advertised_peers.contains(peer)
+    }
+    pub fn advertised_peers(&self) -> &HashSet<PeerId> {
+        &self.advertised_peers
+    }
+    pub fn set_provider_status(&mut self, status: bool) {
+        self.is_providing = status
+    }
+    pub fn get_provider_status(&self) -> bool {
+        self.is_providing
+    }
 }
 
 impl NetworkBehaviour for Behaviour {
@@ -50,13 +62,11 @@ impl NetworkBehaviour for Behaviour {
             IncomingAdvertiseReq(bool) => {
                 if bool {
                     if self.advertised_peers.insert(peer_id) {
-                        self.pending_out_events
-                            .push_back(OutEvent::StartedAdvertising(peer_id));
+                        debug!("Now advertising peer {}", peer_id);
                     }
                 } else {
                     if self.advertised_peers.remove(&peer_id) {
-                        self.pending_out_events
-                            .push_back(OutEvent::StoppedAdvertising(peer_id))
+                        debug!("Stopped advertising peer {}", peer_id);
                     }
                 };
             }
@@ -65,17 +75,6 @@ impl NetworkBehaviour for Behaviour {
                 list: result,
             }),
             Error(e) => self.pending_out_events.push_front(OutEvent::Error(e)),
-            Unsupported => self
-                .pending_out_events
-                .push_front(OutEvent::Unsupported(peer_id)),
-            InboundNegotiated => {
-                self.pending_out_events
-                    .push_back(OutEvent::InboundNegotiated(peer_id));
-            }
-            OutboundNegotiated => {
-                self.pending_out_events
-                    .push_back(OutEvent::OutboundNegotiated(peer_id));
-            }
         }
     }
     fn poll(
@@ -104,23 +103,9 @@ impl NetworkBehaviour for Behaviour {
                         event: handler::FromBehaviourEvent::QueryAdvertisedPeer,
                     })
                 }
-                QueryProviderStatus => {
-                    let status = if self.is_providing {
-                        OutEvent::StartedProviding
-                    } else {
-                        OutEvent::StoppedProviding
-                    };
-                    self.pending_out_events.push_back(status)
-                }
-                StartProviding => {
-                    self.is_providing = true;
-                    self.pending_out_events
-                        .push_back(OutEvent::StartedProviding)
-                }
-                StopProviding => {
-                    self.is_providing = false;
-                    self.pending_out_events
-                        .push_back(OutEvent::StoppedProviding)
+                QueryProviderState =>{
+                    return Poll::Ready(ToSwarm::GenerateEvent(OutEvent::ProviderState(self.is_providing))
+                    )
                 }
                 StartAdvertiseSelf(relay) => {
                     return Poll::Ready(ToSwarm::NotifyHandler {
@@ -135,6 +120,12 @@ impl NetworkBehaviour for Behaviour {
                         handler: NotifyHandler::Any,
                         event: handler::FromBehaviourEvent::StopAdvertiseSelf,
                     });
+                }
+                SetProviderState(status) => {
+                    self.set_provider_status(status);
+                    return Poll::Ready(ToSwarm::GenerateEvent(OutEvent::ProviderState(
+                        status,
+                    )));
                 }
             }
         }

@@ -70,9 +70,9 @@ macro_rules! generate_manager {
             $(pub $behaviour_name:$behaviour_name::Handle,)*
         }
         impl HandleBundle{
-            pub fn new(buffer: usize, event_bus_handle:&crate::event_bus::Handle)->(Self,RxBundle){
+            pub fn new(buffer: usize,event_tx:&EventSender)->(Self,RxBundle){
                 let swarm = SwarmHandle::new(buffer);
-                $(let $behaviour_name = $behaviour_name::Handle::new(buffer, event_bus_handle);)*
+                $(let $behaviour_name = $behaviour_name::Handle::new(buffer,event_tx);)*
                 (Self{
                     swarm:swarm.0.clone(),
                     $($behaviour_name:$behaviour_name.0.clone(),)*
@@ -86,12 +86,13 @@ macro_rules! generate_manager {
         pub struct Manager{
             handle_bundle:Arc<HandleBundle>,
             executor:tokio::runtime::Handle,
+            event_out:tokio::sync::broadcast::Sender<Arc<super::SwarmEvent>>,
         }
 
         impl Manager{
-            pub(crate) fn new(handle_bundle:Arc<HandleBundle>,executor:tokio::runtime::Handle)->Self
+            pub(crate) fn new(handle_bundle:Arc<HandleBundle>,executor:tokio::runtime::Handle,event_out:tokio::sync::broadcast::Sender<Arc<super::SwarmEvent>>)->Self
             {
-                Self { handle_bundle, executor }
+                Self { handle_bundle, executor, event_out}
             }
             pub fn executor(&self)->&tokio::runtime::Handle{
                 &self.executor
@@ -99,12 +100,17 @@ macro_rules! generate_manager {
             pub fn swarm(&self)-> &SwarmHandle{
                 &self.handle_bundle.swarm
             }
+            pub fn event_subscriber(&self) -> tokio::sync::broadcast::Sender<Arc<super::SwarmEvent>>{
+                self.event_out.clone()
+            }
             $(pub fn $behaviour_name(&self)->&$behaviour_name::Handle{
                 &self.handle_bundle.$behaviour_name
             })*
         }
     };
 }
+
+use super::EventSender;
 
 generate_manager! {
     kad:Kad,

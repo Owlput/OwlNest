@@ -3,8 +3,9 @@ use serde::{Deserialize, Serialize};
 use tokio::sync::mpsc;
 
 use crate::{
-    event_bus::{self, listened_event::Listenable,},
-    with_timeout, single_value_filter,
+    handle_listener_result,
+    net::p2p::swarm::{behaviour::BehaviourEvent, EventSender, SwarmEvent},
+    with_timeout,
 };
 
 pub mod behaviour;
@@ -17,19 +18,8 @@ pub use behaviour::Behaviour;
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum OutEvent {
     QueryAnswered { from: PeerId, list: Vec<PeerId> },
-    StoppedProviding,
-    StartedProviding,
-    StartedAdvertising(PeerId),
-    StoppedAdvertising(PeerId),
+    ProviderState(bool),
     Error(Error),
-    Unsupported(PeerId),
-    InboundNegotiated(PeerId),
-    OutboundNegotiated(PeerId),
-}
-impl Listenable for OutEvent {
-    fn as_event_identifier() -> String {
-        format!("{}:OutEvent", protocol::PROTOCOL_NAME)
-    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -69,10 +59,9 @@ mod protocol {
 
 #[derive(Debug)]
 pub enum InEvent {
+    SetProviderState(bool),
+    QueryProviderState,
     QueryAdvertisedPeer(PeerId),
-    QueryProviderStatus,
-    StartProviding,
-    StopProviding,
     StartAdvertiseSelf(PeerId),
     StopAdvertiseSelf(PeerId),
 }
@@ -80,89 +69,100 @@ pub enum InEvent {
 #[derive(Debug, Clone)]
 pub struct Handle {
     sender: mpsc::Sender<InEvent>,
-    event_bus_handle: event_bus::Handle,
+    event_tx: EventSender,
 }
 impl Handle {
-    pub fn new(
-        buffer: usize,
-        event_bus_handle: &crate::event_bus::Handle,
-    ) -> (Self, mpsc::Receiver<InEvent>) {
+    pub fn new(buffer: usize, event_tx: &EventSender) -> (Self, mpsc::Receiver<InEvent>) {
         let (tx, rx) = mpsc::channel(buffer);
         (
             Self {
                 sender: tx,
-                event_bus_handle: event_bus_handle.clone(),
+                event_tx: event_tx.clone(),
             },
             rx,
         )
     }
     pub async fn query_advertised_peer(&self, relay: PeerId) -> Result<Vec<PeerId>, Error> {
-        let mut listener = self
-            .event_bus_handle
-            .add(OutEvent::as_event_identifier())
-            .await
-            .map_err(|_| Error::Channel)?;
+        let mut listener = self.event_tx.subscribe();
         let handle = tokio::spawn(async move {
-            while let Ok(v) = listener.recv().await {
-                if let OutEvent::QueryAnswered { list, .. } =
-                    v.downcast_ref::<OutEvent>().expect("downcast to succeed")
+            use std::time::Duration;
+            let mut timer = futures_timer::Delay::new(Duration::from_secs(10));
+            loop {
+                tokio::select! {
+                    ev = listener.recv()=>{
+                        use tokio::sync::broadcast::error::RecvError;
+                        use tracing::warn;
+                        match ev{
+                            Ok(v) => {
+                                if let SwarmEvent::Behaviour(BehaviourEvent::RelayExt(OutEvent::QueryAnswered{from,list})) = v.as_ref(){
+                                    if *from == relay{
+                                        return Ok(list.clone())
+                                    }
+                                }
+                            },
+                            Err(e) => {
+                                match e {
+                                    RecvError::Closed => unreachable!("At least one sender should exist."),
+                                    RecvError::Lagged(count) => warn!(
+                                        "A broadcast recever is too slow! lagging {} message behind",
+                                        count
+                                    ),
+                                }
+                                continue;
+                            }
+                        }
+                    }
+                    _ = &mut timer => {
+                        return Err(Error::Timeout)
+                    }
+                }
+                let ev = handle_listener_result!(listener);
+                if let SwarmEvent::Behaviour(BehaviourEvent::RelayExt(OutEvent::QueryAnswered {
+                    from,
+                    list,
+                })) = ev.as_ref()
                 {
-                    return Ok(list.clone());
+                    if *from == relay {
+                        return Ok(list.clone());
+                    }
                 }
             }
-            Err(Error::Channel)
         });
         let ev = InEvent::QueryAdvertisedPeer(relay);
         self.sender.send(ev).await.unwrap();
-        handle.await.expect("listen to succeed")
+        handle.await.expect("task to complete")
     }
-    pub async fn start_providing(&self) {
-        let mut listener = self
-            .event_bus_handle
-            .add(OutEvent::as_event_identifier())
-            .await
-            .expect("listener regsitration to succeed");
-        let fut = single_value_filter!(listener::<OutEvent>, |v|{
-            matches!(v, OutEvent::StartedProviding)
-        });
-        let ev = InEvent::StartProviding;
+    pub async fn set_provider_state(&self, state: bool) -> bool {
+        let mut listener = self.event_tx.subscribe();
+        let fut = async move {
+            loop {
+                let ev = handle_listener_result!(listener);
+                if let SwarmEvent::Behaviour(BehaviourEvent::RelayExt(OutEvent::ProviderState(
+                    status,
+                ))) = ev.as_ref()
+                {
+                    return *status;
+                }
+            }
+        };
+        let ev = InEvent::SetProviderState(state);
         self.sender.send(ev).await.expect("send to succeed");
-        with_timeout!(fut, 10)
-            .expect("request to finish in 10 seconds")
-            .expect("listen to succeed");
-    }
-    pub async fn stop_providing(&self) {
-        let mut listener = self
-            .event_bus_handle
-            .add(OutEvent::as_event_identifier())
-            .await
-            .expect("listener regsitration to succeed");
-        let fut = single_value_filter!(listener::<OutEvent>, |v|{
-            matches!(v, OutEvent::StoppedProviding)
-        });
-        let ev = InEvent::StopProviding;
-        self.sender.send(ev).await.expect("send to succeed");
-        with_timeout!(fut, 10)
-            .expect("request to finish in 10 seconds")
-            .expect("listen to succeed");
+        with_timeout!(fut, 10).expect("future to finish in 10s")
     }
     pub async fn provider_status(&self) -> bool {
-        let mut listener = self
-            .event_bus_handle
-            .add(OutEvent::as_event_identifier())
-            .await
-            .expect("listener regsitration to succeed");
-        let fut = single_value_filter!(listener::<OutEvent>,|v|{
-            matches!(v, OutEvent::StartedProviding | OutEvent::StoppedProviding)
-        });
-        let ev = InEvent::QueryProviderStatus;
+        let mut listener = self.event_tx.subscribe();
+        let fut = async move {
+            loop {
+                if let SwarmEvent::Behaviour(BehaviourEvent::RelayExt(OutEvent::ProviderState(
+                    state,
+                ))) = handle_listener_result!(listener).as_ref()
+                {
+                    return *state;
+                };
+            }
+        };
+        let ev = InEvent::QueryProviderState;
         self.sender.send(ev).await.expect("send to succeed");
-        if let OutEvent::StartedProviding = with_timeout!(fut, 10)
-            .expect("listen to succeed").unwrap()
-        {
-            return true;
-        }
-        false
+        with_timeout!(fut,10).expect("future to finish in 10s")
     }
-    // TODO: rewrite with macro
 }

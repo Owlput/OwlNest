@@ -1,3 +1,7 @@
+use crate::{
+    handle_listener_result,
+    net::p2p::swarm::{behaviour::BehaviourEvent, EventSender, SwarmEvent}
+};
 use libp2p::PeerId;
 use serde::{Deserialize, Serialize};
 use std::{
@@ -38,18 +42,9 @@ pub enum OutEvent {
     InboundNegotiated(PeerId),
     OutboundNegotiated(PeerId),
 }
-impl Listenable for OutEvent {
-    fn as_event_identifier() -> String {
-        format!("{}:OutEvent", PROTOCOL_NAME)
-    }
-}
 
-pub async fn ev_dispatch(ev: &OutEvent, ev_tap: &EventTap) {
+pub fn ev_dispatch(ev: &OutEvent) {
     use OutEvent::*;
-    ev_tap
-        .send(ev.clone().into_listened())
-        .await
-        .expect("Event sent to tap to succeed");
     match ev {
         IncomingMessage { .. } => {
             println!("Incoming message: {:?}\n", ev);
@@ -77,26 +72,20 @@ mod protocol {
 
 use tokio::sync::mpsc;
 
-use crate::{
-    event_bus::{bus::EventTap, listened_event::Listenable},
-    single_value_filter, with_timeout,
-};
+use crate::with_timeout;
 #[derive(Debug, Clone)]
 pub struct Handle {
     sender: mpsc::Sender<InEvent>,
-    event_bus_handle: crate::event_bus::Handle,
+    event_tx: EventSender,
     counter: Arc<AtomicU64>,
 }
 impl Handle {
-    pub fn new(
-        buffer: usize,
-        event_bus_handle: &crate::event_bus::Handle,
-    ) -> (Self, mpsc::Receiver<InEvent>) {
+    pub fn new(buffer: usize, event_tx: &EventSender) -> (Self, mpsc::Receiver<InEvent>) {
         let (tx, rx) = mpsc::channel(buffer);
         (
             Self {
                 sender: tx,
-                event_bus_handle: event_bus_handle.clone(),
+                event_tx:event_tx.clone(),
                 counter: Arc::new(AtomicU64::new(1)),
             },
             rx,
@@ -105,28 +94,30 @@ impl Handle {
     pub async fn send_message(&self, peer_id: PeerId, message: Message) -> Result<(), Error> {
         let op_id = self.counter.fetch_add(1, Ordering::SeqCst);
         let ev = InEvent::SendMessage(peer_id, message, op_id);
-        let mut listener = self
-            .event_bus_handle
-            .add(OutEvent::as_event_identifier())
-            .await
-            .expect("listener registartion to succeed");
+        let listener = self.event_tx.subscribe();
         self.sender.send(ev).await.expect("send to succeed");
-        let fut = single_value_filter!(listener::<OutEvent>, |ev| {
-            if let OutEvent::SuccessfulSend(id) = &ev {
-                return *id == op_id;
-            };
-            if let OutEvent::Error(Error::PeerNotFound(ev_peer_id)) = &ev {
-                return *ev_peer_id == peer_id;
-            };
-            false
-        });
-        match with_timeout!(fut, 10) {
-            Ok(v) => {
-                if let OutEvent::Error(e) = v.expect("listen to succeed") {
-                    return Err(e);
+        let fut = async move {
+            let mut listener = listener;
+            loop {
+                let ev = handle_listener_result!(listener);
+                if let SwarmEvent::Behaviour(BehaviourEvent::Messaging(ev)) = ev.as_ref() {
+                    match ev {
+                        OutEvent::Error(e) => {
+                            if let Error::PeerNotFound(peer) = e {
+                                if *peer == peer_id {
+                                    return Err(e.clone());
+                                }
+                            }
+                        }
+                        OutEvent::SuccessfulSend(id) if *id == op_id => return Ok(()),
+                        _ => {}
+                    }
+                    continue;
                 }
-                Ok(())
             }
+        };
+        match with_timeout!(fut, 10) {
+            Ok(v) => v,
             Err(_) => {
                 warn!("a timeout reached for a timed future");
                 Err(Error::Timeout)

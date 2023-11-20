@@ -23,7 +23,6 @@ macro_rules! behaviour_select {
 
         generate_select_struct!(Behaviour{$($name:$name::Behaviour,)*});
 
-        const EVENT_IDENT:&str = "swarmEvent";
         generate_event_select!(
             #[derive(Debug)]
             BehaviourEvent{

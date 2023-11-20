@@ -140,22 +140,18 @@ impl NetworkBehaviour for Behaviour {
     }
 }
 
-fn map_exec_out_event(peer_id: PeerId, ev: exec::OutEvent) -> behaviour::OutEvent {
+fn map_exec_out_event(_peer_id: PeerId, ev: exec::OutEvent) -> behaviour::OutEvent {
     use exec::OutEvent::*;
     match ev {
         RemoteExecReq(op, stamp) => behaviour::OutEvent::Exec(op, stamp),
         Error(e) => behaviour::OutEvent::ExecError(e),
-        Unsupported => behaviour::OutEvent::Unsupported(peer_id, behaviour::Subprotocol::Exec),
         HandleResult(result, id) => behaviour::OutEvent::LocalExec(result, id),
         CallbackResult(result, id) => behaviour::OutEvent::RemoteExecResult(result, id),
     }
 }
-fn map_push_out_event(peer_id: PeerId, ev: push::OutEvent) -> behaviour::OutEvent {
+fn map_push_out_event(_peer_id: PeerId, ev: push::OutEvent) -> behaviour::OutEvent {
     match ev {
         push::OutEvent::Message(msg) => behaviour::OutEvent::IncomingNotification(msg),
         push::OutEvent::Error(e) => behaviour::OutEvent::PushError(e),
-        push::OutEvent::Unsupported => {
-            behaviour::OutEvent::Unsupported(peer_id, behaviour::Subprotocol::Push)
-        }
     }
 }

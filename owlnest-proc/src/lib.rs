@@ -1,7 +1,6 @@
 use proc_macro::TokenStream;
 use quote::quote;
 
-
 #[proc_macro_attribute]
 pub fn impl_stamp(_attr: TokenStream, item: TokenStream) -> TokenStream {
     let ast: syn::DeriveInput = syn::parse(item).unwrap();

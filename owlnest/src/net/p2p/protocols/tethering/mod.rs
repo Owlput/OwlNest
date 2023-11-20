@@ -30,8 +30,12 @@ pub use behaviour::Behaviour;
 pub use error::Error;
 pub use subprotocols::Subprotocol;
 
-use crate::{event_bus::listened_event::Listenable, with_timeout, single_value_filter};
 use self::subprotocols::exec::OpResult;
+use crate::{
+    handle_listener_result,
+    net::p2p::swarm::{SwarmEvent,behaviour::BehaviourEvent, EventSender},
+    with_timeout,
+};
 
 /// A placeholder struct waiting to be used for interface consistency.
 #[derive(Debug, Default)]
@@ -54,12 +58,6 @@ pub enum OutEvent {
     IncomingNotification(String),
     ExecError(exec::handler::Error),
     PushError(push::handler::Error),
-    Unsupported(PeerId, Subprotocol),
-}
-impl Listenable for OutEvent {
-    fn as_event_identifier() -> String {
-        "{/owlnest/tethering/0.0.1}:OutEvent".into()
-    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -79,19 +77,16 @@ pub fn ev_dispatch(_ev: &OutEvent) {}
 #[derive(Debug, Clone)]
 pub struct Handle {
     sender: mpsc::Sender<InEvent>,
-    event_bus_handle: crate::event_bus::Handle,
+    event_tx: EventSender,
     counter: Arc<AtomicU64>,
 }
 impl Handle {
-    pub(crate) fn new(
-        buffer: usize,
-        event_bus_handle: &crate::event_bus::Handle,
-    ) -> (Self, mpsc::Receiver<InEvent>) {
+    pub(crate) fn new(buffer: usize, event_tx: &EventSender) -> (Self, mpsc::Receiver<InEvent>) {
         let (tx, rx) = mpsc::channel(buffer);
         (
             Self {
                 sender: tx,
-                event_bus_handle: event_bus_handle.clone(),
+                event_tx: event_tx.clone(),
                 counter: Arc::new(AtomicU64::new(1)),
             },
             rx,
@@ -102,31 +97,21 @@ impl Handle {
         let ev_id = self.counter.fetch_add(1, Ordering::SeqCst);
         let ev = InEvent::LocalExec(TetheringOp::Trust(peer_id), ev_id);
         self.sender.send(ev).await.expect("send to succeed");
-        let mut listener = self
-            .event_bus_handle
-            .add(OutEvent::as_event_identifier())
-            .await
-            .expect("listener registration to succeed");
-        let fut = single_value_filter!(
-            listener::<OutEvent>,
-            |v| {
-                if let OutEvent::LocalExec(_, id) = v {
-                    if *id != ev_id {
-                        return false;
+        let mut listener = self.event_tx.subscribe();
+        let fut = async move {
+            loop {
+                if let SwarmEvent::Behaviour(BehaviourEvent::Tethering(OutEvent::LocalExec(
+                    result,
+                    id,
+                ))) = handle_listener_result!(listener).as_ref()
+                {
+                    if *id == ev_id {
+                        return result.clone();
                     }
-                    return true;
-                }
-                false
-            },
-            |ev| {
-                if let OutEvent::LocalExec(result, _) = ev {
-                    result.clone()
-                } else {
-                    unreachable!()
                 }
             }
-        );
-        with_timeout!(fut, 10).expect("Operation to finish in 10s")
+        };
+        with_timeout!(fut, 10).expect("future to finish in 10s")
     }
 
     pub async fn untrust(&self, peer_id: PeerId) -> Result<(), ()> {

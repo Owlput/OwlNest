@@ -14,7 +14,7 @@ fn handle_provider(manager: &Manager, command: Vec<&str>) {
         "start" => {
             manager
                 .executor()
-                .block_on(manager.relay_ext().start_providing());
+                .block_on(manager.relay_ext().set_provider_state(true));
             println!("relay_ext is set to provide advertised peers");
         }
         "stop" => {}

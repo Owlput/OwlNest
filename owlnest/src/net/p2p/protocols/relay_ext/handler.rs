@@ -19,9 +19,6 @@ pub enum ToBehaviourEvent {
     QueryAnswered(Vec<PeerId>),
     IncomingAdvertiseReq(bool),
     Error(Error),
-    Unsupported,
-    InboundNegotiated,
-    OutboundNegotiated,
 }
 
 pub enum State {
@@ -130,9 +127,6 @@ impl ConnectionHandler for Handler {
             State::Inactive { reported: true } => return Poll::Pending,
             State::Inactive { reported: false } => {
                 self.state = State::Inactive { reported: true };
-                return Poll::Ready(ConnectionHandlerEvent::NotifyBehaviour(
-                    ToBehaviourEvent::Unsupported,
-                ));
             }
             State::Active => {}
         };
@@ -256,16 +250,12 @@ impl ConnectionHandler for Handler {
                 protocol: stream,
                 info: (),
             }) => {
-                self.pending_out_events
-                    .push_front(ToBehaviourEvent::InboundNegotiated);
                 self.inbound = Some(super::protocol::recv(stream).boxed());
             }
             ConnectionEvent::FullyNegotiatedOutbound(FullyNegotiatedOutbound {
                 protocol: stream,
                 ..
             }) => {
-                self.pending_out_events
-                    .push_front(ToBehaviourEvent::OutboundNegotiated);
                 self.outbound = Some(OutboundState::Idle(stream));
             }
             ConnectionEvent::DialUpgradeError(e) => {

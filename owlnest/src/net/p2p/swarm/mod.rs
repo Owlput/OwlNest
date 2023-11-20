@@ -1,7 +1,4 @@
-use crate::{
-    event_bus::{self, bus::EventTap},
-    net::p2p::swarm::manager::HandleBundle,
-};
+use crate::net::p2p::swarm::manager::HandleBundle;
 use futures::StreamExt;
 use libp2p::{core::ConnectedPoint, Multiaddr, PeerId};
 use libp2p_swarm::DialError;
@@ -18,6 +15,7 @@ pub mod op;
 pub mod out_event;
 
 pub use in_event::*;
+pub type EventSender = tokio::sync::broadcast::Sender<Arc<SwarmEvent>>;
 
 use self::{
     behaviour::BehaviourEvent,
@@ -36,23 +34,19 @@ impl Builder {
     pub fn new(config: SwarmConfig) -> Self {
         Self { config }
     }
-    pub fn build(
-        self,
-        buffer_size: usize,
-        ev_bus_handle: event_bus::Handle,
-        ev_tap: EventTap,
-        executor: tokio::runtime::Handle,
-    ) -> Manager {
+    pub fn build(self, buffer_size: usize, executor: tokio::runtime::Handle) -> Manager {
         let ident = self.config.local_ident.clone();
 
         use crate::net::p2p::protocols::*;
         use libp2p::kad::store::MemoryStore;
         let kad_store = MemoryStore::new(ident.get_peer_id());
-
-        let (handle_bundle, mut rx_bundle) = HandleBundle::new(buffer_size, &ev_bus_handle);
-        let manager = manager::Manager::new(Arc::new(handle_bundle), executor);
+        let (swarm_event_out, _) = tokio::sync::broadcast::channel(16);
+        let (handle_bundle, mut rx_bundle) = HandleBundle::new(buffer_size, &swarm_event_out);
+        let manager =
+            manager::Manager::new(Arc::new(handle_bundle), executor, swarm_event_out.clone());
         let manager_clone = manager.clone();
         tokio::spawn(async move {
+            let event_out = swarm_event_out;
             let _manager = manager_clone;
             let mut swarm = libp2p::SwarmBuilder::with_existing_identity(ident.get_keypair())
                 .with_tokio()
@@ -86,9 +80,10 @@ impl Builder {
 
             loop {
                 select! {
-                    Some(ev) = rx_bundle.next() => handle_incoming_event(ev, &mut swarm, &ev_bus_handle),
+                    Some(ev) = rx_bundle.next() => handle_incoming_event(ev, &mut swarm),
                     out_event = swarm.select_next_some() => {
-                        handle_swarm_event(&out_event,&mut swarm,&ev_tap).await;
+                        handle_swarm_event(&out_event,&mut swarm).await;
+                        let _ = event_out.send(Arc::new(out_event));
                     }
                 };
             }
@@ -98,9 +93,9 @@ impl Builder {
 }
 
 #[inline]
-async fn handle_swarm_event(ev: &SwarmEvent, swarm: &mut Swarm, ev_tap: &EventTap) {
+async fn handle_swarm_event(ev: &SwarmEvent, swarm: &mut Swarm) {
     match ev {
-        SwarmEvent::Behaviour(event) => handle_behaviour_event(swarm, event, ev_tap).await,
+        SwarmEvent::Behaviour(event) => handle_behaviour_event(swarm, event),
         SwarmEvent::ConnectionEstablished {
             peer_id, endpoint, ..
         } => kad_add(swarm, *peer_id, endpoint.clone()),
@@ -177,11 +172,11 @@ async fn handle_swarm_event(ev: &SwarmEvent, swarm: &mut Swarm, ev_tap: &EventTa
 }
 
 #[inline]
-fn handle_incoming_event(ev: Rx, swarm: &mut Swarm, ev_bus_handle: &event_bus::Handle) {
+fn handle_incoming_event(ev: Rx, swarm: &mut Swarm) {
     use crate::net::p2p::protocols::*;
     use Rx::*;
     match ev {
-        Kad(ev) => kad::map_in_event(ev, &mut swarm.behaviour_mut().kad, ev_bus_handle),
+        Kad(ev) => kad::map_in_event(ev, &mut swarm.behaviour_mut().kad),
         Messaging(ev) => swarm.behaviour_mut().messaging.push_event(ev),
         Tethering(ev) => swarm.behaviour_mut().tethering.push_event(ev),
         Mdns(ev) => mdns::map_in_event(ev, &mut swarm.behaviour_mut().mdns),
@@ -233,14 +228,14 @@ fn swarm_op_exec(swarm: &mut Swarm, ev: InEvent) {
 }
 
 #[inline]
-async fn handle_behaviour_event(swarm: &mut Swarm, ev: &BehaviourEvent, ev_tap: &EventTap) {
+fn handle_behaviour_event(swarm: &mut Swarm, ev: &BehaviourEvent) {
     use super::protocols::*;
     use behaviour::BehaviourEvent::*;
     match ev {
-        Kad(ev) => kad::ev_dispatch(ev, ev_tap).await,
+        Kad(ev) => kad::ev_dispatch(ev),
         Identify(ev) => identify::ev_dispatch(ev),
         Mdns(ev) => mdns::ev_dispatch(ev, swarm),
-        Messaging(ev) => messaging::ev_dispatch(ev, ev_tap).await,
+        Messaging(ev) => messaging::ev_dispatch(ev),
         Tethering(ev) => tethering::ev_dispatch(ev),
         RelayServer(ev) => relay_server::ev_dispatch(ev),
         RelayClient(ev) => relay_client::ev_dispatch(ev),

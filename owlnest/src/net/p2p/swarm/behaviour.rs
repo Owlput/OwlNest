@@ -1,4 +1,3 @@
-use crate::event_bus::ListenedEvent;
 use owlnest_macro::{behaviour_select, generate_event_select};
 
 behaviour_select! {
@@ -26,9 +25,3 @@ behaviour_select! {
 //     pub identify: identify::Behaviour,
 //     pub mdns: mdns::Behaviour,
 // }
-
-impl Into<ListenedEvent> for BehaviourEvent {
-    fn into(self) -> ListenedEvent {
-        ListenedEvent::new(format!("swarmEvent:{:?}", self), self)
-    }
-}

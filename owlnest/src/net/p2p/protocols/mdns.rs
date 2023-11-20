@@ -1,5 +1,5 @@
-use crate::event_bus::listened_event::Listenable;
 use crate::generate_handler_method;
+use crate::net::p2p::swarm::EventSender;
 use crate::net::p2p::swarm::Swarm;
 pub use libp2p::mdns::tokio::Behaviour;
 pub use libp2p::mdns::Config;
@@ -11,28 +11,37 @@ pub enum InEvent {
     ListDiscoveredNodes(Sender<Vec<PeerId>>),
     HasNode(PeerId, Sender<bool>),
 }
-impl Listenable for OutEvent {
-    fn as_event_identifier() -> String {
-        "/libp2p/mdns:OutEvent".into()
-    }
+
+#[allow(unused)]
+macro_rules! event_op {
+    ($listener:ident,$pattern:pat,{$($ops:tt)+}) => {
+        loop{
+            let ev = handle_listener_result!($listener);
+            if let SwarmEvent::Behaviour(BehaviourEvent::Mdns($pattern)) = ev.as_ref() {
+                $($ops)+
+            } else {
+                continue;
+            }
+        }
+    };
 }
 
 #[derive(Debug, Clone)]
 pub struct Handle {
     sender: mpsc::Sender<InEvent>,
     #[allow(unused)]
-    event_bus_handle: crate::event_bus::Handle,
+    event_tx: EventSender,
 }
 impl Handle {
     pub fn new(
         buffer: usize,
-        event_bus_handle: &crate::event_bus::Handle,
+        event_tx: &EventSender,
     ) -> (Self, mpsc::Receiver<InEvent>) {
         let (tx, rx) = mpsc::channel(buffer);
         (
             Self {
                 sender: tx,
-                event_bus_handle: event_bus_handle.clone(),
+                event_tx: event_tx.clone(),
             },
             rx,
         )

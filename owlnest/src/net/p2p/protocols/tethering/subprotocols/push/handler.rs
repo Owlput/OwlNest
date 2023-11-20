@@ -34,7 +34,6 @@ enum Packet {
 pub enum OutEvent {
     Message(String),
     Error(Error),
-    Unsupported,
 }
 
 #[derive(Debug)]
@@ -145,9 +144,6 @@ impl ConnectionHandler for PushHandler {
             }
             State::Inactive { reported: false } => {
                 self.state = State::Inactive { reported: true };
-                return Poll::Ready(ConnectionHandlerEvent::NotifyBehaviour(
-                    OutEvent::Unsupported,
-                ));
             }
             State::Active => {}
         }

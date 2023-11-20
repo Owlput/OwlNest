@@ -52,7 +52,6 @@ pub enum OutEvent {
     HandleResult(Result<(), ()>, u64),
     CallbackResult(OpResult, u64),
     Error(Error),
-    Unsupported,
 }
 
 #[derive(Debug)]
@@ -172,9 +171,6 @@ impl ConnectionHandler for ExecHandler {
             }
             State::Inactive { reported: false } => {
                 self.state = State::Inactive { reported: true };
-                return Poll::Ready(ConnectionHandlerEvent::NotifyBehaviour(
-                    OutEvent::Unsupported,
-                ));
             }
             State::Active => {}
         }

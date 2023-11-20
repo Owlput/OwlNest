@@ -1,4 +1,3 @@
-use crate::event_bus::listened_event::Listenable;
 use libp2p::relay::client;
 use tracing::debug;
 
@@ -36,12 +35,6 @@ pub fn ev_dispatch(ev: &client::Event) {
             "Inbound circuit from source peer {} established, limit:{:?}",
             src_peer_id, limit
         ),
-    }
-}
-
-impl Listenable for OutEvent {
-    fn as_event_identifier() -> String {
-        "/libp2p/relay_client:OutEvent".into()
     }
 }
 
