@@ -30,7 +30,7 @@ pub fn setup_interactive_shell(
             match line_read {
                 Ok(line) => {
                     rl.add_history_entry(line.as_str()).unwrap();
-                    handle_command(line, &manager, &ident)
+                    handle_command(line, &manager, &ident, &shutdown_notifier)
                 }
                 Err(e) => {
                     if handle_err(e, &mut retry_times) {
@@ -44,7 +44,7 @@ pub fn setup_interactive_shell(
     });
 }
 
-fn handle_command(line: String, manager: &Manager, ident: &IdentityUnion) {
+fn handle_command(line: String, manager: &Manager, ident: &IdentityUnion, shutdown_notifier: &Arc<Notify>) {
     let command: Vec<&str> = line.split(' ').collect();
     match command[0] {
         "help" => {
@@ -66,7 +66,9 @@ fn handle_command(line: String, manager: &Manager, ident: &IdentityUnion) {
             }
             swarm::cli::handle_swarm_listen(&manager.swarm(), command[1])
         }
+        "shutdown" => shutdown_notifier.notify_one(),
         "swarm" => swarm::cli::handle_swarm(&manager.swarm(), command),
+        #[cfg(feature="tethering")]
         "tethering" => tethering::cli::handle_tethering(manager, command),
         "messaging" => messaging::handle_messaging(manager, ident, command),
         "kad" => kad::cli::handle_kad(manager, command),
@@ -120,10 +122,11 @@ Available commands:
     id                  Show the peer ID of this node.
     listen <address>    Listen on the given address, in Multiaddr format.
     dial <address>      Dial the given address, in Multiaddr format.
+    shutdown            Shutdown this peer. Connections won't be
+                        gracefully closed.
     swarm               Subcommand for accessing features on the swarm.
     kad                 Subcommand for `/ipfs/kad/1.0.0` protocol.
     messaging           Subcommand for `messaging` protocol.
-    tethering           Subcommand for `tethering` protocol.
     mdns                Subcommand for `mdns` protocol.
     utils               Subcommand for various utilities.
 "#;

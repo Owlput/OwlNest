@@ -2,7 +2,6 @@ use owlnest_macro::{behaviour_select, generate_event_select};
 
 behaviour_select! {
     messaging: Messaging,
-    tethering: Tethering,
     relay_server: RelayServer,
     relay_client: RelayClient,
     relay_ext:RelayExt,

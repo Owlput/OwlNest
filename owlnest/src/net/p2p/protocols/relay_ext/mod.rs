@@ -62,8 +62,20 @@ pub enum InEvent {
     SetProviderState(bool),
     QueryProviderState,
     QueryAdvertisedPeer(PeerId),
-    StartAdvertiseSelf(PeerId),
-    StopAdvertiseSelf(PeerId),
+    SetAdvertisingSelf { remote: PeerId, state: bool },
+}
+
+macro_rules! event_op {
+    ($listener:ident,$pattern:pat,{$($ops:tt)+}) => {
+        loop{
+            let ev = crate::handle_listener_result!($listener);
+            if let SwarmEvent::Behaviour(BehaviourEvent::RelayExt($pattern)) = ev.as_ref() {
+                $($ops)+
+            } else {
+                continue;
+            }
+        }
+    };
 }
 
 #[derive(Debug, Clone)]
@@ -84,53 +96,20 @@ impl Handle {
     }
     pub async fn query_advertised_peer(&self, relay: PeerId) -> Result<Vec<PeerId>, Error> {
         let mut listener = self.event_tx.subscribe();
-        let handle = tokio::spawn(async move {
-            use std::time::Duration;
-            let mut timer = futures_timer::Delay::new(Duration::from_secs(10));
-            loop {
-                tokio::select! {
-                    ev = listener.recv()=>{
-                        use tokio::sync::broadcast::error::RecvError;
-                        use tracing::warn;
-                        match ev{
-                            Ok(v) => {
-                                if let SwarmEvent::Behaviour(BehaviourEvent::RelayExt(OutEvent::QueryAnswered{from,list})) = v.as_ref(){
-                                    if *from == relay{
-                                        return Ok(list.clone())
-                                    }
-                                }
-                            },
-                            Err(e) => {
-                                match e {
-                                    RecvError::Closed => unreachable!("At least one sender should exist."),
-                                    RecvError::Lagged(count) => warn!(
-                                        "A broadcast recever is too slow! lagging {} message behind",
-                                        count
-                                    ),
-                                }
-                                continue;
-                            }
-                        }
-                    }
-                    _ = &mut timer => {
-                        return Err(Error::Timeout)
-                    }
+        let fut = async move{
+            event_op!(listener, OutEvent::QueryAnswered { from, list }, {
+                if *from == relay {
+                    return list.clone();
                 }
-                let ev = handle_listener_result!(listener);
-                if let SwarmEvent::Behaviour(BehaviourEvent::RelayExt(OutEvent::QueryAnswered {
-                    from,
-                    list,
-                })) = ev.as_ref()
-                {
-                    if *from == relay {
-                        return Ok(list.clone());
-                    }
-                }
-            }
-        });
+            })
+        };
+        let handle = tokio::spawn(fut);
         let ev = InEvent::QueryAdvertisedPeer(relay);
         self.sender.send(ev).await.unwrap();
-        handle.await.expect("task to complete")
+        match with_timeout!(handle,10){
+            Ok(v)=> Ok(v.expect("task to complete")),
+            Err(_)=> Err(Error::Timeout)
+        }
     }
     pub async fn set_provider_state(&self, state: bool) -> bool {
         let mut listener = self.event_tx.subscribe();
@@ -163,6 +142,6 @@ impl Handle {
         };
         let ev = InEvent::QueryProviderState;
         self.sender.send(ev).await.expect("send to succeed");
-        with_timeout!(fut,10).expect("future to finish in 10s")
+        with_timeout!(fut, 10).expect("future to finish in 10s")
     }
 }

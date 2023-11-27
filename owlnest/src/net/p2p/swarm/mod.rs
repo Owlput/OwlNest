@@ -66,6 +66,7 @@ impl Builder {
                     mdns: mdns::Behaviour::new(self.config.mdns, ident.get_peer_id()).unwrap(),
                     identify: identify::Behaviour::new(self.config.identify),
                     messaging: messaging::Behaviour::new(self.config.messaging),
+                    #[cfg(feature="tethering")]
                     tethering: tethering::Behaviour::new(self.config.tethering),
                     relay_server: libp2p::relay::Behaviour::new(
                         self.config.local_ident.get_peer_id(),
@@ -178,6 +179,7 @@ fn handle_incoming_event(ev: Rx, swarm: &mut Swarm) {
     match ev {
         Kad(ev) => kad::map_in_event(ev, &mut swarm.behaviour_mut().kad),
         Messaging(ev) => swarm.behaviour_mut().messaging.push_event(ev),
+        #[cfg(feature="tethering")]
         Tethering(ev) => swarm.behaviour_mut().tethering.push_event(ev),
         Mdns(ev) => mdns::map_in_event(ev, &mut swarm.behaviour_mut().mdns),
         Swarm(ev) => swarm_op_exec(swarm, ev),
@@ -236,6 +238,7 @@ fn handle_behaviour_event(swarm: &mut Swarm, ev: &BehaviourEvent) {
         Identify(ev) => identify::ev_dispatch(ev),
         Mdns(ev) => mdns::ev_dispatch(ev, swarm),
         Messaging(ev) => messaging::ev_dispatch(ev),
+        #[cfg(feature="tethering")]
         Tethering(ev) => tethering::ev_dispatch(ev),
         RelayServer(ev) => relay_server::ev_dispatch(ev),
         RelayClient(ev) => relay_client::ev_dispatch(ev),

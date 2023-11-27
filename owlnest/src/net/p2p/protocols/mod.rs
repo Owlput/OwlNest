@@ -7,12 +7,12 @@ pub mod kad;
 /// A wrapper around reference implementation of libp2p mdns protocol.
 pub mod mdns;
 
-/// A behaviour that allows peers to exchange human-readable message,
+/// A behaviour that allows peers to directly exchange human-readable message,
 /// similar to instant messaging(IM) service.
 pub mod messaging;
 
 /// A behaviour that allows remote control of a node. 
-pub mod tethering;
+// pub mod tethering;
 
 /// A wrapper around reference implementation of libp2p relay client.
 pub mod relay_client;

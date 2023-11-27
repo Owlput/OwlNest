@@ -115,7 +115,6 @@ use super::EventSender;
 generate_manager! {
     kad:Kad,
     messaging:Messaging,
-    tethering:Tethering,
     mdns:Mdns,
     relay_ext:RelayExt,
 }

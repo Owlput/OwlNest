@@ -26,12 +26,14 @@ fn setup_peer(
     ident: IdentityUnion,
     executor: tokio::runtime::Handle,
 ) -> Manager {
+    let _guard = executor.enter();
     let swarm_config = net::p2p::SwarmConfig {
         local_ident: ident.clone(),
         kad: protocols::kad::Config::default(),
         identify: protocols::identify::Config::new("/owlnest/0.0.1".into(), ident.get_pubkey()),
         mdns: protocols::mdns::Config::default(),
         messaging: protocols::messaging::Config::default(),
+        #[cfg(feature="tethering")]
         tethering: protocols::tethering::Config,
         relay_server: protocols::relay_server::Config::default(),
     };

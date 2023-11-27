@@ -7,14 +7,13 @@ use std::{collections::VecDeque, time::Duration};
 use tracing::{trace, warn};
 
 #[derive(Debug)]
-pub enum FromBehaviourEvent {
+pub enum FromBehaviour {
     QueryAdvertisedPeer,
     AnswerAdvertisedPeer(Vec<PeerId>),
-    StartAdvertiseSelf,
-    StopAdvertiseSelf,
+    SetAdvertiseSelf(bool),
 }
 #[derive(Debug)]
-pub enum ToBehaviourEvent {
+pub enum ToBehaviour {
     IncomingQuery,
     QueryAnswered(Vec<PeerId>),
     IncomingAdvertiseReq(bool),
@@ -38,20 +37,20 @@ impl Packet {
         serde_json::to_vec(self).unwrap()
     }
 }
-impl Into<ToBehaviourEvent> for Packet {
-    fn into(self) -> ToBehaviourEvent {
+impl Into<ToBehaviour> for Packet {
+    fn into(self) -> ToBehaviour {
         match self {
-            Packet::AdvertiseSelf(bool) => ToBehaviourEvent::IncomingAdvertiseReq(bool),
-            Packet::QueryAdvertisedPeer => ToBehaviourEvent::IncomingQuery,
-            Packet::AnswerAdvertisedPeer(result) => ToBehaviourEvent::QueryAnswered(result),
+            Packet::AdvertiseSelf(bool) => ToBehaviour::IncomingAdvertiseReq(bool),
+            Packet::QueryAdvertisedPeer => ToBehaviour::IncomingQuery,
+            Packet::AnswerAdvertisedPeer(result) => ToBehaviour::QueryAnswered(result),
         }
     }
 }
 
 pub struct Handler {
     state: State,
-    pending_in_events: VecDeque<FromBehaviourEvent>,
-    pending_out_events: VecDeque<ToBehaviourEvent>,
+    pending_in_events: VecDeque<FromBehaviour>,
+    pending_out_events: VecDeque<ToBehaviour>,
     timeout: Duration,
     inbound: Option<PendingVerf>,
     outbound: Option<OutboundState>,
@@ -96,8 +95,8 @@ impl Handler {
 use libp2p::core::upgrade::ReadyUpgrade;
 use libp2p::swarm::{ConnectionHandlerEvent, SubstreamProtocol};
 impl ConnectionHandler for Handler {
-    type FromBehaviour = FromBehaviourEvent;
-    type ToBehaviour = ToBehaviourEvent;
+    type FromBehaviour = FromBehaviour;
+    type ToBehaviour = ToBehaviour;
     type InboundProtocol = ReadyUpgrade<&'static str>;
     type OutboundProtocol = ReadyUpgrade<&'static str>;
     type InboundOpenInfo = ();
@@ -136,14 +135,14 @@ impl ConnectionHandler for Handler {
                 Poll::Ready(Err(e)) => {
                     let error = Error::IO(format!("IO Error: {:?}", e));
                     self.pending_out_events
-                        .push_front(ToBehaviourEvent::Error(error));
+                        .push_front(ToBehaviour::Error(error));
                     self.inbound = None;
                 }
                 Poll::Ready(Ok((stream, bytes))) => {
                     self.inbound = Some(super::protocol::recv(stream).boxed());
                     match serde_json::from_slice::<Packet>(&bytes) {
                         Ok(packet) => self.pending_out_events.push_front(packet.into()),
-                        Err(e) => self.pending_out_events.push_front(ToBehaviourEvent::Error(
+                        Err(e) => self.pending_out_events.push_front(ToBehaviour::Error(
                             Error::UnrecognizedMessage(format!(
                                 "Unrecognized message: {}, raw data: {}",
                                 e,
@@ -151,8 +150,7 @@ impl ConnectionHandler for Handler {
                             )),
                         )),
                     }
-                    let event =
-                        ConnectionHandlerEvent::NotifyBehaviour(ToBehaviourEvent::IncomingQuery);
+                    let event = ConnectionHandlerEvent::NotifyBehaviour(ToBehaviour::IncomingQuery);
                     return Poll::Ready(event);
                 }
             }
@@ -164,7 +162,7 @@ impl ConnectionHandler for Handler {
                         Poll::Pending => {
                             if timer.poll_unpin(cx).is_ready() {
                                 self.pending_out_events
-                                    .push_back(ToBehaviourEvent::Error(Error::Timeout))
+                                    .push_back(ToBehaviour::Error(Error::Timeout))
                             } else {
                                 // Put the future back
                                 self.outbound = Some(OutboundState::Busy(task, timer));
@@ -181,7 +179,7 @@ impl ConnectionHandler for Handler {
                         // Ready but resolved to an error
                         Poll::Ready(Err(e)) => {
                             self.pending_out_events
-                                .push_back(ToBehaviourEvent::Error(Error::IO(format!(
+                                .push_back(ToBehaviour::Error(Error::IO(format!(
                                     "IO Error: {:?}",
                                     e
                                 ))));
@@ -191,7 +189,7 @@ impl ConnectionHandler for Handler {
                 // Outbound is free, get the next message sent
                 Some(OutboundState::Idle(stream)) => {
                     if let Some(ev) = self.pending_in_events.pop_back() {
-                        use FromBehaviourEvent::*;
+                        use FromBehaviour::*;
                         match ev {
                             QueryAdvertisedPeer => {
                                 self.outbound = Some(OutboundState::Busy(
@@ -210,8 +208,13 @@ impl ConnectionHandler for Handler {
                                     Delay::new(self.timeout),
                                 ))
                             }
-                            StartAdvertiseSelf => {}
-                            StopAdvertiseSelf => {}
+                            SetAdvertiseSelf(state) => {
+                                self.outbound = Some(OutboundState::Busy(
+                                    protocol::send(stream, Packet::AdvertiseSelf(state).as_bytes())
+                                        .boxed(),
+                                    Delay::new(self.timeout),
+                                ))
+                            }
                         }
                     } else {
                         self.outbound = Some(OutboundState::Idle(stream));

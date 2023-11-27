@@ -27,7 +27,7 @@ fn handle_utils_dns(command: Vec<&str>) {
                 Ok(addr) => addr.collect::<Box<[SocketAddr]>>(),
                 Err(e) => {
                     println!("Failed to perform lookup: {:?}", e);
-                    println!("Hint: You may have missed port number");
+                    println!("Hint: You may have missed port number. You can try out port 0.");
                     return;
                 }
             };

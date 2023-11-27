@@ -11,6 +11,7 @@ pub struct SwarmConfig {
     pub identify: identify::Config,
     pub mdns: mdns::Config,
     pub messaging: messaging::Config,
+    #[cfg(feature="tethering")]
     pub tethering: tethering::Config,
     pub relay_server: libp2p::relay::Config,
 }
@@ -20,6 +21,7 @@ impl SwarmConfig {
     }
 }
 
+#[allow(unused)]
 mod handler_prelude {
     pub use futures::{future::BoxFuture, FutureExt};
     pub use libp2p::swarm::{

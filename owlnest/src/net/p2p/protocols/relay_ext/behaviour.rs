@@ -53,7 +53,7 @@ impl NetworkBehaviour for Behaviour {
         connection_id: ConnectionId,
         event: <Self::ConnectionHandler as libp2p::swarm::ConnectionHandler>::ToBehaviour,
     ) {
-        use handler::ToBehaviourEvent::*;
+        use handler::ToBehaviour::*;
         match event {
             IncomingQuery => {
                 self.pending_query_answer
@@ -80,13 +80,13 @@ impl NetworkBehaviour for Behaviour {
     fn poll(
         &mut self,
         _cx: &mut std::task::Context<'_>,
-    ) -> Poll<ToSwarm<super::OutEvent, handler::FromBehaviourEvent>> {
+    ) -> Poll<ToSwarm<super::OutEvent, handler::FromBehaviour>> {
         if let Some((peer_id, connection_id)) = self.pending_query_answer.pop_front() {
             if self.is_providing {
                 return Poll::Ready(ToSwarm::NotifyHandler {
                     peer_id,
                     handler: NotifyHandler::One(connection_id),
-                    event: handler::FromBehaviourEvent::AnswerAdvertisedPeer(
+                    event: handler::FromBehaviour::AnswerAdvertisedPeer(
                         self.advertised_peers.iter().cloned().collect(),
                     ),
                 });
@@ -100,26 +100,19 @@ impl NetworkBehaviour for Behaviour {
                     return Poll::Ready(ToSwarm::NotifyHandler {
                         peer_id: relay,
                         handler: NotifyHandler::Any,
-                        event: handler::FromBehaviourEvent::QueryAdvertisedPeer,
+                        event: handler::FromBehaviour::QueryAdvertisedPeer,
                     })
                 }
                 QueryProviderState =>{
                     return Poll::Ready(ToSwarm::GenerateEvent(OutEvent::ProviderState(self.is_providing))
                     )
                 }
-                StartAdvertiseSelf(relay) => {
+                SetAdvertisingSelf{remote,state} => {
                     return Poll::Ready(ToSwarm::NotifyHandler {
-                        peer_id: relay,
+                        peer_id: remote,
                         handler: NotifyHandler::Any,
-                        event: handler::FromBehaviourEvent::StartAdvertiseSelf,
+                        event: handler::FromBehaviour::SetAdvertiseSelf(state),
                     })
-                }
-                StopAdvertiseSelf(relay) => {
-                    return Poll::Ready(ToSwarm::NotifyHandler {
-                        peer_id: relay,
-                        handler: NotifyHandler::Any,
-                        event: handler::FromBehaviourEvent::StopAdvertiseSelf,
-                    });
                 }
                 SetProviderState(status) => {
                     self.set_provider_status(status);
