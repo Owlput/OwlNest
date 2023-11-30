@@ -1,3 +1,4 @@
+use super::error::SendError;
 use super::{protocol, Config, Error, Message, PROTOCOL_NAME};
 use crate::net::p2p::handler_prelude::*;
 use futures_timer::Delay;
@@ -11,14 +12,12 @@ pub enum FromBehaviourEvent {
 #[derive(Debug)]
 pub enum ToBehaviourEvent {
     IncomingMessage(Vec<u8>),
-    SuccessfulSend(u64),
+    SendResult(Result<Duration,SendError>,u64),
     Error(Error),
-    Unsupported,
-    InboundNegotiated,
-    OutboundNegotiated,
+    Unsupported
 }
 
-pub enum State {
+enum State {
     Inactive { reported: bool },
     Active,
 }
@@ -136,7 +135,7 @@ impl ConnectionHandler for Handler {
                         Poll::Pending => {
                             if timer.poll_unpin(cx).is_ready() {
                                 self.pending_out_events
-                                    .push_back(ToBehaviourEvent::Error(Error::Timeout))
+                                    .push_back(ToBehaviourEvent::SendResult(Err(SendError::Timeout),id))
                             } else {
                                 // Put the future back
                                 self.outbound = Some(OutboundState::Busy(task, id, timer));
@@ -145,9 +144,9 @@ impl ConnectionHandler for Handler {
                             }
                         }
                         // Ready
-                        Poll::Ready(Ok((stream, _))) => {
+                        Poll::Ready(Ok((stream, rtt))) => {
                             self.pending_out_events
-                                .push_back(ToBehaviourEvent::SuccessfulSend(id.unwrap()));
+                                .push_back(ToBehaviourEvent::SendResult(Ok(rtt),id));
                             // Free the outbound
                             self.outbound = Some(OutboundState::Idle(stream));
                         }
@@ -166,7 +165,7 @@ impl ConnectionHandler for Handler {
                                 // Put Outbound into send state
                                 self.outbound = Some(OutboundState::Busy(
                                     protocol::send(stream, msg.as_bytes()).boxed(),
-                                    Some(id),
+                                    id,
                                     Delay::new(self.timeout),
                                 ))
                             }
@@ -188,9 +187,9 @@ impl ConnectionHandler for Handler {
                     return Poll::Ready(event);
                 }
             }
-            if let Some(ev) = self.pending_out_events.pop_back() {
-                return Poll::Ready(ConnectionHandlerEvent::NotifyBehaviour(ev));
-            }
+        }
+        if let Some(ev) = self.pending_out_events.pop_back() {
+            return Poll::Ready(ConnectionHandlerEvent::NotifyBehaviour(ev));
         }
         Poll::Pending
     }
@@ -208,16 +207,12 @@ impl ConnectionHandler for Handler {
                 protocol: stream,
                 info: (),
             }) => {
-                self.pending_out_events
-                    .push_front(ToBehaviourEvent::InboundNegotiated);
                 self.inbound = Some(super::protocol::recv(stream).boxed());
             }
             ConnectionEvent::FullyNegotiatedOutbound(FullyNegotiatedOutbound {
                 protocol: stream,
                 ..
             }) => {
-                self.pending_out_events
-                    .push_front(ToBehaviourEvent::OutboundNegotiated);
                 self.outbound = Some(OutboundState::Idle(stream));
             }
             ConnectionEvent::DialUpgradeError(e) => {
@@ -237,5 +232,5 @@ type PendingSend = BoxFuture<'static, Result<(Stream, Duration), io::Error>>;
 enum OutboundState {
     OpenStream,
     Idle(Stream),
-    Busy(PendingSend, Option<u64>, Delay),
+    Busy(PendingSend, u64, Delay),
 }

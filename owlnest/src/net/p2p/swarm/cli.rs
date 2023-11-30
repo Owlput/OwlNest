@@ -212,7 +212,7 @@ Available subcommands:
         Unban the given peer.
 "#;
 
-fn format_transport_error(e: TransportError<std::io::Error>) -> String {
+pub(crate) fn format_transport_error(e: TransportError<std::io::Error>) -> String {
     match e {
         TransportError::MultiaddrNotSupported(addr) => {
             format!("Requested address {} is not supported.", addr)

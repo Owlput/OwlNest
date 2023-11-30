@@ -3,7 +3,7 @@ use libp2p::swarm::{ConnectionId, NetworkBehaviour, NotifyHandler, ToSwarm};
 use libp2p::PeerId;
 use std::collections::HashSet;
 use std::{collections::VecDeque, task::Poll};
-use tracing::{debug, trace};
+use tracing::debug;
 
 pub struct Behaviour {
     /// Pending events to emit to `Swarm`
@@ -12,7 +12,7 @@ pub struct Behaviour {
     in_events: VecDeque<InEvent>,
     /// A set for all connected peers.
     advertised_peers: HashSet<PeerId>,
-    pending_query_answer: VecDeque<(PeerId, ConnectionId)>,
+    pending_query_answer: VecDeque<PeerId>,
     is_providing: bool,
 }
 
@@ -26,8 +26,8 @@ impl Behaviour {
             is_providing: false,
         }
     }
-    pub fn push_event(&mut self, msg: InEvent) {
-        self.in_events.push_front(msg)
+    pub fn push_event(&mut self, ev: InEvent) {
+        self.in_events.push_back(ev)
     }
     pub fn is_advertising(&self, peer: &PeerId) -> bool {
         self.advertised_peers.contains(peer)
@@ -50,14 +50,13 @@ impl NetworkBehaviour for Behaviour {
     fn on_connection_handler_event(
         &mut self,
         peer_id: PeerId,
-        connection_id: ConnectionId,
+        _connection_id: ConnectionId,
         event: <Self::ConnectionHandler as libp2p::swarm::ConnectionHandler>::ToBehaviour,
     ) {
         use handler::ToBehaviour::*;
         match event {
             IncomingQuery => {
-                self.pending_query_answer
-                    .push_back((peer_id, connection_id));
+                self.pending_query_answer.push_back(peer_id);
             }
             IncomingAdvertiseReq(bool) => {
                 if bool {
@@ -81,19 +80,23 @@ impl NetworkBehaviour for Behaviour {
         &mut self,
         _cx: &mut std::task::Context<'_>,
     ) -> Poll<ToSwarm<super::OutEvent, handler::FromBehaviour>> {
-        if let Some((peer_id, connection_id)) = self.pending_query_answer.pop_front() {
+        if let Some(peer_id) = self.pending_query_answer.pop_front() {
             if self.is_providing {
                 return Poll::Ready(ToSwarm::NotifyHandler {
                     peer_id,
-                    handler: NotifyHandler::One(connection_id),
+                    handler: NotifyHandler::Any,
                     event: handler::FromBehaviour::AnswerAdvertisedPeer(
                         self.advertised_peers.iter().cloned().collect(),
                     ),
                 });
             }
+            return Poll::Ready(ToSwarm::NotifyHandler {
+                peer_id,
+                handler: NotifyHandler::Any,
+                event: handler::FromBehaviour::AnswerAdvertisedPeer(Vec::new()),
+            });
         }
         if let Some(ev) = self.in_events.pop_front() {
-            trace!("Received event {:#?}", ev);
             use InEvent::*;
             match ev {
                 QueryAdvertisedPeer(relay) => {
@@ -103,21 +106,23 @@ impl NetworkBehaviour for Behaviour {
                         event: handler::FromBehaviour::QueryAdvertisedPeer,
                     })
                 }
-                QueryProviderState =>{
-                    return Poll::Ready(ToSwarm::GenerateEvent(OutEvent::ProviderState(self.is_providing))
-                    )
+                QueryProviderState(id) => {
+                    return Poll::Ready(ToSwarm::GenerateEvent(OutEvent::ProviderState(
+                        self.is_providing,
+                        id,
+                    )))
                 }
-                SetAdvertisingSelf{remote,state} => {
+                SetAdvertisingSelf { remote, state, id } => {
                     return Poll::Ready(ToSwarm::NotifyHandler {
                         peer_id: remote,
                         handler: NotifyHandler::Any,
-                        event: handler::FromBehaviour::SetAdvertiseSelf(state),
+                        event: handler::FromBehaviour::SetAdvertiseSelf(state, id),
                     })
                 }
-                SetProviderState(status) => {
+                SetProviderState(status, id) => {
                     self.set_provider_status(status);
                     return Poll::Ready(ToSwarm::GenerateEvent(OutEvent::ProviderState(
-                        status,
+                        status, id,
                     )));
                 }
             }

@@ -22,7 +22,7 @@ fn main() {
     let _ = rt.block_on(shutdown_notifier.notified());
 }
 
-fn setup_peer(
+pub fn setup_peer(
     ident: IdentityUnion,
     executor: tokio::runtime::Handle,
 ) -> Manager {
@@ -56,7 +56,10 @@ fn setup_logging() {
     let filter = tracing_subscriber::filter::Targets::new()
         .with_target("owlnest", Level::DEBUG)
         .with_target("rustyline", LevelFilter::ERROR)
-        .with_target("", Level::INFO);
+        .with_target("libp2p_noise", Level::WARN)
+        .with_target("libp2p_mdns", Level::DEBUG)
+        .with_target("hickory_proto", Level::WARN)
+        .with_target("", Level::TRACE);
     let layer = tracing_subscriber::fmt::Layer::default()
         .with_ansi(false)
         .with_writer(Mutex::new(log_file_handle))

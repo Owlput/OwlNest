@@ -5,7 +5,7 @@ macro_rules! generate_manager {
         use std::sync::Arc;
         use tokio::sync::mpsc;
         use futures::{Stream,Future, stream::FusedStream};
-        use crate::net::p2p::swarm;
+        use crate::net::p2p::{swarm,IdentityUnion};
         use core::task::Poll;
         use core::task::Context;
         use core::pin::Pin;
@@ -85,17 +85,26 @@ macro_rules! generate_manager {
         #[derive(Clone)]
         pub struct Manager{
             handle_bundle:Arc<HandleBundle>,
+            identity:IdentityUnion,
             executor:tokio::runtime::Handle,
             event_out:tokio::sync::broadcast::Sender<Arc<super::SwarmEvent>>,
         }
 
         impl Manager{
-            pub(crate) fn new(handle_bundle:Arc<HandleBundle>,executor:tokio::runtime::Handle,event_out:tokio::sync::broadcast::Sender<Arc<super::SwarmEvent>>)->Self
+            pub(crate) fn new(
+                handle_bundle:Arc<HandleBundle>,
+                identity:IdentityUnion,
+                executor:tokio::runtime::Handle,
+                event_out:tokio::sync::broadcast::Sender<Arc<super::SwarmEvent>>
+            )->Self
             {
-                Self { handle_bundle, executor, event_out}
+                Self { handle_bundle,identity, executor, event_out}
             }
             pub fn executor(&self)->&tokio::runtime::Handle{
                 &self.executor
+            }
+            pub fn identity(&self)->&IdentityUnion{
+                &self.identity
             }
             pub fn swarm(&self)-> &SwarmHandle{
                 &self.handle_bundle.swarm

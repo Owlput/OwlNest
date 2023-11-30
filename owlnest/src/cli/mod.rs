@@ -73,7 +73,8 @@ fn handle_command(line: String, manager: &Manager, ident: &IdentityUnion, shutdo
         "messaging" => messaging::handle_messaging(manager, ident, command),
         "kad" => kad::cli::handle_kad(manager, command),
         "mdns" => mdns::cli::handle_mdns(manager, command),
-        "relay_ext" => relay_ext::cli::handle_relay_ext(manager, command),
+        "relay-client" => relay_client::cli::handle_relayclient(manager, command),
+        "relay-ext" => relay_ext::cli::handle_relay_ext(manager, command),
         "utils" => handle_utils(command),
         "" => {}
         _ => println!("Unrecognized command"),
@@ -130,3 +131,27 @@ Available commands:
     mdns                Subcommand for `mdns` protocol.
     utils               Subcommand for various utilities.
 "#;
+
+#[allow(unused)]
+mod helper{
+    use libp2p::{PeerId, Multiaddr};
+
+    fn parse_peer_id(command:Vec<&str>){
+        let peer_id = match command[2].parse::<PeerId>() {
+            Ok(v) => v,
+            Err(e) => {
+                println!("Failed to parse peer ID for input {}: {}", command[2], e);
+                return;
+            }
+        };
+    }
+    fn parse_multiaddr(command:Vec<&str>){
+        let addr = match command[2].parse::<Multiaddr>() {
+            Ok(addr) => addr,
+            Err(e) => {
+                println!("Error: Failed parsing address `{}`: {}", command[2], e);
+                return;
+            }
+        };
+    }
+}

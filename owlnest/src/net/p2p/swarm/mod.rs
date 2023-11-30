@@ -43,7 +43,7 @@ impl Builder {
         let (swarm_event_out, _) = tokio::sync::broadcast::channel(16);
         let (handle_bundle, mut rx_bundle) = HandleBundle::new(buffer_size, &swarm_event_out);
         let manager =
-            manager::Manager::new(Arc::new(handle_bundle), executor, swarm_event_out.clone());
+            manager::Manager::new(Arc::new(handle_bundle), ident.clone(),executor, swarm_event_out.clone());
         let manager_clone = manager.clone();
         tokio::spawn(async move {
             let event_out = swarm_event_out;
@@ -78,7 +78,6 @@ impl Builder {
                 })
                 .expect("behaviour incorporation to succeed")
                 .build();
-
             loop {
                 select! {
                     Some(ev) = rx_bundle.next() => handle_incoming_event(ev, &mut swarm),
@@ -183,7 +182,7 @@ fn handle_incoming_event(ev: Rx, swarm: &mut Swarm) {
         Tethering(ev) => swarm.behaviour_mut().tethering.push_event(ev),
         Mdns(ev) => mdns::map_in_event(ev, &mut swarm.behaviour_mut().mdns),
         Swarm(ev) => swarm_op_exec(swarm, ev),
-        _ => {}
+        RelayExt(ev) => swarm.behaviour_mut().relay_ext.push_event(ev),
     }
 }
 
@@ -242,7 +241,7 @@ fn handle_behaviour_event(swarm: &mut Swarm, ev: &BehaviourEvent) {
         Tethering(ev) => tethering::ev_dispatch(ev),
         RelayServer(ev) => relay_server::ev_dispatch(ev),
         RelayClient(ev) => relay_client::ev_dispatch(ev),
-        _ => {}
+        _ =>{}
     }
 }
 

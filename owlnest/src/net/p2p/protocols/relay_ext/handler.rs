@@ -10,7 +10,7 @@ use tracing::{trace, warn};
 pub enum FromBehaviour {
     QueryAdvertisedPeer,
     AnswerAdvertisedPeer(Vec<PeerId>),
-    SetAdvertiseSelf(bool),
+    SetAdvertiseSelf(bool,u64),
 }
 #[derive(Debug)]
 pub enum ToBehaviour {
@@ -27,7 +27,7 @@ pub enum State {
 
 #[derive(Debug, Serialize, Deserialize)]
 enum Packet {
-    AdvertiseSelf(bool),
+    AdvertiseSelf(bool,u64),
     QueryAdvertisedPeer,
     AnswerAdvertisedPeer(Vec<PeerId>),
 }
@@ -40,7 +40,7 @@ impl Packet {
 impl Into<ToBehaviour> for Packet {
     fn into(self) -> ToBehaviour {
         match self {
-            Packet::AdvertiseSelf(bool) => ToBehaviour::IncomingAdvertiseReq(bool),
+            Packet::AdvertiseSelf(bool,_) => ToBehaviour::IncomingAdvertiseReq(bool),
             Packet::QueryAdvertisedPeer => ToBehaviour::IncomingQuery,
             Packet::AnswerAdvertisedPeer(result) => ToBehaviour::QueryAnswered(result),
         }
@@ -135,14 +135,16 @@ impl ConnectionHandler for Handler {
                 Poll::Ready(Err(e)) => {
                     let error = Error::IO(format!("IO Error: {:?}", e));
                     self.pending_out_events
-                        .push_front(ToBehaviour::Error(error));
+                        .push_back(ToBehaviour::Error(error));
                     self.inbound = None;
                 }
                 Poll::Ready(Ok((stream, bytes))) => {
                     self.inbound = Some(super::protocol::recv(stream).boxed());
                     match serde_json::from_slice::<Packet>(&bytes) {
-                        Ok(packet) => self.pending_out_events.push_front(packet.into()),
-                        Err(e) => self.pending_out_events.push_front(ToBehaviour::Error(
+                        Ok(packet) => {
+                            self.pending_out_events.push_back(packet.into())
+                        },
+                        Err(e) => self.pending_out_events.push_back(ToBehaviour::Error(
                             Error::UnrecognizedMessage(format!(
                                 "Unrecognized message: {}, raw data: {}",
                                 e,
@@ -208,9 +210,9 @@ impl ConnectionHandler for Handler {
                                     Delay::new(self.timeout),
                                 ))
                             }
-                            SetAdvertiseSelf(state) => {
+                            SetAdvertiseSelf(state,id) => {
                                 self.outbound = Some(OutboundState::Busy(
-                                    protocol::send(stream, Packet::AdvertiseSelf(state).as_bytes())
+                                    protocol::send(stream, Packet::AdvertiseSelf(state,id).as_bytes())
                                         .boxed(),
                                     Delay::new(self.timeout),
                                 ))
@@ -233,9 +235,9 @@ impl ConnectionHandler for Handler {
                     return Poll::Ready(event);
                 }
             }
-            if let Some(ev) = self.pending_out_events.pop_back() {
-                return Poll::Ready(ConnectionHandlerEvent::NotifyBehaviour(ev));
-            }
+        }
+        if let Some(ev) = self.pending_out_events.pop_front() {
+            return Poll::Ready(ConnectionHandlerEvent::NotifyBehaviour(ev));
         }
         Poll::Pending
     }

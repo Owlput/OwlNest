@@ -15,6 +15,7 @@ pub enum InEvent {
 #[allow(unused)]
 macro_rules! event_op {
     ($listener:ident,$pattern:pat,{$($ops:tt)+}) => {
+        async move{
         loop{
             let ev = handle_listener_result!($listener);
             if let SwarmEvent::Behaviour(BehaviourEvent::Mdns($pattern)) = ev.as_ref() {
@@ -22,7 +23,7 @@ macro_rules! event_op {
             } else {
                 continue;
             }
-        }
+        }}
     };
 }
 
@@ -33,10 +34,7 @@ pub struct Handle {
     event_tx: EventSender,
 }
 impl Handle {
-    pub fn new(
-        buffer: usize,
-        event_tx: &EventSender,
-    ) -> (Self, mpsc::Receiver<InEvent>) {
+    pub fn new(buffer: usize, event_tx: &EventSender) -> (Self, mpsc::Receiver<InEvent>) {
         let (tx, rx) = mpsc::channel(buffer);
         (
             Self {

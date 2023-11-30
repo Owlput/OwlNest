@@ -56,15 +56,7 @@ impl NetworkBehaviour for Behaviour {
             },
             Error(e) => self.out_events.push_front(OutEvent::Error(e)),
             Unsupported => self.out_events.push_back(OutEvent::Unsupported(peer_id)),
-            InboundNegotiated => {
-                self.out_events
-                    .push_back(OutEvent::InboundNegotiated(peer_id));
-            }
-            OutboundNegotiated => {
-                self.out_events
-                    .push_back(OutEvent::OutboundNegotiated(peer_id));
-            }
-            SuccessfulSend(id) => self.out_events.push_back(OutEvent::SuccessfulSend(id)),
+            SendResult(result, id) => self.out_events.push_back(OutEvent::SendResult(result, id)),
         }
     }
     fn poll(
@@ -86,8 +78,10 @@ impl NetworkBehaviour for Behaviour {
                             event: handler::FromBehaviourEvent::PostMessage(msg, id),
                         });
                     } else {
-                        self.out_events
-                            .push_back(OutEvent::Error(Error::PeerNotFound(target)))
+                        self.out_events.push_back(OutEvent::SendResult(
+                            Err(SendError::PeerNotFound(target)),
+                            id,
+                        ))
                     }
                 }
             }
@@ -96,7 +90,7 @@ impl NetworkBehaviour for Behaviour {
     }
 
     fn on_swarm_event(&mut self, event: libp2p::swarm::FromSwarm) {
-        match event {
+        match &event {
             libp2p_swarm::FromSwarm::ConnectionClosed(info) => {
                 if info.remaining_established < 1 {
                     self.connected_peers.remove(&info.peer_id);

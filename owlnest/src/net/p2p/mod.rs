@@ -2,8 +2,13 @@ pub mod identity;
 pub mod protocols;
 pub mod swarm;
 
-use identity::IdentityUnion;
+use std::sync::Arc;
+
 use crate::net::p2p::protocols::*;
+use identity::IdentityUnion;
+use tokio::sync::Notify;
+
+use self::swarm::manager::Manager;
 
 pub struct SwarmConfig {
     pub local_ident: IdentityUnion,
@@ -11,7 +16,7 @@ pub struct SwarmConfig {
     pub identify: identify::Config,
     pub mdns: mdns::Config,
     pub messaging: messaging::Config,
-    #[cfg(feature="tethering")]
+    #[cfg(feature = "tethering")]
     pub tethering: tethering::Config,
     pub relay_server: libp2p::relay::Config,
 }
@@ -28,8 +33,7 @@ mod handler_prelude {
         handler::{
             ConnectionEvent, DialUpgradeError, FullyNegotiatedInbound, FullyNegotiatedOutbound,
         },
-        ConnectionHandler, ConnectionHandlerEvent, Stream, StreamUpgradeError,
-        SubstreamProtocol,
+        ConnectionHandler, ConnectionHandlerEvent, Stream, StreamUpgradeError, SubstreamProtocol,
     };
     pub use std::io;
     pub use std::task::Poll;
@@ -47,10 +51,37 @@ mod handler_prelude {
 //     }
 // }
 
+pub fn setup_default() -> (Manager,Arc<Notify>) {
+    let rt = tokio::runtime::Builder::new_multi_thread()
+        .enable_all()
+        .build()
+        .unwrap();
+    let ident = IdentityUnion::generate();
+    let guard = rt.enter();
+    let swarm_config = SwarmConfig {
+        local_ident: ident.clone(),
+        kad: protocols::kad::Config::default(),
+        identify: protocols::identify::Config::new("/owlnest/0.0.1".into(), ident.get_pubkey()),
+        mdns: protocols::mdns::Config::default(),
+        messaging: protocols::messaging::Config::default(),
+        #[cfg(feature="tethering")]
+        tethering: protocols::tethering::Config,
+        relay_server: protocols::relay_server::Config::default(),
+    };
+    let mgr = swarm::Builder::new(swarm_config).build(8, rt.handle().clone());
+    drop(guard);
+    let shutdown_notifier = std::sync::Arc::new(Notify::const_new());
+    let notifier_clone = shutdown_notifier.clone();
+    std::thread::spawn(move || {
+        let rt = rt;
+        let _ = rt.block_on(notifier_clone.notified());
+    });
+    (mgr,shutdown_notifier)
+}
+
 #[macro_export]
 macro_rules! with_timeout {
-    ($future:ident,$timeout:literal) => {
-        {
+    ($future:ident,$timeout:literal) => {{
         let timer = futures_timer::Delay::new(std::time::Duration::from_secs($timeout));
         tokio::select! {
             _ = timer =>{
@@ -60,6 +91,5 @@ macro_rules! with_timeout {
                 Ok(v)
             }
         }
-    }
-}
+    }};
 }
