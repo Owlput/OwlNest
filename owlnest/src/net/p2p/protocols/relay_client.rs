@@ -40,9 +40,9 @@ pub fn ev_dispatch(ev: &client::Event) {
 
 #[allow(unused)]
 pub(crate) mod cli {
-    use libp2p::{Multiaddr, PeerId, multiaddr::Protocol};
+    use libp2p::{multiaddr::Protocol, Multiaddr, PeerId};
 
-    use crate::net::p2p::swarm::{manager::Manager, cli::format_transport_error};
+    use crate::net::p2p::swarm::{cli::format_transport_error, manager::Manager};
 
     pub fn handle_relayclient(manager: &Manager, command: Vec<&str>) {
         if command.len() < 2 {
@@ -80,7 +80,7 @@ pub(crate) mod cli {
                 "Successfully listening on {} with listener ID {:?}",
                 addr, listener_id
             ),
-    
+
             Err(e) => println!(
                 "Failed to listen on {} with error: {}",
                 addr,
@@ -92,11 +92,9 @@ pub(crate) mod cli {
 
 #[cfg(test)]
 mod test {
-    use std::{thread, time::Duration};
-
-    use libp2p::Multiaddr;
-
     use crate::net::p2p::setup_default;
+    use libp2p::{multiaddr::Protocol, Multiaddr};
+    use std::{thread, time::Duration};
 
     #[test]
     fn test() {
@@ -105,25 +103,23 @@ mod test {
         let (peer3_m, _) = setup_default();
         assert!(peer1_m
             .swarm()
-            .listen(&"/ip4/127.0.0.1/tcp/10086".parse::<Multiaddr>().unwrap())
+            .listen(&"/ip4/127.0.0.1/tcp/0".parse::<Multiaddr>().unwrap()) // Pick a random port that is available
             .is_ok());
         peer1_m
             .swarm()
-            .add_external_address(&"/ip4/127.0.0.1/tcp/10901".parse::<Multiaddr>().unwrap());
+            .add_external_address(&peer1_m.swarm().list_listeners()[0]); // The address is on local network
         assert!(peer2_m
             .swarm()
-            .dial(&"/ip4/127.0.0.1/tcp/10086".parse::<Multiaddr>().unwrap())
+            .dial(&peer1_m.swarm().list_listeners()[0])
             .is_ok());
         thread::sleep(Duration::from_secs(1));
         assert!(peer2_m
             .swarm()
             .listen(
-                &format!(
-                    "/ip4/127.0.0.1/tcp/10086/p2p/{}/p2p-circuit/ip4/127.0.0.1/tcp/10901",
-                    peer1_m.identity().get_peer_id()
-                )
-                .parse::<Multiaddr>()
-                .unwrap()
+                &peer1_m.swarm().list_listeners()[0]
+                    .clone()
+                    .with(Protocol::P2p(peer1_m.identity().get_peer_id()))
+                    .with(Protocol::P2pCircuit)
             )
             .is_ok());
         thread::sleep(Duration::from_secs(1));
@@ -131,13 +127,11 @@ mod test {
         assert!(peer3_m
             .swarm()
             .dial(
-                &format!(
-                    "/ip4/127.0.0.1/tcp/10086/p2p/{}/p2p-circuit/p2p/{}",
-                    peer1_m.identity().get_peer_id(),
-                    peer2_m.identity().get_peer_id()
-                )
-                .parse::<Multiaddr>()
-                .unwrap()
+                &peer1_m.swarm().list_listeners()[0]
+                    .clone()
+                    .with(Protocol::P2p(peer1_m.identity().get_peer_id()))
+                    .with(Protocol::P2pCircuit)
+                    .with(Protocol::P2p(peer2_m.identity().get_peer_id()))
             )
             .is_ok());
         thread::sleep(Duration::from_secs(1));

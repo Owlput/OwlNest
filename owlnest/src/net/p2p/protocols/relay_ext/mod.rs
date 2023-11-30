@@ -180,13 +180,13 @@ mod test {
         let (peer2_m, _) = setup_default();
         peer1_m
             .swarm()
-            .listen(&"/ip4/127.0.0.1/tcp/10086".parse::<Multiaddr>().unwrap())
+            .listen(&"/ip4/127.0.0.1/tcp/0".parse::<Multiaddr>().unwrap())
             .unwrap();
         let peer1_id = peer1_m.identity().get_peer_id();
         let peer2_id = peer2_m.identity().get_peer_id();
         peer2_m
             .swarm()
-            .dial(&"/ip4/127.0.0.1/tcp/10086".parse::<Multiaddr>().unwrap())
+            .dial(&peer1_m.swarm().list_listeners()[0])
             .unwrap();
         thread::sleep(Duration::from_secs(1));
         assert!(peer1_m
