@@ -5,9 +5,9 @@ use xxhash_rust::xxh3::xxh3_128;
 
 /// Universal protocol for sending bytes
 
-// Send and receive operation are performed in different negoticated substreams
-//      send()<--Outbound-->|<--Inbound-->recv()
-//      recv()<--Inbound-->|<--Outbound-->send()
+// Send and receive operation are performed on different negoticated substreams
+//      send()-->Outbound------>Inbound-->recv()
+//      recv()<--Inbound<------Outbound<--send()
 //              Peer A          Peer B
 pub async fn send<S>(mut stream: S, msg_bytes: Vec<u8>) -> io::Result<(S, Duration)>
 where

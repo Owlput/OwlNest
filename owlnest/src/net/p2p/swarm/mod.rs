@@ -11,7 +11,7 @@ pub mod behaviour;
 pub mod cli;
 pub(crate) mod in_event;
 pub mod manager;
-pub mod op;
+pub mod handle;
 pub mod out_event;
 
 pub use in_event::*;
@@ -283,17 +283,3 @@ where
         warn!("Failed to send callback: {:?}", v)
     }
 }
-
-// use futures::{AsyncRead, AsyncWrite};
-// fn upgrade_transport<StreamSink>(
-//     transport: libp2p::core::transport::Boxed<StreamSink>,
-//     keypair: &Keypair,
-// ) -> libp2p::core::transport::Boxed<(PeerId, libp2p::core::muxing::StreamMuxerBox)>
-// where
-//     StreamSink: AsyncRead + AsyncWrite + Send + Unpin + 'static,
-// {
-//     libp2p::Transport::upgrade(transport, libp2p::core::upgrade::Version::V1)
-//         .authenticate(libp2p::noise::Config::new(keypair).unwrap())
-//         .multiplex(libp2p::yamux::Config::default())
-//         .boxed()
-// }

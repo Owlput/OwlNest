@@ -20,8 +20,8 @@ pub fn ev_dispatch(ev: &client::Event) {
                 );
             }
             debug!(
-                "Reservation sent to relay {} has been accepted. IsRenewal:{}, limit:{:?}",
-                relay_peer_id, renewal, limit
+                "Reservation on relay {} has been renewed. limit:{:?}",
+                relay_peer_id, limit
             )
         }
         OutboundCircuitEstablished {
@@ -107,36 +107,36 @@ mod test {
             .is_ok());
         peer1_m
             .swarm()
-            .add_external_address(&peer1_m.swarm().list_listeners()[0]); // The address is on local network
+            .add_external_address_blocking(peer1_m.swarm().list_listeners_blocking()[0].clone()); // The address is on local network
         assert!(peer2_m
             .swarm()
-            .dial(&peer1_m.swarm().list_listeners()[0])
+            .dial(&peer1_m.swarm().list_listeners_blocking()[0])
             .is_ok());
-        thread::sleep(Duration::from_secs(1));
+        thread::sleep(Duration::from_millis(200));
         assert!(peer2_m
             .swarm()
             .listen(
-                &peer1_m.swarm().list_listeners()[0]
+                &peer1_m.swarm().list_listeners_blocking()[0]
                     .clone()
                     .with(Protocol::P2p(peer1_m.identity().get_peer_id()))
                     .with(Protocol::P2pCircuit)
             )
             .is_ok());
-        thread::sleep(Duration::from_secs(1));
-        assert!(peer2_m.swarm().list_listeners().len() > 0);
+        thread::sleep(Duration::from_millis(200));
+        assert!(peer2_m.swarm().list_listeners_blocking().len() > 0);
         assert!(peer3_m
             .swarm()
             .dial(
-                &peer1_m.swarm().list_listeners()[0]
+                &peer1_m.swarm().list_listeners_blocking()[0]
                     .clone()
                     .with(Protocol::P2p(peer1_m.identity().get_peer_id()))
                     .with(Protocol::P2pCircuit)
                     .with(Protocol::P2p(peer2_m.identity().get_peer_id()))
             )
             .is_ok());
-        thread::sleep(Duration::from_secs(1));
+        thread::sleep(Duration::from_millis(200));
         assert!(peer3_m
             .swarm()
-            .is_connected(&peer2_m.identity().get_peer_id()));
+            .is_connected_blocking(peer2_m.identity().get_peer_id()));
     }
 }

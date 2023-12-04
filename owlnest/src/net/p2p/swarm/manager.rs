@@ -1,4 +1,4 @@
-use super::op::SwarmHandle;
+use super::handle::SwarmHandle;
 
 macro_rules! generate_manager {
     {$($behaviour_name:ident:$variant_ident:ident,)+} => {

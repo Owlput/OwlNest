@@ -4,11 +4,11 @@ use libp2p::{
 };
 use std::str::FromStr;
 use tokio::sync::{mpsc, oneshot};
-use tracing::{debug, info, trace};
+use tracing::{debug, info, trace, warn};
 
 use crate::{
     net::p2p::swarm::{behaviour::BehaviourEvent, EventSender, SwarmEvent},
-    with_timeout,
+    with_timeout, handle_callback_sender,
 };
 
 pub use kad::Config;
@@ -113,16 +113,16 @@ pub(crate) fn map_in_event(ev: InEvent, behav: &mut Behaviour) {
     match ev {
         PeerLookup(peer_id, callback) => {
             let query_id = behav.get_record(kad::RecordKey::new(&peer_id.to_bytes()));
-            callback.send(query_id).expect("callback to succeed")
+            handle_callback_sender!(query_id=>callback);
         }
         BootStrap(callback) => {
             let result = behav.bootstrap();
-            callback.send(result).expect("callback to succeed");
+            handle_callback_sender!(result=>callback);
         }
         SetMode(mode) => behav.set_mode(mode),
         InsertNode(peer, address, callback) => {
             let result = behav.add_address(&peer, address);
-            callback.send(result).expect("callback to succeed");
+            handle_callback_sender!(result=>callback);
         }
     }
 }

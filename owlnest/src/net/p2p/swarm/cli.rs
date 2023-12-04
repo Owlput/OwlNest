@@ -1,4 +1,4 @@
-use crate::net::p2p::swarm::op::SwarmHandle;
+use crate::net::p2p::swarm::handle::SwarmHandle;
 use libp2p::{Multiaddr, PeerId, TransportError};
 
 pub fn handle_swarm(handle: &SwarmHandle, command: Vec<&str>) {
@@ -81,7 +81,7 @@ mod listener {
             return;
         }
         match command[2]{
-            "ls" => println!("Active listeners: {:?}",handle.list_listeners()),
+            "ls" => println!("Active listeners: {:?}",handle.list_listeners_blocking()),
             "help" => println!("{}",HELP_MESSAGE),
             _=>println!("Failed to execute: unrecognized subcommand. Type \"swarm listener help\" for more information.")
         }
@@ -126,7 +126,7 @@ mod external_address {
                 return;
             }
         };
-        handle.add_external_address(&addr);
+        handle.add_external_address_blocking(addr.clone());
         println!("External address `{}` added", addr)
     }
     fn remove(handle: &SwarmHandle, command: Vec<&str>) {
@@ -141,11 +141,11 @@ mod external_address {
                 return;
             }
         };
-        handle.remove_external_address(&addr);
+        handle.remove_external_address_blocking(addr.clone());
         println!("External address `{}` removed", addr)
     }
     fn ls(handle: &SwarmHandle) {
-        let addresses = handle.list_external_addresses();
+        let addresses = handle.list_external_addresses_blocking();
         println!("External addresses: {:?}", addresses)
     }
 
@@ -179,7 +179,7 @@ fn handle_swarm_isconnected(handle: &SwarmHandle, command: Vec<&str>) {
             return;
         }
     };
-    println!("{}", handle.is_connected(&peer_id))
+    println!("{}", handle.is_connected_blocking(peer_id))
 }
 
 const TOP_HELP_MESSAGE: &str = r#"

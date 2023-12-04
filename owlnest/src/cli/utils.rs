@@ -2,13 +2,13 @@ use std::net::{SocketAddr, ToSocketAddrs};
 
 pub fn handle_utils(command: Vec<&str>) {
     if command.len() < 2 {
-        println!("No subcommands supplied. Type \"utils help\" for more information.");
+        println!("No subcommands supplied. Type `utils help` for more information.");
         return;
     }
     match command[1] {
         "dns" => handle_utils_dns(command),
         "help" => println!("{}", TOP_HELP_MESSAGE),
-        _ => println!("Unrecognized command. Type \"utils help\" for more information."),
+        _ => println!("Unrecognized command. Type `utils help` for more information."),
     }
 }
 
@@ -27,7 +27,7 @@ fn handle_utils_dns(command: Vec<&str>) {
                 Ok(addr) => addr.collect::<Box<[SocketAddr]>>(),
                 Err(e) => {
                     println!("Failed to perform lookup: {:?}", e);
-                    println!("Hint: You may have missed port number. You can try out port 0.");
+                    println!("Hint: You may have missed the port number. You can try out port 0.");
                     return;
                 }
             };

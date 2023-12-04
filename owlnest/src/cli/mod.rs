@@ -44,7 +44,12 @@ pub fn setup_interactive_shell(
     });
 }
 
-fn handle_command(line: String, manager: &Manager, ident: &IdentityUnion, shutdown_notifier: &Arc<Notify>) {
+fn handle_command(
+    line: String,
+    manager: &Manager,
+    ident: &IdentityUnion,
+    shutdown_notifier: &Arc<Notify>,
+) {
     let command: Vec<&str> = line.split(' ').collect();
     match command[0] {
         "help" => {
@@ -57,6 +62,10 @@ fn handle_command(line: String, manager: &Manager, ident: &IdentityUnion, shutdo
                 println!("Error: Missing required argument <address>, syntax: `dial <address>`");
                 return;
             }
+            if command[1].contains("p2p-circuit") {
+                println!("Error: Relayed connection should be established using `relay-client`.");
+                return;
+            }
             swarm::cli::handle_swarm_dial(&manager.swarm(), command[1])
         }
         "listen" => {
@@ -66,9 +75,12 @@ fn handle_command(line: String, manager: &Manager, ident: &IdentityUnion, shutdo
             }
             swarm::cli::handle_swarm_listen(&manager.swarm(), command[1])
         }
-        "shutdown" => shutdown_notifier.notify_one(),
+        "shutdown" => {
+            println!("Shutting down...");
+            shutdown_notifier.notify_one()
+        }
         "swarm" => swarm::cli::handle_swarm(&manager.swarm(), command),
-        #[cfg(feature="tethering")]
+        #[cfg(feature = "tethering")]
         "tethering" => tethering::cli::handle_tethering(manager, command),
         "messaging" => messaging::handle_messaging(manager, ident, command),
         "kad" => kad::cli::handle_kad(manager, command),
@@ -77,7 +89,7 @@ fn handle_command(line: String, manager: &Manager, ident: &IdentityUnion, shutdo
         "relay-ext" => relay_ext::cli::handle_relay_ext(manager, command),
         "utils" => handle_utils(command),
         "" => {}
-        _ => println!("Unrecognized command"),
+        _ => println!("Unrecognized command. Type `help` for more info."),
     }
 }
 
@@ -127,16 +139,18 @@ Available commands:
                         gracefully closed.
     swarm               Subcommand for accessing features on the swarm.
     kad                 Subcommand for `/ipfs/kad/1.0.0` protocol.
-    messaging           Subcommand for `messaging` protocol.
+    relay-client        Subcommand for handling relayed connections.
+    messaging           Subcommand for `/owlnest/messaging/0.0.1` protocol.
+    relay-ext           Subcommand for `/owlnest/relay-ext/0.0.1` protocol.
     mdns                Subcommand for `mdns` protocol.
     utils               Subcommand for various utilities.
 "#;
 
 #[allow(unused)]
-mod helper{
-    use libp2p::{PeerId, Multiaddr};
+mod helper {
+    use libp2p::{Multiaddr, PeerId};
 
-    fn parse_peer_id(command:Vec<&str>){
+    fn parse_peer_id(command: Vec<&str>) {
         let peer_id = match command[2].parse::<PeerId>() {
             Ok(v) => v,
             Err(e) => {
@@ -145,7 +159,7 @@ mod helper{
             }
         };
     }
-    fn parse_multiaddr(command:Vec<&str>){
+    fn parse_multiaddr(command: Vec<&str>) {
         let addr = match command[2].parse::<Multiaddr>() {
             Ok(addr) => addr,
             Err(e) => {

@@ -186,22 +186,29 @@ mod test {
         let peer2_id = peer2_m.identity().get_peer_id();
         peer2_m
             .swarm()
-            .dial(&peer1_m.swarm().list_listeners()[0])
+            .dial(&peer1_m.swarm().list_listeners_blocking()[0])
             .unwrap();
-        thread::sleep(Duration::from_secs(1));
+        thread::sleep(Duration::from_millis(200));
         assert!(peer1_m
             .executor()
             .block_on(peer1_m.relay_ext().set_provider_state(true)));
-        thread::sleep(Duration::from_secs(1));
+        thread::sleep(Duration::from_millis(200));
         peer2_m
             .executor()
             .block_on(peer2_m.relay_ext().set_remote_advertisement(peer1_id, true));
-        assert!(peer2_m.swarm().is_connected(&peer1_id));
-        thread::sleep(Duration::from_secs(1));
+        assert!(peer2_m.swarm().is_connected_blocking(peer1_id));
+        thread::sleep(Duration::from_millis(200));
         assert!(peer2_m
             .executor()
             .block_on(peer2_m.relay_ext().query_advertised_peer(peer1_id))
             .unwrap()
             .contains(&peer2_id));
+        assert!(!peer1_m.executor().block_on(peer1_m.relay_ext().set_provider_state(false)));
+        thread::sleep(Duration::from_millis(200));
+        assert!(peer2_m.executor().block_on(peer2_m.relay_ext().query_advertised_peer(peer1_id)).unwrap().len() == 0);
+        peer2_m.executor().block_on(peer2_m.relay_ext().set_remote_advertisement(peer1_id, false));
+        assert!(peer1_m.executor().block_on(peer1_m.relay_ext().set_provider_state(true)));
+        thread::sleep(Duration::from_millis(200));
+        assert!(peer2_m.executor().block_on(peer2_m.relay_ext().query_advertised_peer(peer1_id)).unwrap().len() == 0);
     }
 }
