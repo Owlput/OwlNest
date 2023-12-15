@@ -18,15 +18,19 @@ pub use behaviour::Behaviour;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum OutEvent {
+    /// A query sent to a remote peer is answered.
     QueryAnswered {
         from: PeerId,
         list: Vec<PeerId>,
     },
+    /// A advertisement result from remote peer arrived.
     RemoteAdvertisementResult {
         from: PeerId,
         result: Result<(), ()>,
     },
+    /// Local provider state.
     ProviderState(bool, u64),
+    AdvertisedPeerChanged(PeerId,bool),
     Error(Error),
 }
 
@@ -67,18 +71,26 @@ mod protocol {
 
 #[derive(Debug)]
 pub enum InEvent {
+    /// Set local provider state.
     SetProviderState(bool, u64),
-    QueryProviderState(u64),
+    /// Get local provider state.
+    GetProviderState(u64),
+    /// Send a query to a remote peer for advertised peers.
     QueryAdvertisedPeer(PeerId),
+    /// Set remote provider state to advertise or stop advertising local peer.
     SetAdvertisingSelf {
         remote: PeerId,
         state: bool,
         id: u64,
     },
+    /// Remove a advertised peer from local provider.
+    RemoveAdvertised(PeerId),
+    /// Remove all advertised peers from local provider.
+    ClearAdvertised,
 }
 
 macro_rules! event_op {
-    ($listener:ident,$pattern:pat,{$($ops:tt)+}) => {
+    ($listener:ident,$pattern:pat=>{$($ops:tt)+}) => {
         async move{
         loop{
             let ev = crate::handle_listener_result!($listener);
@@ -112,7 +124,7 @@ impl Handle {
     }
     pub async fn query_advertised_peer(&self, relay: PeerId) -> Result<Vec<PeerId>, Error> {
         let mut listener = self.event_tx.subscribe();
-        let fut = event_op!(listener, OutEvent::QueryAnswered { from, list }, {
+        let fut = event_op!(listener, OutEvent::QueryAnswered { from, list }=> {
             if *from == relay {
                 return list.clone();
             }
@@ -126,9 +138,9 @@ impl Handle {
         }
     }
     pub async fn set_provider_state(&self, state: bool) -> bool {
-        let op_id = self.get_id();
+        let op_id = self.next_id();
         let mut listener = self.event_tx.subscribe();
-        let fut = event_op!(listener, OutEvent::ProviderState(state, id), {
+        let fut = event_op!(listener, OutEvent::ProviderState(state, id)=> {
             if *id != op_id {
                 continue;
             }
@@ -139,20 +151,20 @@ impl Handle {
         with_timeout!(fut, 10).expect("future to finish in 10s")
     }
     pub async fn provider_state(&self) -> bool {
-        let op_id = self.get_id();
+        let op_id = self.next_id();
         let mut listener = self.event_tx.subscribe();
-        let fut = event_op!(listener, OutEvent::ProviderState(state, id), {
+        let fut = event_op!(listener, OutEvent::ProviderState(state, id)=> {
             if *id != op_id {
                 continue;
             }
             return *state;
         });
-        let ev = InEvent::QueryProviderState(op_id);
+        let ev = InEvent::GetProviderState(op_id);
         self.sender.send(ev).await.expect("send to succeed");
         with_timeout!(fut, 10).expect("future to finish in 10s")
     }
     pub async fn set_remote_advertisement(&self, remote: PeerId, state: bool) {
-        let op_id = self.get_id();
+        let op_id = self.next_id();
         let ev = InEvent::SetAdvertisingSelf {
             remote,
             state,
@@ -160,7 +172,22 @@ impl Handle {
         };
         self.sender.send(ev).await.expect("Send to succeed");
     }
-    fn get_id(&self) -> u64 {
+    pub async fn remove_advertised(&self,peer_id:&PeerId)->bool{
+        let ev = InEvent::RemoveAdvertised(*peer_id);
+        let mut listener = self.event_tx.subscribe();
+        let fut = event_op!(listener,OutEvent::AdvertisedPeerChanged(target,state )=>{
+            if *target == *peer_id{
+                return *state
+            }
+        });
+        self.sender.send(ev).await.expect("Send to succeed");
+        with_timeout!(fut,10).expect("Future to finish in 10s")
+    }
+    pub async fn clear_advertised(&self){
+        let ev = InEvent::ClearAdvertised;
+        self.sender.send(ev).await.expect("Send to succeed")
+    }
+    fn next_id(&self) -> u64 {
         use std::sync::atomic::Ordering;
         self.counter.fetch_add(1, Ordering::SeqCst)
     }
@@ -180,13 +207,13 @@ mod test {
         let (peer2_m, _) = setup_default();
         peer1_m
             .swarm()
-            .listen(&"/ip4/127.0.0.1/tcp/0".parse::<Multiaddr>().unwrap())
+            .listen_blocking(&"/ip4/127.0.0.1/tcp/0".parse::<Multiaddr>().unwrap())
             .unwrap();
         let peer1_id = peer1_m.identity().get_peer_id();
         let peer2_id = peer2_m.identity().get_peer_id();
         peer2_m
             .swarm()
-            .dial(&peer1_m.swarm().list_listeners_blocking()[0])
+            .dial_blocking(&peer1_m.swarm().list_listeners_blocking()[0])
             .unwrap();
         thread::sleep(Duration::from_millis(200));
         assert!(peer1_m

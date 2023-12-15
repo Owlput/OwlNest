@@ -7,8 +7,10 @@ use std::sync::Arc;
 use crate::net::p2p::protocols::*;
 use identity::IdentityUnion;
 use tokio::sync::Notify;
+use swarm::manager::Manager;
 
-use self::swarm::manager::Manager;
+pub use libp2p::PeerId;
+pub use libp2p::Multiaddr;
 
 pub struct SwarmConfig {
     pub local_ident: IdentityUnion,

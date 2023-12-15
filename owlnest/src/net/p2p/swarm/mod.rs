@@ -1,6 +1,6 @@
 use crate::net::p2p::swarm::manager::HandleBundle;
 use futures::StreamExt;
-use libp2p::{core::ConnectedPoint, Multiaddr, PeerId};
+use libp2p::{Multiaddr, PeerId};
 use libp2p_swarm::DialError;
 use std::{fmt::Debug, sync::Arc};
 use tokio::select;
@@ -9,23 +9,23 @@ use tracing::{debug, info, trace, warn};
 
 pub mod behaviour;
 pub mod cli;
+pub mod handle;
 pub(crate) mod in_event;
 pub mod manager;
-pub mod handle;
 pub mod out_event;
 
 pub use in_event::*;
+pub use libp2p::core::ConnectedPoint;
+pub use libp2p::swarm::ConnectionId;
+pub use manager::Manager;
 pub type EventSender = tokio::sync::broadcast::Sender<Arc<SwarmEvent>>;
 
-use self::{
-    behaviour::BehaviourEvent,
-    manager::{Manager, Rx},
-};
+use self::{behaviour::BehaviourEvent, manager::Rx};
 
 use super::SwarmConfig;
 
 pub type Swarm = libp2p::Swarm<behaviour::Behaviour>;
-pub(crate) type SwarmEvent = libp2p::swarm::SwarmEvent<BehaviourEvent>;
+pub type SwarmEvent = libp2p::swarm::SwarmEvent<BehaviourEvent>;
 
 pub struct Builder {
     config: SwarmConfig,
@@ -35,15 +35,19 @@ impl Builder {
         Self { config }
     }
     pub fn build(self, buffer_size: usize, executor: tokio::runtime::Handle) -> Manager {
+        let guard = executor.enter();
         let ident = self.config.local_ident.clone();
-
         use crate::net::p2p::protocols::*;
         use libp2p::kad::store::MemoryStore;
         let kad_store = MemoryStore::new(ident.get_peer_id());
         let (swarm_event_out, _) = tokio::sync::broadcast::channel(16);
         let (handle_bundle, mut rx_bundle) = HandleBundle::new(buffer_size, &swarm_event_out);
-        let manager =
-            manager::Manager::new(Arc::new(handle_bundle), ident.clone(),executor, swarm_event_out.clone());
+        let manager = manager::Manager::new(
+            Arc::new(handle_bundle),
+            ident.clone(),
+            executor.clone(),
+            swarm_event_out.clone(),
+        );
         let manager_clone = manager.clone();
         tokio::spawn(async move {
             let event_out = swarm_event_out;
@@ -66,7 +70,7 @@ impl Builder {
                     mdns: mdns::Behaviour::new(self.config.mdns, ident.get_peer_id()).unwrap(),
                     identify: identify::Behaviour::new(self.config.identify),
                     messaging: messaging::Behaviour::new(self.config.messaging),
-                    #[cfg(feature="tethering")]
+                    #[cfg(feature = "tethering")]
                     tethering: tethering::Behaviour::new(self.config.tethering),
                     relay_server: libp2p::relay::Behaviour::new(
                         self.config.local_ident.get_peer_id(),
@@ -88,6 +92,7 @@ impl Builder {
                 };
             }
         });
+        drop(guard);
         manager
     }
 }
@@ -178,7 +183,7 @@ fn handle_incoming_event(ev: Rx, swarm: &mut Swarm) {
     match ev {
         Kad(ev) => kad::map_in_event(ev, &mut swarm.behaviour_mut().kad),
         Messaging(ev) => swarm.behaviour_mut().messaging.push_event(ev),
-        #[cfg(feature="tethering")]
+        #[cfg(feature = "tethering")]
         Tethering(ev) => swarm.behaviour_mut().tethering.push_event(ev),
         Mdns(ev) => mdns::map_in_event(ev, &mut swarm.behaviour_mut().mdns),
         Swarm(ev) => swarm_op_exec(swarm, ev),
@@ -236,12 +241,10 @@ fn handle_behaviour_event(swarm: &mut Swarm, ev: &BehaviourEvent) {
         Kad(ev) => kad::ev_dispatch(ev),
         Identify(ev) => identify::ev_dispatch(ev),
         Mdns(ev) => mdns::ev_dispatch(ev, swarm),
-        Messaging(ev) => messaging::ev_dispatch(ev),
-        #[cfg(feature="tethering")]
+        #[cfg(feature = "tethering")]
         Tethering(ev) => tethering::ev_dispatch(ev),
         RelayServer(ev) => relay_server::ev_dispatch(ev),
-        RelayClient(ev) => relay_client::ev_dispatch(ev),
-        _ =>{}
+        _ => {}
     }
 }
 

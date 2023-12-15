@@ -1,17 +1,18 @@
-use std::{io, num::NonZeroU32};
+use std::num::NonZeroU32;
 
 use super::*;
-use libp2p::{
-    swarm::{derive_prelude::ListenerId, ConnectionError, DialError, ListenError},
-    Multiaddr, TransportError,
-};
+use libp2p::{swarm::derive_prelude::ListenerId, Multiaddr};
+use libp2p_swarm::ConnectionId;
 use tokio::sync::mpsc;
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum SwarmEvent {
+    /// A connection to the given peer has been opened.
     ConnectionEstablished {
         /// Identity of the peer that we have connected to.
         peer_id: PeerId,
+        /// Identifier of the connection.
+        connection_id: ConnectionId,
         /// Endpoint of the connection that has been opened.
         endpoint: ConnectedPoint,
         /// Number of established connections to this peer, including the one that has just been
@@ -20,7 +21,7 @@ pub enum SwarmEvent {
         /// [`Some`] when the new connection is an outgoing connection.
         /// Addresses are dialed concurrently. Contains the addresses and errors
         /// of dial attempts that failed before the one successful dial.
-        concurrent_dial_errors: Option<Vec<(Multiaddr, TransportError<io::Error>)>>,
+        concurrent_dial_errors: String,
         /// How long it took to establish this connection
         established_in: std::time::Duration,
     },
@@ -29,21 +30,24 @@ pub enum SwarmEvent {
     ConnectionClosed {
         /// Identity of the peer that we have connected to.
         peer_id: PeerId,
+        /// Identifier of the connection.
+        connection_id: ConnectionId,
         /// Endpoint of the connection that has been closed.
         endpoint: ConnectedPoint,
         /// Number of other remaining connections to this same peer.
         num_established: u32,
         /// Reason for the disconnection, if it was not a successful
         /// active close.
-        cause: Option<ConnectionError>,
+        cause: String,
     },
     /// A new connection arrived on a listener and is in the process of protocol negotiation.
     ///
-    /// A corresponding [`ConnectionEstablished`](SwarmEvent::ConnectionEstablished),
-    /// [`BannedPeer`](SwarmEvent::BannedPeer), or
+    /// A corresponding [`ConnectionEstablished`](SwarmEvent::ConnectionEstablished) or
     /// [`IncomingConnectionError`](SwarmEvent::IncomingConnectionError) event will later be
     /// generated for this connection.
     IncomingConnection {
+        /// Identifier of the connection.
+        connection_id: ConnectionId,
         /// Local connection address.
         /// This address has been earlier reported with a [`NewListenAddr`](SwarmEvent::NewListenAddr)
         /// event.
@@ -56,6 +60,8 @@ pub enum SwarmEvent {
     /// This can include, for example, an error during the handshake of the encryption layer, or
     /// the connection unexpectedly closed.
     IncomingConnectionError {
+        /// Identifier of the connection.
+        connection_id: ConnectionId,
         /// Local connection address.
         /// This address has been earlier reported with a [`NewListenAddr`](SwarmEvent::NewListenAddr)
         /// event.
@@ -63,21 +69,16 @@ pub enum SwarmEvent {
         /// Address used to send back data to the remote.
         send_back_addr: Multiaddr,
         /// The error that happened.
-        error: ListenError,
+        error: String,
     },
     /// An error happened on an outbound connection.
     OutgoingConnectionError {
+        /// Identifier of the connection.
+        connection_id: ConnectionId,
         /// If known, [`PeerId`] of the peer we tried to reach.
         peer_id: Option<PeerId>,
         /// Error that has been encountered.
-        error: DialError,
-    },
-    /// We connected to a peer, but we immediately closed the connection because that peer is banned.
-    BannedPeer {
-        /// Identity of the banned peer.
-        peer_id: PeerId,
-        /// Endpoint of the connection that has been closed.
-        endpoint: ConnectedPoint,
+        error: String,
     },
     /// One of our listeners has reported a new local listening address.
     NewListenAddr {
@@ -103,14 +104,14 @@ pub enum SwarmEvent {
         addresses: Vec<Multiaddr>,
         /// Reason for the closure. Contains `Ok(())` if the stream produced `None`, or `Err`
         /// if the stream produced an error.
-        reason: Result<(), io::Error>,
+        reason: String,
     },
     /// One of the listeners reported a non-fatal error.
     ListenerError {
         /// The listener that errored.
         listener_id: ListenerId,
         /// The listener error.
-        error: io::Error,
+        error: String,
     },
     /// A new dialing attempt has been initiated by the [`NetworkBehaviour`]
     /// implementation.
@@ -119,8 +120,123 @@ pub enum SwarmEvent {
     /// reported if the dialing attempt succeeds, otherwise a
     /// [`OutgoingConnectionError`](SwarmEvent::OutgoingConnectionError) event
     /// is reported.
-    Dialing(Option<PeerId>),
+    Dialing {
+        /// Identity of the peer that we are connecting to.
+        peer_id: Option<PeerId>,
+
+        /// Identifier of the connection.
+        connection_id: ConnectionId,
+    },
+    /// We have discovered a new candidate for an external address for us.
+    NewExternalAddrCandidate { address: Multiaddr },
+    /// An external address of the local node was confirmed.
+    ExternalAddrConfirmed { address: Multiaddr },
+    /// An external address of the local node expired, i.e. is no-longer confirmed.
+    ExternalAddrExpired { address: Multiaddr },
 }
+impl SwarmEvent{
+    pub fn try_from_ref_swarm_event(ev:&super::SwarmEvent)->Result<Self,()>{
+        let ev = match ev {
+            libp2p::swarm::SwarmEvent::Behaviour(_) => return Err(()),
+            libp2p::swarm::SwarmEvent::ConnectionEstablished {
+                peer_id,
+                endpoint,
+                num_established,
+                concurrent_dial_errors,
+                established_in,
+                connection_id,
+            } => Self::ConnectionEstablished {
+                peer_id:*peer_id,
+                endpoint:endpoint.clone(),
+                num_established:num_established.clone(),
+                concurrent_dial_errors: format!("{:?}", concurrent_dial_errors),
+                established_in:established_in.clone(),
+                connection_id:*connection_id
+            },
+            libp2p::swarm::SwarmEvent::ConnectionClosed {
+                peer_id,
+                endpoint,
+                num_established,
+                cause,
+                connection_id,
+            } => Self::ConnectionClosed {
+                peer_id:*peer_id,
+                endpoint:endpoint.clone(),
+                num_established:*num_established,
+                cause: format!("{:?}", cause),
+                connection_id:*connection_id,
+            },
+            libp2p::swarm::SwarmEvent::IncomingConnection {
+                local_addr,
+                send_back_addr,
+                connection_id,
+            } => Self::IncomingConnection {
+                local_addr:local_addr.clone(),
+                send_back_addr:send_back_addr.clone(),
+                connection_id:*connection_id,
+            },
+            libp2p::swarm::SwarmEvent::IncomingConnectionError {
+                local_addr,
+                send_back_addr,
+                error,
+                connection_id,
+            } => Self::IncomingConnectionError {
+                local_addr:local_addr.clone(),
+                send_back_addr:send_back_addr.clone(),
+                error: format!("{:?}", error),
+                connection_id:*connection_id,
+            },
+            libp2p::swarm::SwarmEvent::OutgoingConnectionError {
+                peer_id,
+                error,
+                connection_id,
+            } => Self::OutgoingConnectionError {
+                peer_id:*peer_id,
+                error: format!("{:?}", error),
+                connection_id:*connection_id,
+            },
+            libp2p::swarm::SwarmEvent::NewListenAddr {
+                listener_id,
+                address,
+            } => Self::NewListenAddr {
+                listener_id:*listener_id,
+                address:address.clone(),
+            },
+            libp2p::swarm::SwarmEvent::ExpiredListenAddr {
+                listener_id,
+                address,
+            } => Self::ExpiredListenAddr {
+                listener_id:*listener_id,
+                address:address.clone(),
+            },
+            libp2p::swarm::SwarmEvent::ListenerClosed {
+                listener_id,
+                addresses,
+                reason,
+            } => Self::ListenerClosed {
+                listener_id:*listener_id,
+                addresses:addresses.clone(),
+                reason: format!("{:?}", reason),
+            },
+            libp2p::swarm::SwarmEvent::ListenerError { listener_id, error } => {
+                Self::ListenerError {
+                    listener_id:*listener_id,
+                    error: format!("{:?}", error),
+                }
+            }
+            libp2p::swarm::SwarmEvent::Dialing {
+                peer_id,
+                connection_id,
+            } => Self::Dialing {
+                peer_id:*peer_id,
+                connection_id:*connection_id,
+            },
+            _ => unimplemented!("New branch not covered"),
+        };
+        Ok(ev)
+    }
+}
+
 impl TryFrom<super::SwarmEvent> for SwarmEvent {
     type Error = ();
     fn try_from(value: super::SwarmEvent) -> Result<Self, Self::Error> {
@@ -132,47 +248,57 @@ impl TryFrom<super::SwarmEvent> for SwarmEvent {
                 num_established,
                 concurrent_dial_errors,
                 established_in,
-                ..
+                connection_id,
             } => Self::ConnectionEstablished {
                 peer_id,
                 endpoint,
                 num_established,
-                concurrent_dial_errors,
+                concurrent_dial_errors: format!("{:?}", concurrent_dial_errors),
                 established_in,
+                connection_id,
             },
             libp2p::swarm::SwarmEvent::ConnectionClosed {
                 peer_id,
                 endpoint,
                 num_established,
                 cause,
-                ..
+                connection_id,
             } => Self::ConnectionClosed {
                 peer_id,
                 endpoint,
                 num_established,
-                cause,
+                cause: format!("{:?}", cause),
+                connection_id,
             },
             libp2p::swarm::SwarmEvent::IncomingConnection {
                 local_addr,
                 send_back_addr,
-                ..
+                connection_id,
             } => Self::IncomingConnection {
                 local_addr,
                 send_back_addr,
+                connection_id,
             },
             libp2p::swarm::SwarmEvent::IncomingConnectionError {
                 local_addr,
                 send_back_addr,
                 error,
-                ..
+                connection_id,
             } => Self::IncomingConnectionError {
                 local_addr,
                 send_back_addr,
-                error,
+                error: format!("{:?}", error),
+                connection_id,
             },
-            libp2p::swarm::SwarmEvent::OutgoingConnectionError { peer_id, error, .. } => {
-                Self::OutgoingConnectionError { peer_id, error }
-            }
+            libp2p::swarm::SwarmEvent::OutgoingConnectionError {
+                peer_id,
+                error,
+                connection_id,
+            } => Self::OutgoingConnectionError {
+                peer_id,
+                error: format!("{:?}", error),
+                connection_id,
+            },
             libp2p::swarm::SwarmEvent::NewListenAddr {
                 listener_id,
                 address,
@@ -194,12 +320,21 @@ impl TryFrom<super::SwarmEvent> for SwarmEvent {
             } => Self::ListenerClosed {
                 listener_id,
                 addresses,
-                reason,
+                reason: format!("{:?}", reason),
             },
             libp2p::swarm::SwarmEvent::ListenerError { listener_id, error } => {
-                Self::ListenerError { listener_id, error }
+                Self::ListenerError {
+                    listener_id,
+                    error: format!("{:?}", error),
+                }
             }
-            libp2p::swarm::SwarmEvent::Dialing { peer_id, .. } => Self::Dialing(peer_id),
+            libp2p::swarm::SwarmEvent::Dialing {
+                peer_id,
+                connection_id,
+            } => Self::Dialing {
+                peer_id,
+                connection_id,
+            },
             _ => unimplemented!("New branch not covered"),
         };
         Ok(ev)

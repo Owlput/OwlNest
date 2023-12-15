@@ -3,7 +3,7 @@ mod utils;
 use std::io::stdout;
 use std::sync::Arc;
 
-use crate::net::p2p::protocols::*;
+use crate::net::p2p::protocols::{*, self};
 use crate::net::p2p::swarm::manager::Manager;
 use crate::net::p2p::{identity::IdentityUnion, swarm};
 use crossterm::style::Stylize;
@@ -23,6 +23,7 @@ pub fn setup_interactive_shell(
     std::thread::spawn(move || {
         stdout().execute(Clear(ClearType::All)).unwrap();
         println!("OwlNest is now running in interactive mode, type \"help\" for more information.");
+        protocols::messaging::cli::setup(&manager);
         let mut rl = DefaultEditor::new().unwrap();
         let mut retry_times = 0u32;
         loop {
@@ -147,6 +148,7 @@ Available commands:
 "#;
 
 #[allow(unused)]
+/// Boilerplates
 mod helper {
     use libp2p::{Multiaddr, PeerId};
 

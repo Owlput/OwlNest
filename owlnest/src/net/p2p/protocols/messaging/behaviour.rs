@@ -3,6 +3,7 @@ use libp2p::swarm::{ConnectionId, NetworkBehaviour, NotifyHandler, ToSwarm};
 use libp2p::PeerId;
 use std::collections::HashSet;
 use std::{collections::VecDeque, task::Poll};
+use tracing::info;
 
 pub struct Behaviour {
     config: Config,
@@ -35,7 +36,7 @@ impl NetworkBehaviour for Behaviour {
     fn on_connection_handler_event(
         &mut self,
         peer_id: PeerId,
-        _connection_id: ConnectionId,
+        connection_id: ConnectionId,
         event: <Self::ConnectionHandler as libp2p::swarm::ConnectionHandler>::ToBehaviour,
     ) {
         use handler::ToBehaviourEvent::*;
@@ -54,8 +55,33 @@ impl NetworkBehaviour for Behaviour {
                         ))))
                 }
             },
-            Error(e) => self.out_events.push_front(OutEvent::Error(e)),
-            Unsupported => self.out_events.push_back(OutEvent::Unsupported(peer_id)),
+            Error(e) => {
+                info!(
+                    "Error occurred on peer {}:{:?}: {:#?}",
+                    peer_id, connection_id, e
+                );
+                self.out_events.push_front(OutEvent::Error(e));
+            }
+            InboundNegotiated => {
+                self.out_events
+                    .push_back(OutEvent::InboundNegotiated(peer_id));
+                trace!(
+                    "Successfully negotiated inbound connection from peer {}",
+                    peer_id
+                )
+            }
+            OutboundNegotiated => {
+                self.out_events
+                    .push_back(OutEvent::OutboundNegotiated(peer_id));
+                trace!(
+                    "Successfully negotiated outbound connection from peer {}",
+                    peer_id
+                )
+            }
+            Unsupported => {
+                self.out_events.push_back(OutEvent::Unsupported(peer_id));
+                trace!("Peer {} doesn't support {}", peer_id, PROTOCOL_NAME)
+            }
             SendResult(result, id) => self.out_events.push_back(OutEvent::SendResult(result, id)),
         }
     }

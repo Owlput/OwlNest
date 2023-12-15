@@ -14,7 +14,9 @@ pub enum ToBehaviourEvent {
     IncomingMessage(Vec<u8>),
     SendResult(Result<Duration,SendError>,u64),
     Error(Error),
-    Unsupported
+    InboundNegotiated,
+    OutboundNegotiated,
+    Unsupported,
 }
 
 enum State {
@@ -208,12 +210,14 @@ impl ConnectionHandler for Handler {
                 info: (),
             }) => {
                 self.inbound = Some(super::protocol::recv(stream).boxed());
+                self.pending_out_events.push_back(ToBehaviourEvent::InboundNegotiated)
             }
             ConnectionEvent::FullyNegotiatedOutbound(FullyNegotiatedOutbound {
                 protocol: stream,
                 ..
             }) => {
                 self.outbound = Some(OutboundState::Idle(stream));
+                self.pending_out_events.push_back(ToBehaviourEvent::OutboundNegotiated)
             }
             ConnectionEvent::DialUpgradeError(e) => {
                 self.on_dial_upgrade_error(e);

@@ -7,8 +7,9 @@ use tokio::sync::{mpsc, oneshot};
 use tracing::{debug, info, trace, warn};
 
 use crate::{
+    handle_callback_sender,
     net::p2p::swarm::{behaviour::BehaviourEvent, EventSender, SwarmEvent},
-    with_timeout, handle_callback_sender,
+    with_timeout,
 };
 
 pub use kad::Config;
@@ -79,16 +80,25 @@ impl Handle {
             .expect("sending event to succeed");
         let query_id = callback_rx.await.expect("callback to succeed");
         let mut results = Vec::new();
-        event_op!(listener,OutEvent::OutboundQueryProgressed { id, result, step,.. },{
-            if query_id != *id {
-                continue;
+        event_op!(
+            listener,
+            OutEvent::OutboundQueryProgressed {
+                id,
+                result,
+                step,
+                ..
+            },
+            {
+                if query_id != *id {
+                    continue;
+                }
+                results.push(result.clone());
+                if step.last {
+                    drop(listener);
+                    break;
+                }
             }
-            results.push(result.clone());
-            if step.last {
-                drop(listener);
-                break;
-            }
-        });
+        );
         results
     }
     async fn set_mode(&self, mode: Option<Mode>) -> Result<Mode, ()> {
@@ -96,7 +106,7 @@ impl Handle {
         let mut listener = self.event_tx.subscribe();
         self.sender_swarm.send(ev).await.expect("send to succeed");
         let fut = async move {
-            event_op!(listener,OutEvent::ModeChanged { new_mode },{
+            event_op!(listener, OutEvent::ModeChanged { new_mode }, {
                 break new_mode.clone();
             })
         };

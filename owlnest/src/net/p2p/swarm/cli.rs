@@ -1,7 +1,7 @@
 use crate::net::p2p::swarm::handle::SwarmHandle;
 use libp2p::{Multiaddr, PeerId, TransportError};
 
-pub fn handle_swarm(handle: &SwarmHandle, command: Vec<&str>) {
+pub(crate) fn handle_swarm(handle: &SwarmHandle, command: Vec<&str>) {
     if command.len() < 2 {
         println!("Error: Missing subcommands. Type \"swarm help\" for more information");
         return;
@@ -35,7 +35,7 @@ pub fn handle_swarm(handle: &SwarmHandle, command: Vec<&str>) {
     }
 }
 
-pub fn handle_swarm_dial(handle: &SwarmHandle, addr: &str) {
+pub(crate) fn handle_swarm_dial(handle: &SwarmHandle, addr: &str) {
     let addr = match addr.parse::<Multiaddr>() {
         Ok(addr) => addr,
         Err(e) => {
@@ -43,14 +43,14 @@ pub fn handle_swarm_dial(handle: &SwarmHandle, addr: &str) {
             return;
         }
     };
-    if let Err(e) = handle.dial(&addr) {
+    if let Err(e) = handle.dial_blocking(&addr) {
         println!("Failed to initiate dial {} with error: {:?}", addr, e);
     } else {
         println!("Dialing {}", addr);
     }
 }
 
-pub fn handle_swarm_listen(handle: &SwarmHandle, addr: &str) {
+pub(crate) fn handle_swarm_listen(handle: &SwarmHandle, addr: &str) {
     let addr = match addr.parse::<Multiaddr>() {
         Ok(addr) => addr,
         Err(e) => {
@@ -58,7 +58,7 @@ pub fn handle_swarm_listen(handle: &SwarmHandle, addr: &str) {
             return;
         }
     };
-    match handle.listen(&addr) {
+    match handle.listen_blocking(&addr) {
         Ok(listener_id) => println!(
             "Successfully listening on {} with listener ID {:?}",
             addr, listener_id

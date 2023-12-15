@@ -1,17 +1,11 @@
 use crate::net::p2p::swarm::{behaviour::BehaviourEvent, EventSender, SwarmEvent};
 use libp2p::PeerId;
 use serde::{Deserialize, Serialize};
-use std::{
-    sync::{
-        atomic::{AtomicU64, Ordering},
-        Arc,
-    },
-    time::Duration,
-};
-use tracing::{debug, trace, warn};
+use std::{sync::Arc, time::Duration};
+use tracing::{trace, warn};
 
 mod behaviour;
-mod cli;
+pub(crate) mod cli;
 mod config;
 mod error;
 mod handler;
@@ -35,31 +29,9 @@ pub enum OutEvent {
     IncomingMessage { from: PeerId, msg: Message },
     SendResult(Result<Duration, SendError>, u64),
     Error(Error),
-    Unsupported(PeerId),
     InboundNegotiated(PeerId),
     OutboundNegotiated(PeerId),
-}
-
-pub fn ev_dispatch(ev: &OutEvent) {
-    use OutEvent::*;
-    match ev {
-        IncomingMessage { .. } => {
-            println!("Incoming message: {:?}\n", ev);
-        }
-        Error(e) => debug!("{:#?}", e),
-        Unsupported(peer) => {
-            trace!("Peer {} doesn't support /owlput/messaging/0.0.1", peer)
-        }
-        InboundNegotiated(peer) => trace!(
-            "Successfully negotiated inbound connection from peer {}",
-            peer
-        ),
-        OutboundNegotiated(peer) => trace!(
-            "Successfully negotiated outbound connection to peer {}",
-            peer
-        ),
-        SendResult(_, _) => {}
-    }
+    Unsupported(PeerId),
 }
 
 mod protocol {
@@ -83,8 +55,8 @@ macro_rules! event_op {
         }}
     };
 }
-
 use self::error::SendError;
+use std::sync::atomic::{AtomicU64, Ordering};
 #[derive(Debug, Clone)]
 pub struct Handle {
     sender: mpsc::Sender<InEvent>,
@@ -98,7 +70,7 @@ impl Handle {
             Self {
                 sender: tx,
                 event_tx: event_tx.clone(),
-                counter: Arc::new(AtomicU64::new(1)),
+                counter: Arc::new(AtomicU64::new(0)),
             },
             rx,
         )
@@ -108,7 +80,7 @@ impl Handle {
         peer_id: PeerId,
         message: Message,
     ) -> Result<Duration, SendError> {
-        let op_id = self.counter.fetch_add(1, Ordering::SeqCst);
+        let op_id = self.next_id();
         let ev = InEvent::SendMessage(peer_id, message, op_id);
         let mut listener = self.event_tx.subscribe();
         let fut = event_op!(listener, OutEvent::SendResult(result, id), {
@@ -125,5 +97,8 @@ impl Handle {
                 Err(SendError::Timeout)
             }
         }
+    }
+    fn next_id(&self) -> u64 {
+        self.counter.fetch_add(1, Ordering::SeqCst)
     }
 }

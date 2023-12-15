@@ -1,6 +1,7 @@
 use super::*;
 use libp2p::swarm::{ConnectionId, NetworkBehaviour, NotifyHandler, ToSwarm};
 use libp2p::PeerId;
+use libp2p_swarm::FromSwarm;
 use std::collections::HashSet;
 use std::{collections::VecDeque, task::Poll};
 use tracing::debug;
@@ -13,18 +14,13 @@ pub struct Behaviour {
     /// A set for all connected peers.
     advertised_peers: HashSet<PeerId>,
     pending_query_answer: VecDeque<PeerId>,
+    connected_peers: HashSet<PeerId>,
     is_providing: bool,
 }
 
 impl Behaviour {
     pub fn new() -> Self {
-        Self {
-            pending_out_events: VecDeque::new(),
-            in_events: VecDeque::new(),
-            advertised_peers: HashSet::new(),
-            pending_query_answer: VecDeque::new(),
-            is_providing: false,
-        }
+        Default::default()
     }
     pub fn push_event(&mut self, ev: InEvent) {
         self.in_events.push_back(ev)
@@ -40,6 +36,25 @@ impl Behaviour {
     }
     pub fn get_provider_status(&self) -> bool {
         self.is_providing
+    }
+    pub fn remove_advertised(&mut self, peer_id: &PeerId) -> bool {
+        self.advertised_peers.remove(peer_id)
+    }
+    pub fn clear_advertised(&mut self) {
+        self.advertised_peers.clear()
+    }
+}
+
+impl Default for Behaviour {
+    fn default() -> Self {
+        Self {
+            pending_out_events: VecDeque::new(),
+            in_events: VecDeque::new(),
+            advertised_peers: HashSet::new(),
+            pending_query_answer: VecDeque::new(),
+            connected_peers: HashSet::new(),
+            is_providing: false,
+        }
     }
 }
 
@@ -106,7 +121,7 @@ impl NetworkBehaviour for Behaviour {
                         event: handler::FromBehaviour::QueryAdvertisedPeer,
                     })
                 }
-                QueryProviderState(id) => {
+                GetProviderState(id) => {
                     return Poll::Ready(ToSwarm::GenerateEvent(OutEvent::ProviderState(
                         self.is_providing,
                         id,
@@ -125,6 +140,13 @@ impl NetworkBehaviour for Behaviour {
                         status, id,
                     )));
                 }
+                RemoveAdvertised(peer_id) => {
+                    let result = self.advertised_peers.remove(&peer_id);
+                    return Poll::Ready(ToSwarm::GenerateEvent(OutEvent::AdvertisedPeerChanged(
+                        peer_id, result,
+                    )));
+                }
+                ClearAdvertised => self.advertised_peers.clear(),
             }
         }
         if let Some(ev) = self.pending_out_events.pop_front() {
@@ -133,7 +155,20 @@ impl NetworkBehaviour for Behaviour {
         Poll::Pending
     }
 
-    fn on_swarm_event(&mut self, _event: libp2p::swarm::FromSwarm) {}
+    fn on_swarm_event(&mut self, event: libp2p::swarm::FromSwarm) {
+        match event {
+            FromSwarm::ConnectionClosed(closed) => {
+                if closed.remaining_established < 1 {
+                    self.advertised_peers.remove(&closed.peer_id);
+                    self.connected_peers.remove(&closed.peer_id);
+                }
+            }
+            FromSwarm::ConnectionEstablished(established)=>{
+                self.connected_peers.insert(established.peer_id);
+            }
+            _ => {}
+        }
+    }
 
     fn handle_established_inbound_connection(
         &mut self,

@@ -1,6 +1,22 @@
-use super::{Message, PROTOCOL_NAME};
+use super::{Message, OutEvent, PROTOCOL_NAME};
 use crate::net::p2p::identity::IdentityUnion;
+use crate::net::p2p::swarm;
+use crate::net::p2p::swarm::behaviour::BehaviourEvent;
 use crate::net::p2p::swarm::manager::Manager;
+
+pub fn setup(manager: &Manager) {
+    let mut listener = manager.event_subscriber().subscribe();
+    manager.executor().spawn(async move {
+        while let Ok(ev) = listener.recv().await {
+            if let swarm::SwarmEvent::Behaviour(BehaviourEvent::Messaging(
+                OutEvent::IncomingMessage { from, msg },
+            )) = ev.as_ref()
+            {
+                println!("Incoming message from {}: {}", from, msg.msg)
+            }
+        }
+    });
+}
 
 pub fn handle_messaging(manager: &Manager, ident: &IdentityUnion, command: Vec<&str>) {
     if command.len() < 2 {
@@ -18,7 +34,7 @@ pub fn handle_messaging(manager: &Manager, ident: &IdentityUnion, command: Vec<&
     }
 }
 
-pub fn handle_message_send(manager: &Manager, ident: &IdentityUnion, command: Vec<&str>) {
+fn handle_message_send(manager: &Manager, ident: &IdentityUnion, command: Vec<&str>) {
     if command.len() < 4 {
         println!(
             "Error: Missing required argument(s), syntax: `messaging send <peer id> <message>`"
@@ -40,9 +56,9 @@ pub fn handle_message_send(manager: &Manager, ident: &IdentityUnion, command: Ve
     let result = manager
         .executor()
         .block_on(manager.messaging().send_message(target_peer, msg));
-    match result{
+    match result {
         Ok(_) => println!("Message has been successfully sent"),
-        Err(e) => println!("Error occurred when sending message: {}",e)
+        Err(e) => println!("Error occurred when sending message: {}", e),
     }
 }
 

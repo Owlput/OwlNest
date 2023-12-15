@@ -14,17 +14,29 @@ impl SwarmHandle {
         let (tx, rx) = mpsc::channel(buffer);
         (Self { sender: tx }, rx)
     }
-    pub fn dial(&self, addr: &Multiaddr) -> Result<(), DialError> {
+    pub fn dial_blocking(&self, addr: &Multiaddr) -> Result<(), DialError> {
         let (tx, rx) = channel();
         let ev = InEvent::Dial(addr.clone(), tx);
         self.sender.blocking_send(ev).unwrap();
         rx.blocking_recv().unwrap()
     }
-    pub fn listen(&self, addr: &Multiaddr) -> Result<ListenerId, TransportError<std::io::Error>> {
+    pub fn listen_blocking(&self, addr: &Multiaddr) -> Result<ListenerId, TransportError<std::io::Error>> {
         let (tx, rx) = channel();
         let ev = InEvent::Listen(addr.clone(), tx);
         self.sender.blocking_send(ev).unwrap();
         rx.blocking_recv().unwrap()
+    }
+    pub async fn dial(&self, addr: &Multiaddr) -> Result<(), DialError> {
+        let (tx, rx) = channel();
+        let ev = InEvent::Dial(addr.clone(), tx);
+        self.sender.send(ev).await.unwrap();
+        rx.await.unwrap()
+    }
+    pub async fn listen(&self, addr: &Multiaddr) -> Result<ListenerId, TransportError<std::io::Error>> {
+        let (tx, rx) = channel();
+        let ev = InEvent::Listen(addr.clone(), tx);
+        self.sender.send(ev).await.unwrap();
+        rx.await.unwrap()
     }
     generate_handler_method_blocking!(
         AddExternalAddress:add_external_address_blocking(addr:Multiaddr)->();

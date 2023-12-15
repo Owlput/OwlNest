@@ -1,48 +1,56 @@
 use libp2p::relay::client;
-use tracing::debug;
 
 /// `Behaviour` of libp2p's `relay` protocol.
 pub use client::Behaviour;
 pub use client::Event as OutEvent;
 
-pub fn ev_dispatch(ev: &client::Event) {
-    use client::Event::*;
-    match ev {
-        ReservationReqAccepted {
-            relay_peer_id,
-            renewal,
-            limit,
-        } => {
-            if !renewal {
-                println!(
-                    "Reservation sent to relay {} has been accepted. Limit:{:?}",
-                    relay_peer_id, limit
-                );
-            }
-            debug!(
-                "Reservation on relay {} has been renewed. limit:{:?}",
-                relay_peer_id, limit
-            )
-        }
-        OutboundCircuitEstablished {
-            relay_peer_id,
-            limit,
-        } => debug!(
-            "Outbound circuit to relay {} established, limit:{:?}",
-            relay_peer_id, limit
-        ),
-        InboundCircuitEstablished { src_peer_id, limit } => debug!(
-            "Inbound circuit from source peer {} established, limit:{:?}",
-            src_peer_id, limit
-        ),
-    }
-}
-
 #[allow(unused)]
 pub(crate) mod cli {
+    use super::*;
     use libp2p::{multiaddr::Protocol, Multiaddr, PeerId};
-
     use crate::net::p2p::swarm::{cli::format_transport_error, manager::Manager};
+
+    pub fn setup(manager: &Manager) {
+        let mut listener = manager.event_subscriber().subscribe();
+        use tracing::debug;
+        manager.executor().spawn(async move {
+            while let Ok(ev) = listener.recv().await {
+                use crate::net::p2p::swarm::{behaviour::BehaviourEvent, SwarmEvent};
+                if let SwarmEvent::Behaviour(BehaviourEvent::RelayClient(ev)) = ev.as_ref() {
+                    use client::Event::*;
+                    match ev {
+                        ReservationReqAccepted {
+                            relay_peer_id,
+                            renewal,
+                            limit,
+                        } => {
+                            if !renewal {
+                                println!(
+                                    "Reservation sent to relay {} has been accepted. Limit:{:?}",
+                                    relay_peer_id, limit
+                                );
+                            }
+                            debug!(
+                                "Reservation on relay {} has been renewed. limit:{:?}",
+                                relay_peer_id, limit
+                            )
+                        }
+                        OutboundCircuitEstablished {
+                            relay_peer_id,
+                            limit,
+                        } => debug!(
+                            "Outbound circuit to relay {} established, limit:{:?}",
+                            relay_peer_id, limit
+                        ),
+                        InboundCircuitEstablished { src_peer_id, limit } => debug!(
+                            "Inbound circuit from source peer {} established, limit:{:?}",
+                            src_peer_id, limit
+                        ),
+                    }
+                }
+            }
+        });
+    }
 
     pub fn handle_relayclient(manager: &Manager, command: Vec<&str>) {
         if command.len() < 2 {
@@ -75,7 +83,7 @@ pub(crate) mod cli {
             }
         };
         let addr = addr.with(Protocol::P2p(peer_id)).with(Protocol::P2pCircuit);
-        match manager.swarm().listen(&addr) {
+        match manager.swarm().listen_blocking(&addr) {
             Ok(listener_id) => println!(
                 "Successfully listening on {} with listener ID {:?}",
                 addr, listener_id
@@ -103,19 +111,19 @@ mod test {
         let (peer3_m, _) = setup_default();
         assert!(peer1_m
             .swarm()
-            .listen(&"/ip4/127.0.0.1/tcp/0".parse::<Multiaddr>().unwrap()) // Pick a random port that is available
+            .listen_blocking(&"/ip4/127.0.0.1/tcp/0".parse::<Multiaddr>().unwrap()) // Pick a random port that is available
             .is_ok());
         peer1_m
             .swarm()
             .add_external_address_blocking(peer1_m.swarm().list_listeners_blocking()[0].clone()); // The address is on local network
         assert!(peer2_m
             .swarm()
-            .dial(&peer1_m.swarm().list_listeners_blocking()[0])
+            .dial_blocking(&peer1_m.swarm().list_listeners_blocking()[0])
             .is_ok());
         thread::sleep(Duration::from_millis(200));
         assert!(peer2_m
             .swarm()
-            .listen(
+            .listen_blocking(
                 &peer1_m.swarm().list_listeners_blocking()[0]
                     .clone()
                     .with(Protocol::P2p(peer1_m.identity().get_peer_id()))
@@ -126,7 +134,7 @@ mod test {
         assert!(peer2_m.swarm().list_listeners_blocking().len() > 0);
         assert!(peer3_m
             .swarm()
-            .dial(
+            .dial_blocking(
                 &peer1_m.swarm().list_listeners_blocking()[0]
                     .clone()
                     .with(Protocol::P2p(peer1_m.identity().get_peer_id()))
