@@ -2,15 +2,16 @@ pub mod identity;
 pub mod protocols;
 pub mod swarm;
 
+use std::io::stdout;
 use std::sync::Arc;
 
 use crate::net::p2p::protocols::*;
 use identity::IdentityUnion;
-use tokio::sync::Notify;
 use swarm::manager::Manager;
+use tokio::sync::Notify;
 
-pub use libp2p::PeerId;
 pub use libp2p::Multiaddr;
+pub use libp2p::PeerId;
 
 pub struct SwarmConfig {
     pub local_ident: IdentityUnion,
@@ -53,7 +54,7 @@ mod handler_prelude {
 //     }
 // }
 
-pub fn setup_default() -> (Manager,Arc<Notify>) {
+pub fn setup_default() -> (Manager, Arc<Notify>) {
     let rt = tokio::runtime::Builder::new_multi_thread()
         .enable_all()
         .build()
@@ -66,7 +67,7 @@ pub fn setup_default() -> (Manager,Arc<Notify>) {
         identify: protocols::identify::Config::new("/owlnest/0.0.1".into(), ident.get_pubkey()),
         mdns: protocols::mdns::Config::default(),
         messaging: protocols::messaging::Config::default(),
-        #[cfg(feature="tethering")]
+        #[cfg(feature = "tethering")]
         tethering: protocols::tethering::Config,
         relay_server: protocols::relay_server::Config::default(),
     };
@@ -78,7 +79,30 @@ pub fn setup_default() -> (Manager,Arc<Notify>) {
         let rt = rt;
         let _ = rt.block_on(notifier_clone.notified());
     });
-    (mgr,shutdown_notifier)
+    (mgr, shutdown_notifier)
+}
+
+pub(crate) fn setup_logging() {
+    use std::sync::Mutex;
+    use tracing::level_filters::LevelFilter;
+    use tracing::Level;
+    use tracing_log::LogTracer;
+    use tracing_subscriber::layer::SubscriberExt;
+    use tracing_subscriber::Layer;
+    let filter = tracing_subscriber::filter::Targets::new()
+        .with_target("owlnest", Level::DEBUG)
+        .with_target("rustyline", LevelFilter::ERROR)
+        .with_target("libp2p_noise", Level::WARN)
+        .with_target("libp2p_mdns", Level::DEBUG)
+        .with_target("hickory_proto", Level::WARN)
+        .with_target("", Level::INFO);
+    let layer = tracing_subscriber::fmt::Layer::default()
+        .with_ansi(false)
+        .with_writer(Mutex::new(stdout()))
+        .with_filter(filter);
+    let reg = tracing_subscriber::registry().with(layer);
+    tracing::subscriber::set_global_default(reg).expect("you can only set global default once");
+    LogTracer::init().unwrap()
 }
 
 #[macro_export]

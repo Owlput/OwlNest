@@ -28,3 +28,4 @@ owlnest-proc = { path = "../owlnest-proc" }
 void = "1"
 crossterm = "0.27"
 owlnest-macro = {path = "../owlnest-macro"}
+either = "*"

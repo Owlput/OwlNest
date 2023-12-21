@@ -9,6 +9,7 @@ behaviour_select! {
     identify: Identify,
     mdns: Mdns,
     dcutr: Dcutr,
+    blob_transfer: BlobTransfer,
 }
 
 // use libp2p_swarm::NetworkBehaviour;

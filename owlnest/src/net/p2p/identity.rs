@@ -60,7 +60,6 @@ impl IdentityUnion {
         })
     }
 
-    #[cfg(feature = "disabled")]
     pub fn export_public_key(
         &self,
         folder_path: &str,
@@ -71,16 +70,9 @@ impl IdentityUnion {
         } else {
             folder_path
         };
-        let (buf, extension) = match self.get_pubkey() {
-            identity::PublicKey::Ed25519(key) => (key.encode().to_vec(), "ed25519"),
-            identity::PublicKey::Rsa(key) => (key.encode_pkcs1(), "rsa"),
-            identity::PublicKey::Secp256k1(key) => {
-                (key.encode_uncompressed().to_vec(), "secp256k1")
-            }
-            identity::PublicKey::Ecdsa(key) => (key.encode_der().to_vec(), "der"),
-        };
+        let buf = self.get_pubkey().encode_protobuf();
 
-        let path = format!("{}/{}.{}", folder_path, file_name, extension);
+        let path = format!("{}/{}.libp2ppbukey", folder_path, file_name);
         Self::export_to_file(path, &buf)
     }
     pub fn export_keypair(&self, folder_path: &str, file_name: &str) -> Result<(), std::io::Error> {
@@ -89,7 +81,7 @@ impl IdentityUnion {
         } else {
             folder_path
         };
-        let path = format!("{}/{}.keypair", folder_path, file_name);
+        let path = format!("{}/{}.libp2pkeypair", folder_path, file_name);
         Self::export_to_file(path, &self.keypair.to_protobuf_encoding().unwrap())
     }
     fn export_to_file<P>(path: P, buf: &[u8]) -> Result<(), std::io::Error>

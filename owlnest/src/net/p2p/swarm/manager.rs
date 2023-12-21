@@ -126,4 +126,5 @@ generate_manager! {
     messaging:Messaging,
     mdns:Mdns,
     relay_ext:RelayExt,
+    blob_transfer:BlobTransfer,
 }

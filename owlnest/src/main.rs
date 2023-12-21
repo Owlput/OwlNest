@@ -40,7 +40,7 @@ pub fn setup_peer(
     net::p2p::swarm::Builder::new(swarm_config).build(8, executor)
 }
 
-fn setup_logging() {
+pub(crate) fn setup_logging() {
     let time = chrono::Local::now().timestamp_micros();
     let log_file_handle = match std::fs::create_dir("./logs") {
         Ok(_) => std::fs::File::create(format!("./logs/{}.log", time)).unwrap(),
@@ -70,6 +70,7 @@ fn setup_logging() {
 }
 
 fn get_ident() -> IdentityUnion {
+    // use tracing::warn;
     // match IdentityUnion::from_file_protobuf_encoding("./id.keypair"){
     //     Ok(ident) => ident,
     //     Err(e) => {

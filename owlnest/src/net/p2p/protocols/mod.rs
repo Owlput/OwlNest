@@ -28,6 +28,8 @@ pub mod allow_block_list;
 
 pub mod dcutr;
 
+pub mod blob_transfer;
+
 pub mod event_listener {}
 #[allow(unused)]
 mod universal;

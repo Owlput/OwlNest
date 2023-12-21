@@ -71,4 +71,9 @@ macro_rules! handle_callback_sender {
             warn!("Cannot send a callback message: {:?}", v)
         };
     };
+    ($message:expr=>$sender:ident) => {
+        if let Err(v) = $sender.send($message) {
+            warn!("Cannot send a callback message: {:?}", v)
+        };
+    };
 }

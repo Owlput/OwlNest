@@ -14,3 +14,4 @@ certs
 .vscode
 logs
 *.keypair
+*.libp2pkeypair
