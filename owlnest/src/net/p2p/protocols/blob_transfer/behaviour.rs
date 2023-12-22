@@ -4,8 +4,8 @@ use crate::net::p2p::protocols::blob_transfer::handler::FromBehaviourEvent;
 use super::*;
 use libp2p::swarm::{ConnectionId, NetworkBehaviour, NotifyHandler, ToSwarm};
 use libp2p::PeerId;
-use std::collections::HashSet;
-use std::io::Write;
+use std::collections::{HashMap, HashSet};
+use std::io::{Read, Write};
 use std::{collections::VecDeque, task::Poll};
 use tracing::info;
 
@@ -16,13 +16,17 @@ pub struct Behaviour {
     /// Pending events to emit to `Swarm`
     out_events: VecDeque<OutEvent>,
     /// Pending events to be processed by this `Behaviour`.
-    in_events: VecDeque<InEvent>,
+    pending_handler_event: VecDeque<ToSwarm<OutEvent, FromBehaviourEvent>>,
     /// A set for all connected peers.
     connected_peers: HashSet<PeerId>,
     recv_counter: u64,
-    pending_recv: Vec<RecvInfo>, /*(local_recv_id,remote_send_id,  file name,remote_peer, connectionID)*/
-    pending_send: Vec<PendingSendInfo>,
-    ongoing_recv: Vec<OngoingFileRecv>,
+    /// indexed by recv ID
+    pending_recv: HashMap<u64, RecvInfo>,
+    /// indexed by send ID
+    pending_send: HashMap<u64, SendInfo>,
+    /// Indexed by remote send id
+    ongoing_recv: HashMap<u64, OngoingFileRecv>,
+    ongoing_send: VecDeque<OngoingFileSend>,
 }
 
 #[derive(Debug, Clone)]
@@ -31,13 +35,12 @@ pub struct RecvInfo {
     pub remote_send_id: u64,
     pub file_name: String,
     pub remote: PeerId,
-    pub connection_id: ConnectionId,
 }
 #[derive(Debug, Clone)]
-pub struct PendingSendInfo {
+pub struct SendInfo {
     pub local_send_id: u64,
-    pub target_peer: PeerId,
-    pub connection_id: ConnectionId,
+    pub remote: PeerId,
+    pub file_path: PathBuf,
 }
 
 impl Behaviour {
@@ -45,32 +48,88 @@ impl Behaviour {
         Self {
             config,
             out_events: VecDeque::new(),
-            in_events: VecDeque::new(),
+            pending_handler_event: VecDeque::new(),
             connected_peers: HashSet::new(),
             recv_counter: 0,
-            pending_recv: Vec::new(),
-            ongoing_recv: Vec::new(),
-            pending_send: Vec::new(),
+            pending_recv: HashMap::new(),
+            ongoing_recv: HashMap::new(),
+            pending_send: HashMap::new(),
+            ongoing_send: VecDeque::new(),
         }
     }
     pub fn push_event(&mut self, ev: InEvent) {
-        self.in_events.push_front(ev)
+        use InEvent::*;
+        match ev {
+            SendFile {
+                file_path,
+                file_name,
+                to,
+                local_send_id,
+                callback,
+            } => {
+                if !self.connected_peers.contains(&to) {
+                    callback
+                        .send(Err(FileSendError::PeerNotFound))
+                        .expect("callback to succeed");
+                    return;
+                }
+                self.pending_send.insert(
+                    local_send_id,
+                    SendInfo {
+                        local_send_id,
+                        remote: to,
+                        file_path,
+                    },
+                );
+                self.pending_handler_event
+                    .push_back(ToSwarm::NotifyHandler {
+                        peer_id: to,
+                        handler: NotifyHandler::Any,
+                        event: handler::FromBehaviourEvent::NewFileSend {
+                            file_name,
+                            local_send_id,
+                            callback,
+                        },
+                    });
+            }
+            AcceptFile {
+                file_or_folder,
+                recv_id,
+                callback,
+            } => self.accept_pending_recv(file_or_folder, recv_id, callback),
+            CancelRecv(recv_id, callback) => {
+                if self.cancel_recv_by_local_recv_id(recv_id) {
+                    handle_callback_sender!(Ok(())=>callback);
+                    return;
+                }
+                handle_callback_sender!(Err(())=>callback);
+            }
+            CancelSend(local_send_id, callback) => {
+                if self.cancel_send_by_local_send_id(local_send_id) {
+                    handle_callback_sender!(Ok(())=>callback);
+                    return;
+                }
+                handle_callback_sender!(Err(())=>callback);
+            }
+            ListPendingRecv(callback) => {
+                handle_callback_sender!(self.pending_recv.values().cloned().collect()=>callback)
+            }
+            ListPendingSend(callback) => {
+                handle_callback_sender!(self.pending_send.values().cloned().collect()=>callback)
+            }
+        }
     }
-    fn new_pending_recv(
-        &mut self,
-        from: PeerId,
-        file_name: String,
-        remote_send_id: u64,
-        connection_id: ConnectionId,
-    ) {
+    fn new_pending_recv(&mut self, from: PeerId, file_name: String, remote_send_id: u64) {
         let local_recv_id = self.next_recv_id();
-        self.pending_recv.push(RecvInfo {
+        self.pending_recv.insert(
             local_recv_id,
-            remote_send_id,
-            file_name: file_name.clone(),
-            remote: from,
-            connection_id,
-        });
+            RecvInfo {
+                local_recv_id,
+                remote_send_id,
+                remote: from,
+                file_name: file_name.clone(),
+            },
+        );
         self.out_events.push_back(OutEvent::IncomingFile {
             file_name,
             from,
@@ -82,31 +141,25 @@ impl Behaviour {
         file_or_folder: Either<File, PathBuf>,
         recv_id: u64,
         callback: oneshot::Sender<Result<Duration, FileRecvError>>,
-    ) -> Option<(PeerId, ConnectionId, FromBehaviourEvent)> {
-        let mut entry_filter = self.pending_recv.extract_if(|v| v.local_recv_id == recv_id);
-        let maybe_entry = entry_filter.next();
+    ) {
         let RecvInfo {
             remote_send_id,
+            remote,
             file_name,
-            remote: source_peer,
-            connection_id,
             ..
-        } = match maybe_entry {
+        } = match self.pending_recv.remove(&recv_id) {
             Some(v) => v,
             None => {
                 handle_callback_sender!( Err(FileRecvError::PendingRecvNotFound) => callback);
-                return None;
+                return;
             }
         };
-        // if entry_filter.count() > 0{
-        //     warn!("Duplicate entries of file to receive found")
-        // }
         let file = match file_or_folder {
             Either::Left(file) => file,
             Either::Right(mut folder) => {
                 if let Err(e) = fs::create_dir_all(&folder) {
                     handle_callback_sender!(Err(FileRecvError::FsError(e.kind()))=>callback);
-                    return None;
+                    return;
                 }
                 folder.push(file_name);
                 let file = folder;
@@ -114,67 +167,151 @@ impl Behaviour {
                     Ok(file) => file,
                     Err(e) => {
                         handle_callback_sender!(Err(FileRecvError::FsError(e.kind()))=>callback);
-                        return None;
+                        return;
                     }
                 }
             }
         };
-        self.ongoing_recv.push({
+        self.ongoing_recv.insert(
+            remote_send_id,
             OngoingFileRecv {
                 remote_send_id,
                 local_recv_id: recv_id,
                 file_handle: file,
-                remote: source_peer,
-                connection_id,
-            }
-        });
-        let ev = FromBehaviourEvent::AcceptFile {
-            remote_send_id,
-            callback,
+                remote,
+            },
+        );
+        let ev = ToSwarm::NotifyHandler {
+            peer_id: remote,
+            handler: NotifyHandler::Any,
+            event: FromBehaviourEvent::AcceptFile {
+                remote_send_id,
+                callback,
+            },
         };
-        Some((source_peer, connection_id, ev))
+        self.pending_handler_event.push_back(ev);
     }
-    /// Remove receive from pending and ongoing.
-    /// This also drops the file handle, so no more bytes will be written.
-    fn cancel_recv_by_remote_send_id(&mut self, remote_send_id: u64) {
-        self.ongoing_recv
-            .retain(|v| v.remote_send_id != remote_send_id);
-        self.pending_recv
-            .retain(|v| v.remote_send_id != remote_send_id);
-    }
-    fn cancel_recv_by_local_recv_id(
-        &mut self,
-        local_recv_id: u64,
-    ) -> Option<(PeerId, ConnectionId, u64)> {
-        if let Some(v) = self
-            .ongoing_recv
-            .extract_if(|v| v.local_recv_id == local_recv_id)
-            .next()
-        {
-            return Some((v.remote, v.connection_id, v.remote_send_id));
-        };
-        if let Some(v) = self
-            .pending_recv
-            .extract_if(|v| v.local_recv_id == local_recv_id)
-            .next()
-        {
-            return Some((v.remote, v.connection_id, v.remote_send_id));
+
+    /// Accept a pending send. If not found in the pending list, will return `Result::Err`.
+    fn pending_send_accepted(&mut self, local_send_id: u64) {
+        if let None = self.pending_send.get(&local_send_id) {
+            self.cancel_send_by_local_send_id(local_send_id);
+            return;
         }
+        let SendInfo {
+            local_send_id,
+            remote,
+            file_path,
+        } = self.pending_send.remove(&local_send_id).unwrap();
+        let file_handle = match std::fs::OpenOptions::new()
+            .read(true)
+            .write(false)
+            .open(&file_path)
+        {
+            Ok(handle) => handle,
+            Err(e) => {
+                let _ = match e.kind() {
+                    std::io::ErrorKind::NotFound => FileSendError::FileNotFound,
+                    std::io::ErrorKind::PermissionDenied => FileSendError::PermissionDenied,
+                    e => FileSendError::OtherFsError(e),
+                };
+                self.cancel_send_by_local_send_id(local_send_id);
+                return;
+            }
+        };
+        self.ongoing_send.push_back(OngoingFileSend {
+            local_send_id,
+            remote,
+            file_handle,
+        });
+    }
+    /// Called when local cancelled transmission
+    fn cancel_recv_by_local_recv_id(&mut self, local_recv_id: u64) -> bool {
+        if let Some((remote, remote_send_id)) = self.remove_recv_record(local_recv_id) {
+            self.pending_handler_event
+                .push_back(ToSwarm::NotifyHandler {
+                    peer_id: remote,
+                    handler: NotifyHandler::Any,
+                    event: FromBehaviourEvent::CancelRecv { remote_send_id },
+                });
+                return true;
+        }
+        false
+    }
+    /// Called when local cancelled transmission
+    fn cancel_send_by_local_send_id(&mut self, local_send_id: u64) -> bool {
+        if let Some((remote, _)) = self.remove_send_record(local_send_id) {
+            self.pending_handler_event
+                .push_back(ToSwarm::NotifyHandler {
+                    peer_id: remote,
+                    handler: NotifyHandler::Any,
+                    event: FromBehaviourEvent::CancelSend { local_send_id },
+                });
+            return true;
+        };
+        false
+    }
+    /// Called when remote cancelled transmission
+    fn cancel_recv_by_remote_send_id(&mut self, remote_send_id: u64) {
+        self.ongoing_recv.remove(&remote_send_id);
+        self.pending_recv
+            .retain(|_, v| v.remote_send_id != remote_send_id);
+    }
+    fn handle_ongoing_send(&mut self) -> Option<(PeerId, FromBehaviourEvent)> {
+        if self.ongoing_send.len() == 0 {
+            return None;
+        }
+        let mut ongoing_send = self.ongoing_send.pop_front().unwrap();
+        let mut buf = [0u8; FILE_CHUNK_SIZE];
+        let bytes_read = match ongoing_send.file_handle.read(&mut buf) {
+            Err(e) => {
+                error!("{:?}", e);
+                todo!()
+            }
+            Ok(bytes_read) => bytes_read,
+        };
+
+        let mut vec: Vec<u8> = buf.into();
+        if bytes_read < FILE_CHUNK_SIZE {
+            vec.truncate(bytes_read)
+        }
+        let v = (
+            ongoing_send.remote,
+            FromBehaviourEvent::File {
+                contents: vec,
+                local_send_id: ongoing_send.local_send_id,
+            },
+        );
+        self.ongoing_send.push_back(ongoing_send);
+        Some(v)
+    }
+    fn remove_recv_record(&mut self, local_recv_id: u64) -> Option<(PeerId, u64)> {
+        if let Some(v) = self.pending_recv.remove(&local_recv_id) {
+            return Some((v.remote, v.remote_send_id));
+        }
+        if let Some(v) = self.ongoing_recv.remove(&local_recv_id) {
+            return Some((v.remote, v.remote_send_id));
+        };
         None
     }
-    fn cancel_send_by_local_send_id(&mut self, local_send_id: u64) {
-        self.pending_send
-            .retain(|v| v.local_send_id != local_send_id)
-    }
-    fn get_ongoing_recv(&mut self, remote_send_id: u64) -> Option<OngoingFileRecv> {
-        if let Some(v) = self.ongoing_recv.last() {
-            if v.remote_send_id == remote_send_id {
-                return self.ongoing_recv.pop();
+    fn remove_send_record(&mut self, local_send_id: u64) -> Option<(PeerId, u64)> {
+        if let Some(SendInfo {
+            local_send_id,
+            remote,
+            ..
+        }) = self.pending_send.remove(&local_send_id)
+        {
+            return Some((remote, local_send_id));
+        };
+        let mut found = None;
+        self.ongoing_send.retain(|v| {
+            if v.local_send_id == local_send_id {
+                found = Some((v.remote, v.local_send_id));
+                return false;
             }
-        }
-        self.ongoing_recv
-            .extract_if(|v| v.remote_send_id == remote_send_id)
-            .next()
+            true
+        });
+        found
     }
     fn next_recv_id(&mut self) -> u64 {
         let id = self.recv_counter;
@@ -199,7 +336,7 @@ impl NetworkBehaviour for Behaviour {
                 remote_send_id,
                 contents,
             } => {
-                let mut ongoing_recv = if let Some(v) = self.get_ongoing_recv(remote_send_id) {
+                let mut ongoing_recv = if let Some(v) = self.ongoing_recv.remove(&remote_send_id) {
                     v
                 } else {
                     return;
@@ -229,12 +366,12 @@ impl NetworkBehaviour for Behaviour {
                 if let Err(e) = ongoing_recv.file_handle.flush() {
                     tracing::error!("Unsuccessful file flushing: {:?}", e)
                 };
-                self.ongoing_recv.push(ongoing_recv)
+                self.ongoing_recv.insert(remote_send_id, ongoing_recv);
             }
             IncomingFile {
                 file_name,
                 remote_send_id,
-            } => self.new_pending_recv(peer_id, file_name, remote_send_id, connection_id),
+            } => self.new_pending_recv(peer_id, file_name, remote_send_id),
             Error(e) => {
                 info!(
                     "Error occurred on peer {}:{:?}: {:#?}",
@@ -255,17 +392,14 @@ impl NetworkBehaviour for Behaviour {
                 trace!("Peer {} doesn't support {}", peer_id, PROTOCOL_NAME)
             }
             FileSendPending { local_send_id } => {
-                self.pending_send.push(PendingSendInfo {
-                    local_send_id,
-                    connection_id,
-                    target_peer: peer_id,
-                });
+                trace!("Send ID {} acknowledged by remote", local_send_id)
             }
             FileSendAccepted { local_send_id } => {
                 self.out_events.push_back(OutEvent::SendProgressed {
                     local_send_id,
                     rtt: Some(Duration::from_secs(0)),
-                })
+                });
+                self.pending_send_accepted(local_send_id)
             }
             SendProgressed { local_send_id, rtt } => self
                 .out_events
@@ -273,7 +407,7 @@ impl NetworkBehaviour for Behaviour {
             CancelSend { local_send_id } => {
                 self.out_events
                     .push_back(OutEvent::CancelledSend(local_send_id));
-                self.cancel_send_by_local_send_id(local_send_id);
+                self.remove_send_record(local_send_id);
             }
             CancelRecv { remote_send_id } => self.cancel_recv_by_remote_send_id(remote_send_id),
         }
@@ -285,89 +419,15 @@ impl NetworkBehaviour for Behaviour {
         if let Some(ev) = self.out_events.pop_back() {
             return Poll::Ready(ToSwarm::GenerateEvent(ev));
         }
-        if let Some(ev) = self.in_events.pop_back() {
-            use InEvent::*;
-            match ev {
-                SendFile {
-                    file: file_to_send,
-                    file_name,
-                    to,
-                    send_id,
-                    callback,
-                } => {
-                    if self.connected_peers.contains(&to) {
-                        return Poll::Ready(ToSwarm::NotifyHandler {
-                            peer_id: to,
-                            handler: NotifyHandler::Any,
-                            event: handler::FromBehaviourEvent::NewFileSend {
-                                file: file_to_send,
-                                file_name,
-                                local_send_id: send_id,
-                                callback,
-                            },
-                        });
-                    }
-                    callback
-                        .send(Err(FileSendReqError::PeerNotFound))
-                        .expect("callback to succeed");
-                }
-                AcceptFile {
-                    file_or_folder,
-                    recv_id,
-                    callback,
-                } => {
-                    if let Some((peer_id, connection, event)) =
-                        self.accept_pending_recv(file_or_folder, recv_id, callback)
-                    {
-                        return Poll::Ready(ToSwarm::NotifyHandler {
-                            peer_id,
-                            handler: NotifyHandler::One(connection),
-                            event,
-                        });
-                    }
-                }
-                CancelSend(send_id, callback) => {
-                    let maybe_entry = self
-                        .pending_send
-                        .extract_if(|v| v.local_send_id == send_id)
-                        .next();
-                    if let Some(entry) = maybe_entry {
-                        // The file send request has been accepted by remote
-                        return Poll::Ready(ToSwarm::NotifyHandler {
-                            peer_id: entry.target_peer,
-                            handler: NotifyHandler::One(entry.connection_id),
-                            event: FromBehaviourEvent::CancelSend {
-                                local_send_id: entry.local_send_id,
-                                callback,
-                            },
-                        });
-                    }
-                    // Not found or not accepted
-                    handle_callback_sender!(Err(())=>callback);
-                }
-                CancelRecv(recv_id, callback) => {
-                    if let Some((remote, connection_id, remote_send_id)) =
-                        self.cancel_recv_by_local_recv_id(recv_id)
-                    {
-                        return Poll::Ready(ToSwarm::NotifyHandler {
-                            peer_id: remote,
-                            handler: NotifyHandler::One(connection_id),
-                            event: FromBehaviourEvent::CancelRecv {
-                                remote_send_id,
-                                callback,
-                            },
-                        });
-                    }
-                    handle_callback_sender!(Err(())=>callback);
-                }
-
-                ListPendingRecv(callback) => {
-                    handle_callback_sender!(self.pending_recv.clone()=>callback)
-                }
-                ListPendingSend(callback) => {
-                    handle_callback_sender!(self.pending_send.clone()=>callback)
-                }
-            }
+        if let Some(ev) = self.pending_handler_event.pop_front() {
+            return Poll::Ready(ev);
+        }
+        if let Some((peer_id, event)) = self.handle_ongoing_send() {
+            return Poll::Ready(ToSwarm::NotifyHandler {
+                peer_id,
+                handler: NotifyHandler::Any,
+                event,
+            });
         }
         Poll::Pending
     }
@@ -410,6 +470,11 @@ struct OngoingFileRecv {
     remote_send_id: u64,
     local_recv_id: u64,
     remote: PeerId,
-    connection_id: ConnectionId,
+    file_handle: std::fs::File,
+}
+
+struct OngoingFileSend {
+    local_send_id: u64,
+    remote: PeerId,
     file_handle: std::fs::File,
 }

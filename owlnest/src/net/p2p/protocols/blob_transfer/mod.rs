@@ -18,17 +18,19 @@ mod op;
 mod protocol;
 
 pub use behaviour::Behaviour;
+pub use behaviour::{RecvInfo, SendInfo};
 pub use config::Config;
 pub use error::Error;
+pub use error::{FileRecvError, FileSendError};
 pub use protocol::PROTOCOL_NAME;
 
 pub enum InEvent {
     SendFile {
-        file: File,
+        file_path: PathBuf,
         file_name: String,
         to: PeerId,
-        send_id: u64,
-        callback: oneshot::Sender<Result<Duration, FileSendReqError>>,
+        local_send_id: u64,
+        callback: oneshot::Sender<Result<Duration, FileSendError>>,
     },
     AcceptFile {
         file_or_folder: Either<File, PathBuf>,
@@ -36,7 +38,7 @@ pub enum InEvent {
         callback: oneshot::Sender<Result<Duration, FileRecvError>>,
     },
     ListPendingRecv(oneshot::Sender<Vec<RecvInfo>>),
-    ListPendingSend(oneshot::Sender<Vec<PendingSendInfo>>),
+    ListPendingSend(oneshot::Sender<Vec<SendInfo>>),
     CancelRecv(u64, oneshot::Sender<Result<(), ()>>), // (local_recv_id, callback)
     CancelSend(u64, oneshot::Sender<Result<(), ()>>), // (local_send_id, callback)
 }
@@ -60,7 +62,6 @@ pub enum OutEvent {
         local_send_id: u64,
         rtt: Option<Duration>,
     },
-    ReqSendResult(oneshot::Sender<Result<Duration, SendError>>),
     CancelledSend(u64),
     Error(Error),
     InboundNegotiated(PeerId),
@@ -85,10 +86,7 @@ macro_rules! event_op {
         }}
     };
 }
-use self::{
-    behaviour::{PendingSendInfo, RecvInfo},
-    error::{FileRecvError, FileSendReqError, SendError},
-};
+
 use std::sync::atomic::{AtomicU64, Ordering};
 #[derive(Debug, Clone)]
 #[allow(dead_code)]
@@ -114,25 +112,25 @@ impl Handle {
         &self,
         to: PeerId,
         path: impl AsRef<Path>,
-    ) -> Result<(u64, Duration), FileSendReqError> {
+    ) -> Result<(u64, Duration), FileSendError> {
         if path.as_ref().is_dir() {
             // Reject sending directory
-            return Err(FileSendReqError::IsDirectory);
+            return Err(FileSendError::IsDirectory);
         }
         // Get the handle to the file(locking)
-        let file = std::fs::OpenOptions::new()
+        let _ = std::fs::OpenOptions::new()
             .read(true)
             .write(false)
             .open(path.as_ref())
             .map_err(|e| match e.kind() {
-                std::io::ErrorKind::NotFound => FileSendReqError::FileNotFound,
-                std::io::ErrorKind::PermissionDenied => FileSendReqError::PermissionDenied,
-                e => FileSendReqError::OtherFsError(e),
+                std::io::ErrorKind::NotFound => FileSendError::FileNotFound,
+                std::io::ErrorKind::PermissionDenied => FileSendError::PermissionDenied,
+                e => FileSendError::OtherFsError(e),
             })?;
         let (tx, rx) = oneshot::channel();
-        let send_id = self.next_id();
+        let local_send_id = self.next_id();
         let ev = InEvent::SendFile {
-            file,
+            file_path: path.as_ref().to_owned(),
             file_name: path
                 .as_ref()
                 .file_name()
@@ -140,15 +138,15 @@ impl Handle {
                 .to_string_lossy()
                 .to_string(),
             to,
-            send_id,
+            local_send_id,
             callback: tx,
         };
         self.sender.send(ev).await.expect("send to succeed");
         match with_timeout!(rx, 10) {
-            Ok(v) => v.expect("callback to succeed").map(|v| (send_id, v)),
+            Ok(v) => v.expect("callback to succeed").map(|v| (local_send_id, v)),
             Err(_) => {
                 warn!("timeout reached for a timed future");
-                Err(FileSendReqError::Timeout)
+                Err(FileSendError::Timeout)
             }
         }
     }
@@ -191,7 +189,7 @@ impl Handle {
     }
     generate_handler_method!(
         ListPendingRecv:list_pending_recv()->Vec<RecvInfo>;
-        ListPendingSend:list_pending_send()->Vec<PendingSendInfo>;
+        ListPendingSend:list_pending_send()->Vec<SendInfo>;
         CancelSend:cancel_send(local_send_id:u64)->Result<(),()>;
         CancelRecv:cancel_recv(local_recv_id:u64)->Result<(),()>;
     );
@@ -363,6 +361,7 @@ mod test {
         (peer1_m, peer2_m)
     }
 
+    /// Send and sleep for a short while to sync state
     fn send(manager: &Manager, to: PeerId, file: &str) {
         manager
             .executor()
