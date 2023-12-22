@@ -12,7 +12,6 @@
 /// Supported parameter must be in the same type and order with EventVariant.
 /// `&self` is automatically filled in, but EventVariant must be a tuple.   
 /// Variant can hold no data, leaving the function parameter blank.   
-/// If ParamType is a reference and deref is need, add `*` in front of param name.
 ///
 #[macro_export]
 macro_rules! generate_handler_method_blocking {
@@ -28,10 +27,32 @@ macro_rules! generate_handler_method_blocking {
     };
 }
 
+/// Less boilerplate for simple handler functions that use callback to return some data.
+///
+/// Example:
+/// ```no_run
+/// generate_handler_method!({
+///     EventVariant1:method_name(parameter_name:ParameterType,..)->ReturnType;
+///     ..
+/// })
+/// ```
+///
+/// Supported parameter must be in the same type and order with EventVariant.
+/// `&self` is automatically filled in, but EventVariant must be a tuple.   
+/// Variant can hold no data, leaving the function parameter blank.  
+///  
+/// Method with callback and without callback need to be generated separately.
 #[macro_export]
 macro_rules! generate_handler_method {
-    {$($variant:ident:$name:ident($($params:ident:$param_type:ty)*)->$return_type:ty;)+} => {
-        $(pub async fn $name(&self,$($params:$param_type)*)->$return_type{
+    {$($variant:ident:$name:ident($($params:ident:$param_type:ty$(,)?)*)->();)+} => {
+        $(pub async fn $name(&self,$($params:$param_type,)*){
+            let ev = InEvent::$variant($($params,)*);
+            self.sender.send(ev).await.unwrap();
+        }
+    )*
+    };
+    {$($variant:ident:$name:ident($($params:ident:$param_type:ty$(,)?)*)->$return_type:ty;)+} => {
+        $(pub async fn $name(&self,$($params:$param_type,)*)->$return_type{
             use tokio::sync::oneshot::*;
             let (tx,rx) = channel();
             let ev = InEvent::$variant($($params,)*tx);
@@ -41,7 +62,6 @@ macro_rules! generate_handler_method {
     )*
     };
 }
-
 
 #[macro_export]
 macro_rules! handle_listener_result {
@@ -68,12 +88,12 @@ macro_rules! handle_listener_result {
 macro_rules! handle_callback_sender {
     ($message:ident=>$sender:ident) => {
         if let Err(v) = $sender.send($message) {
-            warn!("Cannot send a callback message: {:?}", v)
-        };
+            tracing::warn!("Cannot send a callback message: {:?}", v)
+        }
     };
     ($message:expr=>$sender:ident) => {
         if let Err(v) = $sender.send($message) {
-            warn!("Cannot send a callback message: {:?}", v)
-        };
+            tracing::warn!("Cannot send a callback message: {:?}", v)
+        }
     };
 }

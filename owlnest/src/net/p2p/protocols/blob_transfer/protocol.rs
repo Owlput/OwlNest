@@ -4,7 +4,7 @@ use std::time::{Duration, Instant};
 use xxhash_rust::xxh3::xxh3_128;
 pub const PROTOCOL_NAME: &str = "/owlnest/blob_transfer/0.0.1";
 
-const CHUNK_SIZE:usize = 4096;
+const CHUNK_SIZE:usize = 65536;
 
 /// Universal protocol for sending bytes
 

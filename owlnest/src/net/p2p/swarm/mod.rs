@@ -79,7 +79,9 @@ impl Builder {
                     relay_client: relay,
                     relay_ext: relay_ext::Behaviour::new(),
                     dcutr: dcutr::Behaviour::new(ident.get_peer_id()),
-                    blob_transfer:blob_transfer::Behaviour::new(Default::default())
+                    blob_transfer: blob_transfer::Behaviour::new(Default::default()),
+                    autonat: autonat::Behaviour::new(ident.get_peer_id(), Default::default()),
+                    upnp: upnp::Behaviour::default(),
                 })
                 .expect("behaviour incorporation to succeed")
                 .build();
@@ -189,7 +191,8 @@ fn handle_incoming_event(ev: Rx, swarm: &mut Swarm) {
         Mdns(ev) => mdns::map_in_event(ev, &mut swarm.behaviour_mut().mdns),
         Swarm(ev) => swarm_op_exec(swarm, ev),
         RelayExt(ev) => swarm.behaviour_mut().relay_ext.push_event(ev),
-        BlobTransfer(ev)=> swarm.behaviour_mut().blob_transfer.push_event(ev)
+        BlobTransfer(ev) => swarm.behaviour_mut().blob_transfer.push_event(ev),
+        AutoNat(ev) => autonat::map_in_event(&mut swarm.behaviour_mut().autonat, ev),
     }
 }
 
@@ -246,6 +249,9 @@ fn handle_behaviour_event(swarm: &mut Swarm, ev: &BehaviourEvent) {
         #[cfg(feature = "tethering")]
         Tethering(ev) => tethering::ev_dispatch(ev),
         RelayServer(ev) => relay_server::ev_dispatch(ev),
+        Dcutr(ev) => dcutr::ev_dispatch(ev),
+        AutoNat(ev) => autonat::ev_dispatch(ev),
+        Upnp(ev) => upnp::ev_dispatch(ev),
         _ => {}
     }
 }

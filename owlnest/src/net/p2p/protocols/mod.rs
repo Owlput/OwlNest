@@ -26,9 +26,21 @@ pub mod relay_ext;
 /// A mock up of reference implementation of libp2p allow-block list. 
 pub mod allow_block_list;
 
+/// A wrapper around reference implementation of libp2p Direct Connection Upgrade through Relay.
 pub mod dcutr;
 
+/// A wrapper around reference implementation of libp2p Autonat
+pub mod autonat;
+
+/// A protocol for sending large binary data.
+/// 
+/// A send request will be cancelled under these senarios:
+/// - Sender called `Behaviour::cancel_send()`;
+/// - Error occurred when the sender is trying to read the file;
+/// - Receiver called `Behaviour::cancel_recv()`;
 pub mod blob_transfer;
+
+pub mod upnp;
 
 pub mod event_listener {}
 #[allow(unused)]

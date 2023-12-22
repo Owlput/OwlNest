@@ -1,4 +1,4 @@
-use crate::net::p2p::swarm::EventSender;
+use crate::{generate_handler_method, net::p2p::swarm::EventSender};
 use either::Either;
 use libp2p::PeerId;
 use serde::{Deserialize, Serialize};
@@ -8,7 +8,7 @@ use std::{
     sync::Arc,
     time::Duration,
 };
-use tracing::{error, info, trace, warn};
+use tracing::{error, trace, warn};
 
 mod behaviour;
 mod config;
@@ -35,6 +35,10 @@ pub enum InEvent {
         recv_id: u64,
         callback: oneshot::Sender<Result<Duration, FileRecvError>>,
     },
+    ListPendingRecv(oneshot::Sender<Vec<RecvInfo>>),
+    ListPendingSend(oneshot::Sender<Vec<PendingSendInfo>>),
+    CancelRecv(u64, oneshot::Sender<Result<(), ()>>), // (local_recv_id, callback)
+    CancelSend(u64, oneshot::Sender<Result<(), ()>>), // (local_send_id, callback)
 }
 
 #[derive(Debug)]
@@ -57,7 +61,7 @@ pub enum OutEvent {
         rtt: Option<Duration>,
     },
     ReqSendResult(oneshot::Sender<Result<Duration, SendError>>),
-    Cancelled(u64),
+    CancelledSend(u64),
     Error(Error),
     InboundNegotiated(PeerId),
     OutboundNegotiated(PeerId),
@@ -81,7 +85,10 @@ macro_rules! event_op {
         }}
     };
 }
-use self::error::{FileRecvError, FileSendReqError, SendError};
+use self::{
+    behaviour::{PendingSendInfo, RecvInfo},
+    error::{FileRecvError, FileSendReqError, SendError},
+};
 use std::sync::atomic::{AtomicU64, Ordering};
 #[derive(Debug, Clone)]
 #[allow(dead_code)]
@@ -107,7 +114,7 @@ impl Handle {
         &self,
         to: PeerId,
         path: impl AsRef<Path>,
-    ) -> Result<Duration, FileSendReqError> {
+    ) -> Result<(u64, Duration), FileSendReqError> {
         if path.as_ref().is_dir() {
             // Reject sending directory
             return Err(FileSendReqError::IsDirectory);
@@ -123,6 +130,7 @@ impl Handle {
                 e => FileSendReqError::OtherFsError(e),
             })?;
         let (tx, rx) = oneshot::channel();
+        let send_id = self.next_id();
         let ev = InEvent::SendFile {
             file,
             file_name: path
@@ -132,12 +140,12 @@ impl Handle {
                 .to_string_lossy()
                 .to_string(),
             to,
-            send_id: self.next_id(),
+            send_id,
             callback: tx,
         };
         self.sender.send(ev).await.expect("send to succeed");
         match with_timeout!(rx, 10) {
-            Ok(v) => v.expect("callback to succeed"),
+            Ok(v) => v.expect("callback to succeed").map(|v| (send_id, v)),
             Err(_) => {
                 warn!("timeout reached for a timed future");
                 Err(FileSendReqError::Timeout)
@@ -172,16 +180,21 @@ impl Handle {
             recv_id,
             callback: tx,
         };
-        info!("recv check passed");
         self.sender.send(ev).await.expect("send to succeed");
         match with_timeout!(rx, 10) {
             Ok(rtt) => rtt.expect("callback to succeed"),
-            Err(_)=>{
+            Err(_) => {
                 warn!("timeout reached for a timed future");
                 Err(FileRecvError::Timeout)
             }
         }
     }
+    generate_handler_method!(
+        ListPendingRecv:list_pending_recv()->Vec<RecvInfo>;
+        ListPendingSend:list_pending_send()->Vec<PendingSendInfo>;
+        CancelSend:cancel_send(local_send_id:u64)->Result<(),()>;
+        CancelRecv:cancel_recv(local_recv_id:u64)->Result<(),()>;
+    );
     fn next_id(&self) -> u64 {
         self.send_counter.fetch_add(1, Ordering::SeqCst)
     }
@@ -189,22 +202,151 @@ impl Handle {
 
 #[cfg(test)]
 mod test {
-    use std::{str::FromStr, thread, time::Duration, fs, io::Read};
+    use std::{fs, io::Read, str::FromStr, thread, time::Duration};
 
-    use libp2p::Multiaddr;
+    use libp2p::{Multiaddr, PeerId};
 
+    #[allow(unused)]
     use crate::net::p2p::{
         setup_default, setup_logging,
-        swarm::{behaviour::BehaviourEvent, SwarmEvent},
+        swarm::{behaviour::BehaviourEvent, Manager, SwarmEvent},
     };
+    const SOURCE_FILE: &str = "../Cargo.lock";
+    const DEST_FILE: &str = "../test_lock_file";
 
     #[test]
-    fn test_file() {
-        const SOURCE_FILE:&str = "../Cargo.lock";
-        const DEST_FILE: &str = "../test_lock_file";
+    fn single_send_recv() {
+        let (peer1_m, peer2_m) = setup_peer();
+        send(&peer1_m, peer2_m.identity().get_peer_id(), SOURCE_FILE);
+        assert_eq!(
+            peer1_m
+                .executor()
+                .block_on(peer1_m.blob_transfer().list_pending_send())
+                .len(),
+            1
+        );
+        wait_recv(
+            &peer2_m,
+            peer2_m
+                .executor()
+                .block_on(peer2_m.blob_transfer().list_pending_recv())[0]
+                .local_recv_id,
+            DEST_FILE,
+        );
+        assert!(verify_file(SOURCE_FILE, DEST_FILE));
+    }
+
+    #[test]
+    fn cancel_single_send() {
+        let (peer1_m, peer2_m) = setup_peer();
+        send(&peer1_m, peer2_m.identity().get_peer_id(), SOURCE_FILE);
+        let _ = &peer2_m
+            .executor()
+            .block_on(peer2_m.blob_transfer().list_pending_recv())[0];
+        peer1_m
+            .executor()
+            .block_on(peer1_m.blob_transfer().cancel_send(0))
+            .unwrap();
+        thread::sleep(Duration::from_millis(200));
+        assert!(
+            peer2_m
+                .executor()
+                .block_on(peer2_m.blob_transfer().list_pending_recv())
+                .len()
+                == 0
+        )
+    }
+
+    #[test]
+    fn cancel_single_send_in_multiple() {
+        let (peer1_m, peer2_m) = setup_peer();
+        send(&peer1_m, peer2_m.identity().get_peer_id(), SOURCE_FILE);
+        send(&peer1_m, peer2_m.identity().get_peer_id(), SOURCE_FILE);
+        send(&peer1_m, peer2_m.identity().get_peer_id(), SOURCE_FILE);
+        send(&peer1_m, peer2_m.identity().get_peer_id(), SOURCE_FILE);
+        let _ = peer2_m
+            .executor()
+            .block_on(peer2_m.blob_transfer().list_pending_recv())[2];
+        peer1_m
+            .executor()
+            .block_on(peer1_m.blob_transfer().cancel_send(2))
+            .unwrap();
+        thread::sleep(Duration::from_millis(200));
+        assert!(
+            peer2_m
+                .executor()
+                .block_on(peer2_m.blob_transfer().list_pending_recv())
+                .len()
+                == 3
+        );
+        assert!(
+            peer2_m
+                .executor()
+                .block_on(peer2_m.blob_transfer().list_pending_recv())
+                .extract_if(|v| v.local_recv_id == 2)
+                .count()
+                == 0
+        ); // Check if the recv_id increments linearly
+    }
+
+    #[test]
+    fn cancel_single_recv() {
+        let (peer1_m, peer2_m) = setup_peer();
+        send(&peer1_m, peer2_m.identity().get_peer_id(), SOURCE_FILE);
+        let recv_id = peer2_m
+            .executor()
+            .block_on(peer2_m.blob_transfer().list_pending_recv())[0]
+            .local_recv_id;
+        peer2_m
+            .executor()
+            .block_on(peer2_m.blob_transfer().cancel_recv(recv_id))
+            .unwrap();
+        thread::sleep(Duration::from_millis(200));
+        assert!(
+            peer1_m
+                .executor()
+                .block_on(peer1_m.blob_transfer().list_pending_send())
+                .len()
+                == 0
+        )
+    }
+
+    #[test]
+    fn cancel_single_recv_in_multiple() {
+        let (peer1_m, peer2_m) = setup_peer();
+        send(&peer1_m, peer2_m.identity().get_peer_id(), SOURCE_FILE);
+        send(&peer1_m, peer2_m.identity().get_peer_id(), SOURCE_FILE);
+        send(&peer1_m, peer2_m.identity().get_peer_id(), SOURCE_FILE);
+        send(&peer1_m, peer2_m.identity().get_peer_id(), SOURCE_FILE);
+        let _ = peer1_m
+            .executor()
+            .block_on(peer1_m.blob_transfer().list_pending_send())[2];
+        peer2_m
+            .executor()
+            .block_on(peer2_m.blob_transfer().cancel_recv(2))
+            .unwrap();
+        thread::sleep(Duration::from_millis(200));
+        assert!(
+            peer1_m
+                .executor()
+                .block_on(peer1_m.blob_transfer().list_pending_send())
+                .len()
+                == 3
+        );
+        assert!(
+            peer1_m
+                .executor()
+                .block_on(peer1_m.blob_transfer().list_pending_send())
+                .extract_if(|v| v.local_send_id == 2)
+                .count()
+                == 0
+        ); // Check if the send_id increments linearly
+    }
+
+    fn setup_peer() -> (Manager, Manager) {
         let (peer1_m, _) = setup_default();
         let (peer2_m, _) = setup_default();
-        setup_logging();
+        // setup_logging();
         peer1_m
             .executor()
             .block_on(
@@ -218,17 +360,21 @@ mod test {
         thread::sleep(Duration::from_millis(100));
         peer2_m.swarm().dial_blocking(peer1_listen).unwrap();
         thread::sleep(Duration::from_millis(200));
-        peer1_m
+        (peer1_m, peer2_m)
+    }
+
+    fn send(manager: &Manager, to: PeerId, file: &str) {
+        manager
             .executor()
-            .block_on(peer1_m.blob_transfer().send_file(
-                peer2_m.identity().get_peer_id(),
-                SOURCE_FILE,
-            ))
+            .block_on(manager.blob_transfer().send_file(to, file))
             .unwrap();
         thread::sleep(Duration::from_millis(200));
-        let peer2_m_clone = peer2_m.clone();
-        let handle = peer2_m.executor().spawn(async move {
-            let mut listener = peer2_m_clone.event_subscriber().subscribe();
+    }
+
+    fn wait_recv(manager: &Manager, recv_id: u64, file: &str) {
+        let manager_clone = manager.clone();
+        let handle = manager.executor().spawn(async move {
+            let mut listener = manager_clone.event_subscriber().subscribe();
             while let Ok(ev) = listener.recv().await {
                 if let SwarmEvent::Behaviour(BehaviourEvent::BlobTransfer(
                     super::OutEvent::RecvProgressed { finished, .. },
@@ -240,24 +386,35 @@ mod test {
                 }
             }
         });
-        peer2_m
+        manager
             .executor()
-            .block_on(
-                peer2_m
-                    .blob_transfer()
-                    .recv_file(0, DEST_FILE),
-            )
+            .block_on(manager.blob_transfer().recv_file(recv_id, file))
             .unwrap();
-        peer2_m.executor().block_on(handle).unwrap();
-        let mut source_file_buf = Vec::new();
-        fs::OpenOptions::new().read(true).open(SOURCE_FILE).unwrap().read_to_end(&mut source_file_buf).unwrap();
-        let source_file_hash = xxhash_rust::xxh3::xxh3_128(&source_file_buf);
-        drop(source_file_buf);
-        let mut dest_file_buf = Vec::new();
-        fs::OpenOptions::new().read(true).write(true).open(SOURCE_FILE).unwrap().read_to_end(&mut dest_file_buf).unwrap();
+        manager.executor().block_on(handle).unwrap();
+    }
+
+    /// Verify and clean up
+    fn verify_file(left: &str, right: &str) -> bool {
+        let mut left_file_buf = Vec::new();
+        fs::OpenOptions::new()
+            .read(true)
+            .open(left)
+            .unwrap()
+            .read_to_end(&mut left_file_buf)
+            .unwrap();
+        let left_file_hash = xxhash_rust::xxh3::xxh3_128(&left_file_buf);
+        drop(left_file_buf);
+        let mut right_file_buf = Vec::new();
+        fs::OpenOptions::new()
+            .read(true)
+            .write(true)
+            .open(right)
+            .unwrap()
+            .read_to_end(&mut right_file_buf)
+            .unwrap();
         fs::remove_file(DEST_FILE).unwrap();
-        let dest_file_hash = xxhash_rust::xxh3::xxh3_128(&dest_file_buf);
-        drop(dest_file_buf);
-        assert_eq!(source_file_hash, dest_file_hash)
+        let right_file_hash = xxhash_rust::xxh3::xxh3_128(&right_file_buf);
+        drop(right_file_buf);
+        left_file_hash == right_file_hash
     }
 }

@@ -10,6 +10,8 @@ behaviour_select! {
     mdns: Mdns,
     dcutr: Dcutr,
     blob_transfer: BlobTransfer,
+    autonat:AutoNat,
+    upnp:Upnp,
 }
 
 // use libp2p_swarm::NetworkBehaviour;

@@ -127,4 +127,5 @@ generate_manager! {
     mdns:Mdns,
     relay_ext:RelayExt,
     blob_transfer:BlobTransfer,
+    autonat:AutoNat,
 }

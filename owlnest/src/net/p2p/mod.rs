@@ -82,6 +82,8 @@ pub fn setup_default() -> (Manager, Arc<Notify>) {
     (mgr, shutdown_notifier)
 }
 
+#[allow(unused)]
+// tests only
 pub(crate) fn setup_logging() {
     use std::sync::Mutex;
     use tracing::level_filters::LevelFilter;
