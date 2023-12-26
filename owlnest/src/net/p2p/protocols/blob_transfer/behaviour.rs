@@ -463,6 +463,10 @@ impl NetworkBehaviour for Behaviour {
             libp2p_swarm::FromSwarm::ConnectionClosed(info) => {
                 if info.remaining_established < 1 {
                     self.connected_peers.remove(&info.peer_id);
+                    self.pending_send.retain(|_, v| v.remote != info.peer_id);
+                    self.pending_recv.retain(|_, v| v.remote != info.peer_id);
+                    self.ongoing_send.retain(|v| v.remote != info.peer_id);
+                    self.ongoing_recv.retain(|_, v| v.remote != info.peer_id);
                 }
             }
             _ => {}
