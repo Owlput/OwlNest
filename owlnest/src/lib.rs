@@ -2,6 +2,7 @@
 #![feature(io_error_downcast)]
 #![feature(io_error_more)]
 #![feature(map_try_insert)]
+#![feature(hash_extract_if)]
 #![feature(extract_if)]
 pub mod cli;
 pub mod macros;

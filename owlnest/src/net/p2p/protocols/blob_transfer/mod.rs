@@ -60,9 +60,17 @@ pub enum OutEvent {
     },
     SendProgressed {
         local_send_id: u64,
-        rtt: Option<Duration>,
+        finished: bool,
+        time_taken: Option<Duration>,
     },
+    OngoingSendError {
+        local_send_id: u64,
+        error: String,
+    },
+    /// Receiver cancelled the send
     CancelledSend(u64),
+    ///
+    CancelledRecv(u64),
     Error(Error),
     InboundNegotiated(PeerId),
     OutboundNegotiated(PeerId),

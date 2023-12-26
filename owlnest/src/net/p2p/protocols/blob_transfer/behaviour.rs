@@ -29,18 +29,19 @@ pub struct Behaviour {
     ongoing_send: VecDeque<OngoingFileSend>,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize)]
 pub struct RecvInfo {
     pub local_recv_id: u64,
     pub remote_send_id: u64,
     pub file_name: String,
     pub remote: PeerId,
 }
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize)]
 pub struct SendInfo {
     pub local_send_id: u64,
     pub remote: PeerId,
     pub file_path: PathBuf,
+    pub file_name: String,
 }
 
 impl Behaviour {
@@ -79,6 +80,7 @@ impl Behaviour {
                         local_send_id,
                         remote: to,
                         file_path,
+                        file_name: file_name.clone(),
                     },
                 );
                 self.pending_handler_event
@@ -202,6 +204,7 @@ impl Behaviour {
             local_send_id,
             remote,
             file_path,
+            ..
         } = self.pending_send.remove(&local_send_id).unwrap();
         let file_handle = match std::fs::OpenOptions::new()
             .read(true)
@@ -210,11 +213,15 @@ impl Behaviour {
         {
             Ok(handle) => handle,
             Err(e) => {
-                let _ = match e.kind() {
-                    std::io::ErrorKind::NotFound => FileSendError::FileNotFound,
-                    std::io::ErrorKind::PermissionDenied => FileSendError::PermissionDenied,
-                    e => FileSendError::OtherFsError(e),
-                };
+                // let _ = match e.kind() {
+                //     std::io::ErrorKind::NotFound => FileSendError::FileNotFound,
+                //     std::io::ErrorKind::PermissionDenied => FileSendError::PermissionDenied,
+                //     e => FileSendError::OtherFsError(e),
+                // };
+                self.out_events.push_back(OutEvent::OngoingSendError {
+                    local_send_id,
+                    error: e.to_string(),
+                });
                 self.cancel_send_by_local_send_id(local_send_id);
                 return;
             }
@@ -234,7 +241,7 @@ impl Behaviour {
                     handler: NotifyHandler::Any,
                     event: FromBehaviourEvent::CancelRecv { remote_send_id },
                 });
-                return true;
+            return true;
         }
         false
     }
@@ -252,10 +259,18 @@ impl Behaviour {
         false
     }
     /// Called when remote cancelled transmission
-    fn cancel_recv_by_remote_send_id(&mut self, remote_send_id: u64) {
-        self.ongoing_recv.remove(&remote_send_id);
-        self.pending_recv
-            .retain(|_, v| v.remote_send_id != remote_send_id);
+    fn remove_recv_by_remote_send_id(&mut self, remote_send_id: u64) -> Option<(PeerId, u64)> {
+        if let Some(v) = self.ongoing_recv.remove(&remote_send_id) {
+            return Some((v.remote, v.local_recv_id));
+        };
+        if let Some((_, v)) = self
+            .pending_recv
+            .extract_if(|_, v| v.remote_send_id == remote_send_id)
+            .next()
+        {
+            return Some((v.remote, v.remote_send_id));
+        };
+        None
     }
     fn handle_ongoing_send(&mut self) -> Option<(PeerId, FromBehaviourEvent)> {
         if self.ongoing_send.len() == 0 {
@@ -397,19 +412,30 @@ impl NetworkBehaviour for Behaviour {
             FileSendAccepted { local_send_id } => {
                 self.out_events.push_back(OutEvent::SendProgressed {
                     local_send_id,
-                    rtt: Some(Duration::from_secs(0)),
+                    time_taken: None,
+                    finished: false,
                 });
                 self.pending_send_accepted(local_send_id)
             }
-            SendProgressed { local_send_id, rtt } => self
-                .out_events
-                .push_back(OutEvent::SendProgressed { local_send_id, rtt }),
+            SendProgressed { local_send_id, rtt } => {
+                self.out_events.push_back(OutEvent::SendProgressed {
+                    local_send_id,
+                    time_taken: Some(rtt),
+                    finished: false,
+                })
+            }
             CancelSend { local_send_id } => {
                 self.out_events
                     .push_back(OutEvent::CancelledSend(local_send_id));
                 self.remove_send_record(local_send_id);
             }
-            CancelRecv { remote_send_id } => self.cancel_recv_by_remote_send_id(remote_send_id),
+            CancelRecv { remote_send_id } => {
+                if let Some((_, local_recv_id)) = self.remove_recv_by_remote_send_id(remote_send_id)
+                {
+                    self.out_events
+                        .push_back(OutEvent::CancelledRecv(local_recv_id));
+                }
+            }
         }
     }
     fn poll(

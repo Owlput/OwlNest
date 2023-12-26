@@ -40,7 +40,7 @@ pub enum ToBehaviourEvent {
     /// A chunk of file has been sent.
     SendProgressed {
         local_send_id: u64,
-        rtt: Option<Duration>,
+        rtt: Duration,
     },
     /// Remote wants to send a file to local peer.
     IncomingFile {
@@ -291,7 +291,7 @@ impl ConnectionHandler for Handler {
                                     self.pending_out_events.push_back(
                                         ToBehaviourEvent::SendProgressed {
                                             local_send_id: id,
-                                            rtt: Some(rtt),
+                                            rtt,
                                         },
                                     );
                                 }
