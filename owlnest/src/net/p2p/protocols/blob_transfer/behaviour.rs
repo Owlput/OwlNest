@@ -297,7 +297,9 @@ impl Behaviour {
                 local_send_id: ongoing_send.local_send_id,
             },
         );
-        self.ongoing_send.push_back(ongoing_send);
+        if bytes_read != 0 {
+            self.ongoing_send.push_back(ongoing_send);
+        }
         Some(v)
     }
     fn remove_recv_record(&mut self, local_recv_id: u64) -> Option<(PeerId, u64)> {
