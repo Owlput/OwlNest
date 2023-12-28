@@ -116,7 +116,7 @@ impl ExecHandler {
                 self.state = State::Inactive { reported: false };
             }
             e => {
-                warn!(
+                tracing::debug!(
                     "Error occurred when negotiating protocol {}: {}",
                     EXEC_PROTOCOL_NAME, e
                 )

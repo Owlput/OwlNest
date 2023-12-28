@@ -42,6 +42,8 @@ pub mod blob_transfer;
 
 pub mod upnp;
 
+pub mod ping;
+
 pub mod event_listener {}
 #[allow(unused)]
 mod universal;

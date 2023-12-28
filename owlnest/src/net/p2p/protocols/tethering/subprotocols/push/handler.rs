@@ -88,7 +88,7 @@ impl PushHandler {
                 self.state = State::Inactive { reported: false };
             }
             e => {
-                warn!(
+                tracing::debug!(
                     "Error occurred when negotiating protocol {}: {:?}",
                     PUSH_PROTOCOL_NAME, e
                 )

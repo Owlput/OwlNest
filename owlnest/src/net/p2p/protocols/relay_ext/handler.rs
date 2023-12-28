@@ -82,7 +82,7 @@ impl Handler {
                 self.state = State::Inactive { reported: false };
             }
             e => {
-                warn!(
+                tracing::debug!(
                     "Error occurred when negotiating protocol {}: {:?}",
                     protocol::PROTOCOL_NAME,
                     e

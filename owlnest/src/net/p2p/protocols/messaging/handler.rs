@@ -3,7 +3,7 @@ use super::{protocol, Config, Error, Message, PROTOCOL_NAME};
 use crate::net::p2p::handler_prelude::*;
 use futures_timer::Delay;
 use std::{collections::VecDeque, time::Duration};
-use tracing::{trace, warn};
+use tracing::{trace, warn, debug};
 
 #[derive(Debug)]
 pub enum FromBehaviourEvent {
@@ -61,7 +61,7 @@ impl Handler {
             e => {
                 let e = format!("{:?}", e);
                 if !e.contains("Timeout") {
-                    warn!(
+                    debug!(
                         "Error occurred when negotiating protocol {}: {:?}",
                         PROTOCOL_NAME, e
                     )

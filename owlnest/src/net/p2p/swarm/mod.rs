@@ -82,6 +82,7 @@ impl Builder {
                     blob_transfer: blob_transfer::Behaviour::new(Default::default()),
                     autonat: autonat::Behaviour::new(ident.get_peer_id(), Default::default()),
                     upnp: upnp::Behaviour::default(),
+                    ping:ping::Behaviour::new(Default::default()),
                 })
                 .expect("behaviour incorporation to succeed")
                 .build();
@@ -252,6 +253,7 @@ fn handle_behaviour_event(swarm: &mut Swarm, ev: &BehaviourEvent) {
         Dcutr(ev) => dcutr::ev_dispatch(ev),
         AutoNat(ev) => autonat::ev_dispatch(ev),
         Upnp(ev) => upnp::ev_dispatch(ev),
+        Ping(ev)=> ping::ev_dispatch(ev),
         _ => {}
     }
 }

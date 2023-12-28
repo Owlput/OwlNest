@@ -152,7 +152,7 @@ impl Handler {
             e => {
                 let e = format!("{:?}", e);
                 if !e.contains("Timeout") {
-                    warn!(
+                    debug!(
                         "Error occurred when negotiating protocol {}: {:?}",
                         PROTOCOL_NAME, e
                     )

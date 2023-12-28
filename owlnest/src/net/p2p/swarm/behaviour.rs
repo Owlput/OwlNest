@@ -12,6 +12,7 @@ behaviour_select! {
     blob_transfer: BlobTransfer,
     autonat:AutoNat,
     upnp:Upnp,
+    ping:Ping,
 }
 
 // use libp2p_swarm::NetworkBehaviour;
