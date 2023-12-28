@@ -1,6 +1,6 @@
 pub use libp2p::ping::Behaviour;
 pub use libp2p::ping::Event as OutEvent;
-use tracing::debug;
+use tracing::trace;
 
 pub(crate) fn ev_dispatch(ev: &OutEvent) {
     let result = match &ev.result {

@@ -6,7 +6,7 @@ use futures_timer::Delay;
 use serde::{Deserialize, Serialize};
 use std::{collections::VecDeque, time::Duration};
 use tokio::sync::oneshot;
-use tracing::{trace, warn};
+use tracing::trace;
 
 #[derive(Debug)]
 pub enum FromBehaviourEvent {
@@ -152,9 +152,10 @@ impl Handler {
             e => {
                 let e = format!("{:?}", e);
                 if !e.contains("Timeout") {
-                    debug!(
+                    tracing::debug!(
                         "Error occurred when negotiating protocol {}: {:?}",
-                        PROTOCOL_NAME, e
+                        PROTOCOL_NAME,
+                        e
                     )
                 }
             }

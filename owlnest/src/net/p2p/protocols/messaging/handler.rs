@@ -3,7 +3,7 @@ use super::{protocol, Config, Error, Message, PROTOCOL_NAME};
 use crate::net::p2p::handler_prelude::*;
 use futures_timer::Delay;
 use std::{collections::VecDeque, time::Duration};
-use tracing::{trace, warn, debug};
+use tracing::{debug, trace};
 
 #[derive(Debug)]
 pub enum FromBehaviourEvent {
@@ -12,7 +12,7 @@ pub enum FromBehaviourEvent {
 #[derive(Debug)]
 pub enum ToBehaviourEvent {
     IncomingMessage(Vec<u8>),
-    SendResult(Result<Duration,SendError>,u64),
+    SendResult(Result<Duration, SendError>, u64),
     Error(Error),
     InboundNegotiated,
     OutboundNegotiated,
@@ -137,7 +137,10 @@ impl ConnectionHandler for Handler {
                         Poll::Pending => {
                             if timer.poll_unpin(cx).is_ready() {
                                 self.pending_out_events
-                                    .push_back(ToBehaviourEvent::SendResult(Err(SendError::Timeout),id))
+                                    .push_back(ToBehaviourEvent::SendResult(
+                                        Err(SendError::Timeout),
+                                        id,
+                                    ))
                             } else {
                                 // Put the future back
                                 self.outbound = Some(OutboundState::Busy(task, id, timer));
@@ -148,7 +151,7 @@ impl ConnectionHandler for Handler {
                         // Ready
                         Poll::Ready(Ok((stream, rtt))) => {
                             self.pending_out_events
-                                .push_back(ToBehaviourEvent::SendResult(Ok(rtt),id));
+                                .push_back(ToBehaviourEvent::SendResult(Ok(rtt), id));
                             // Free the outbound
                             self.outbound = Some(OutboundState::Idle(stream));
                         }
@@ -210,14 +213,16 @@ impl ConnectionHandler for Handler {
                 info: (),
             }) => {
                 self.inbound = Some(super::protocol::recv(stream).boxed());
-                self.pending_out_events.push_back(ToBehaviourEvent::InboundNegotiated)
+                self.pending_out_events
+                    .push_back(ToBehaviourEvent::InboundNegotiated)
             }
             ConnectionEvent::FullyNegotiatedOutbound(FullyNegotiatedOutbound {
                 protocol: stream,
                 ..
             }) => {
                 self.outbound = Some(OutboundState::Idle(stream));
-                self.pending_out_events.push_back(ToBehaviourEvent::OutboundNegotiated)
+                self.pending_out_events
+                    .push_back(ToBehaviourEvent::OutboundNegotiated)
             }
             ConnectionEvent::DialUpgradeError(e) => {
                 self.on_dial_upgrade_error(e);
