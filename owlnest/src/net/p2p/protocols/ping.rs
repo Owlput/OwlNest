@@ -13,5 +13,5 @@ pub(crate) fn ev_dispatch(ev: &OutEvent) {
             libp2p::ping::Failure::Other { error } => format!("error {:?}", error),
         },
     };
-    debug!("Ping to {} returned {}", ev.peer, result);
+    trace!("Ping to {} returned {}", ev.peer, result);
 }
