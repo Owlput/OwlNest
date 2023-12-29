@@ -63,10 +63,6 @@ fn handle_command(
                 println!("Error: Missing required argument <address>, syntax: `dial <address>`");
                 return;
             }
-            if command[1].contains("p2p-circuit") {
-                println!("Error: Relayed connection should be established using `relay-client`.");
-                return;
-            }
             swarm::cli::handle_swarm_dial(&manager.swarm(), command[1])
         }
         "listen" => {

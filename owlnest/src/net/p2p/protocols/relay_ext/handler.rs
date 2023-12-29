@@ -107,7 +107,7 @@ impl ConnectionHandler for Handler {
         SubstreamProtocol::new(ReadyUpgrade::new(protocol::PROTOCOL_NAME), ())
     }
     fn on_behaviour_event(&mut self, event: Self::FromBehaviour) {
-        self.pending_in_events.push_front(event)
+        self.pending_in_events.push_back(event)
     }
     fn connection_keep_alive(&self) -> bool {
         true
@@ -187,7 +187,7 @@ impl ConnectionHandler for Handler {
                 }
                 // Outbound is free, get the next message sent
                 Some(OutboundState::Idle(stream)) => {
-                    if let Some(ev) = self.pending_in_events.pop_back() {
+                    if let Some(ev) = self.pending_in_events.pop_front() {
                         use FromBehaviour::*;
                         match ev {
                             QueryAdvertisedPeer => {

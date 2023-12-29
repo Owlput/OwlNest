@@ -123,7 +123,7 @@ impl ConnectionHandler for PushHandler {
     }
 
     fn on_behaviour_event(&mut self, event: Self::FromBehaviour) {
-        self.pending_in_events.push_front(event);
+        self.pending_in_events.push_back(event);
     }
     fn connection_keep_alive(&self) -> bool {
         true
@@ -152,7 +152,7 @@ impl ConnectionHandler for PushHandler {
                 Poll::Pending => {}
                 Poll::Ready(Err(e)) => {
                     self.pending_out_events
-                        .push_front(OutEvent::Error(Error::IO(e)));
+                        .push_back(OutEvent::Error(Error::IO(e)));
                     self.inbound = None;
                 }
                 Poll::Ready(Ok((stream, bytes))) => {
@@ -176,7 +176,7 @@ impl ConnectionHandler for PushHandler {
             }
         }
         loop {
-            if let Some(ev) = self.pending_out_events.pop_back() {
+            if let Some(ev) = self.pending_out_events.pop_front() {
                 return Poll::Ready(ConnectionHandlerEvent::NotifyBehaviour(ev));
             }
             match self.outbound.take() {
@@ -192,10 +192,10 @@ impl ConnectionHandler for PushHandler {
                     Poll::Ready(Err(e)) => {
                         print!("{}", e);
                         self.pending_out_events
-                            .push_front(OutEvent::Error(Error::IO(e)))
+                            .push_back(OutEvent::Error(Error::IO(e)))
                     }
                 },
-                Some(OutboundState::Idle(stream)) => match self.pending_in_events.pop_back() {
+                Some(OutboundState::Idle(stream)) => match self.pending_in_events.pop_front() {
                     Some(ev) => {
                         let (inner, callback) = ev.into_inner();
                         let bytes = match inner {

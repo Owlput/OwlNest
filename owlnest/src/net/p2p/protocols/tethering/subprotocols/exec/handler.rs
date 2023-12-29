@@ -150,7 +150,7 @@ impl ConnectionHandler for ExecHandler {
     }
 
     fn on_behaviour_event(&mut self, event: Self::FromBehaviour) {
-        self.pending_in_events.push_front(event);
+        self.pending_in_events.push_back(event);
     }
     fn connection_keep_alive(&self) -> bool {
         true
@@ -179,7 +179,7 @@ impl ConnectionHandler for ExecHandler {
                 Poll::Pending => {}
                 Poll::Ready(Err(e)) => {
                     self.pending_out_events
-                        .push_front(OutEvent::Error(Error::IO(e)));
+                        .push_back(OutEvent::Error(Error::IO(e)));
                     self.inbound = None;
                 }
                 Poll::Ready(Ok((stream, bytes))) => {
@@ -202,7 +202,7 @@ impl ConnectionHandler for ExecHandler {
                                 self.pending_out_events
                                     .push_back(OutEvent::CallbackResult(result, id))
                             } else {
-                                self.pending_out_events.push_front(OutEvent::Error(
+                                self.pending_out_events.push_back(OutEvent::Error(
                                     Error::CallbackNotFound(id, result),
                                 ))
                             }
@@ -213,7 +213,7 @@ impl ConnectionHandler for ExecHandler {
             }
         }
         loop {
-            if let Some(ev) = self.pending_out_events.pop_back() {
+            if let Some(ev) = self.pending_out_events.pop_front() {
                 return Poll::Ready(ConnectionHandlerEvent::NotifyBehaviour(ev));
             }
             match self.outbound.take() {
@@ -230,10 +230,10 @@ impl ConnectionHandler for ExecHandler {
                     Poll::Ready(Err(e)) => {
                         print!("{}", e);
                         self.pending_out_events
-                            .push_front(OutEvent::Error(Error::IO(e)))
+                            .push_back(OutEvent::Error(Error::IO(e)))
                     }
                 },
-                Some(OutboundState::Idle(stream)) => match self.pending_in_events.pop_back() {
+                Some(OutboundState::Idle(stream)) => match self.pending_in_events.pop_front() {
                     Some(ev) => {
                         let (inner, callback) = ev.into_inner();
                         let bytes = match inner {

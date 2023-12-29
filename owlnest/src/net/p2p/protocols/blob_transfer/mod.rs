@@ -84,14 +84,14 @@ use crate::with_timeout;
 macro_rules! event_op {
     ($listener:ident,$pattern:pat,{$($ops:tt)+}) => {
         async move{
-        loop{
-            let ev = crate::handle_listener_result!($listener);
-            if let SwarmEvent::Behaviour(BehaviourEvent::Messaging($pattern)) = ev.as_ref() {
+            while let Ok(ev) = listener.recv().await{
+               if let SwarmEvent::Behaviour(BehaviourEvent::Messaging($pattern)) = ev.as_ref() {
                 $($ops)+
             } else {
                 continue;
             }
-        }}
+            }
+        }
     };
 }
 
@@ -209,9 +209,7 @@ impl Handle {
 #[cfg(test)]
 mod test {
     use std::{fs, io::Read, str::FromStr, thread, time::Duration};
-
     use libp2p::{Multiaddr, PeerId};
-
     #[allow(unused)]
     use crate::net::p2p::{
         setup_default, setup_logging,
@@ -361,7 +359,7 @@ mod test {
                     .listen(&Multiaddr::from_str("/ip4/127.0.0.1/tcp/0").unwrap()),
             )
             .unwrap();
-        thread::sleep(Duration::from_millis(100));
+        thread::sleep(Duration::from_millis(200));
         let peer1_listen = &peer1_m.swarm().list_listeners_blocking()[0];
         thread::sleep(Duration::from_millis(100));
         peer2_m.swarm().dial_blocking(peer1_listen).unwrap();

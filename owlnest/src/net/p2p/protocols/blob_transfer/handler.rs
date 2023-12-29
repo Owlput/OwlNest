@@ -178,7 +178,7 @@ impl ConnectionHandler for Handler {
         SubstreamProtocol::new(ReadyUpgrade::new(PROTOCOL_NAME), ())
     }
     fn on_behaviour_event(&mut self, event: Self::FromBehaviour) {
-        self.pending_in_events.push_front(event)
+        self.pending_in_events.push_back(event)
     }
     fn connection_keep_alive(&self) -> bool {
         true
@@ -209,7 +209,7 @@ impl ConnectionHandler for Handler {
                 Poll::Ready(Err(e)) => {
                     let error = Error::IO(format!("IO Error: {:?}", e));
                     self.pending_out_events
-                        .push_front(ToBehaviourEvent::Error(error));
+                        .push_back(ToBehaviourEvent::Error(error));
                     self.inbound = None;
                 }
                 Poll::Ready(Ok((stream, bytes))) => {
@@ -312,7 +312,7 @@ impl ConnectionHandler for Handler {
                 // Outbound is free, get the next message sent
                 Some(OutboundState::Idle(stream)) => {
                     // in favour of control messages
-                    if let Some(ev) = self.pending_in_events.pop_back() {
+                    if let Some(ev) = self.pending_in_events.pop_front() {
                         use FromBehaviourEvent::*;
                         match ev {
                             File {
@@ -442,7 +442,7 @@ impl ConnectionHandler for Handler {
                 }
             }
         }
-        if let Some(ev) = self.pending_out_events.pop_back() {
+        if let Some(ev) = self.pending_out_events.pop_front() {
             return Poll::Ready(ConnectionHandlerEvent::NotifyBehaviour(ev));
         }
         Poll::Pending

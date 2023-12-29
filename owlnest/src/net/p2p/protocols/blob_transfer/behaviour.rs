@@ -394,7 +394,7 @@ impl NetworkBehaviour for Behaviour {
                     "Error occurred on peer {}:{:?}: {:#?}",
                     peer_id, connection_id, e
                 );
-                self.out_events.push_front(OutEvent::Error(e));
+                self.out_events.push_back(OutEvent::Error(e));
             }
             InboundNegotiated => {
                 self.out_events
@@ -444,7 +444,7 @@ impl NetworkBehaviour for Behaviour {
         &mut self,
         _cx: &mut std::task::Context<'_>,
     ) -> Poll<ToSwarm<super::OutEvent, handler::FromBehaviourEvent>> {
-        if let Some(ev) = self.out_events.pop_back() {
+        if let Some(ev) = self.out_events.pop_front() {
             return Poll::Ready(ToSwarm::GenerateEvent(ev));
         }
         if let Some(ev) = self.pending_handler_event.pop_front() {

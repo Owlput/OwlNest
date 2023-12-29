@@ -7,15 +7,17 @@ pub use client::Event as OutEvent;
 #[allow(unused)]
 pub(crate) mod cli {
     use super::*;
-    use libp2p::{multiaddr::Protocol, Multiaddr, PeerId};
     use crate::net::p2p::swarm::{cli::format_transport_error, manager::Manager};
+    use futures::TryFutureExt;
+    use libp2p::{multiaddr::Protocol, Multiaddr, PeerId};
+    use tracing::{error, warn};
 
     pub fn setup(manager: &Manager) {
         let mut listener = manager.event_subscriber().subscribe();
+        use crate::net::p2p::swarm::{behaviour::BehaviourEvent, SwarmEvent};
         use tracing::debug;
         manager.executor().spawn(async move {
             while let Ok(ev) = listener.recv().await {
-                use crate::net::p2p::swarm::{behaviour::BehaviourEvent, SwarmEvent};
                 if let SwarmEvent::Behaviour(BehaviourEvent::RelayClient(ev)) = ev.as_ref() {
                     use client::Event::*;
                     match ev {
@@ -113,9 +115,11 @@ mod test {
             .swarm()
             .listen_blocking(&"/ip4/127.0.0.1/tcp/0".parse::<Multiaddr>().unwrap()) // Pick a random port that is available
             .is_ok());
+        thread::sleep(Duration::from_millis(100));
         peer1_m
             .swarm()
             .add_external_address_blocking(peer1_m.swarm().list_listeners_blocking()[0].clone()); // The address is on local network
+        thread::sleep(Duration::from_millis(100));
         assert!(peer2_m
             .swarm()
             .dial_blocking(&peer1_m.swarm().list_listeners_blocking()[0])

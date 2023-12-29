@@ -25,7 +25,7 @@ impl Behaviour {
         }
     }
     pub(crate) fn push_event(&mut self, ev: InEvent) {
-        self.in_events.push_front(ev)
+        self.in_events.push_back(ev)
     }
     pub fn trust(&mut self, peer_id: PeerId) -> Result<(), ()> {
         if self.trusted_peer.insert(peer_id) {
@@ -62,16 +62,16 @@ impl NetworkBehaviour for Behaviour {
             handler::ToBehaviourSelect::Exec(ev) => map_exec_out_event(peer_id, ev),
             handler::ToBehaviourSelect::Push(ev) => map_push_out_event(peer_id, ev),
         };
-        self.out_events.push_front(out_event);
+        self.out_events.push_back(out_event);
     }
     fn poll(
         &mut self,
         _cx: &mut std::task::Context<'_>,
     ) -> Poll<ToSwarm<OutEvent, handler::FromBehaviourSelect>> {
-        if let Some(ev) = self.out_events.pop_back() {
+        if let Some(ev) = self.out_events.pop_front() {
             return Poll::Ready(ToSwarm::GenerateEvent(ev));
         }
-        if let Some(ev) = self.in_events.pop_back() {
+        if let Some(ev) = self.in_events.pop_front() {
             use InEvent::*;
             match ev {
                 RemoteExec(peer_id, op, id) => {

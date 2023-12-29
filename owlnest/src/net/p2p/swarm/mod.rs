@@ -87,12 +87,14 @@ impl Builder {
                 .expect("behaviour incorporation to succeed")
                 .build();
             loop {
+                let timer = futures_timer::Delay::new(std::time::Duration::from_millis(200));
                 select! {
                     Some(ev) = rx_bundle.next() => handle_incoming_event(ev, &mut swarm),
-                    out_event = swarm.select_next_some() => {
+                    out_event = swarm.select_next_some(), if event_out.len() > 12 => {
                         handle_swarm_event(&out_event,&mut swarm).await;
                         let _ = event_out.send(Arc::new(out_event));
                     }
+                    _ = timer => warn!("Slow receiver for swarm events detected.")
                 };
             }
         });

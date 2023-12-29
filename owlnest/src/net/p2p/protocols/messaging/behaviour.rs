@@ -25,7 +25,7 @@ impl Behaviour {
         }
     }
     pub fn push_event(&mut self, msg: InEvent) {
-        self.in_events.push_front(msg)
+        self.in_events.push_back(msg)
     }
 }
 
@@ -42,13 +42,13 @@ impl NetworkBehaviour for Behaviour {
         use handler::ToBehaviourEvent::*;
         match event {
             IncomingMessage(bytes) => match serde_json::from_slice::<Message>(&bytes) {
-                Ok(msg) => self.out_events.push_front(OutEvent::IncomingMessage {
+                Ok(msg) => self.out_events.push_back(OutEvent::IncomingMessage {
                     from: msg.from,
                     msg,
                 }),
                 Err(e) => {
                     self.out_events
-                        .push_front(OutEvent::Error(super::Error::UnrecognizedMessage(format!(
+                        .push_back(OutEvent::Error(super::Error::UnrecognizedMessage(format!(
                             "Unrecognized message: {}, raw data: {}",
                             e,
                             String::from_utf8_lossy(&bytes)
@@ -60,7 +60,7 @@ impl NetworkBehaviour for Behaviour {
                     "Error occurred on peer {}:{:?}: {:#?}",
                     peer_id, connection_id, e
                 );
-                self.out_events.push_front(OutEvent::Error(e));
+                self.out_events.push_back(OutEvent::Error(e));
             }
             InboundNegotiated => {
                 self.out_events
@@ -89,10 +89,10 @@ impl NetworkBehaviour for Behaviour {
         &mut self,
         _cx: &mut std::task::Context<'_>,
     ) -> Poll<ToSwarm<super::OutEvent, handler::FromBehaviourEvent>> {
-        if let Some(ev) = self.out_events.pop_back() {
+        if let Some(ev) = self.out_events.pop_front() {
             return Poll::Ready(ToSwarm::GenerateEvent(ev));
         }
-        if let Some(ev) = self.in_events.pop_back() {
+        if let Some(ev) = self.in_events.pop_front() {
             trace!("Received event {:#?}", ev);
             use InEvent::*;
             match ev {

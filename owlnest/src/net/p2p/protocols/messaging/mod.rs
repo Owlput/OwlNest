@@ -45,14 +45,13 @@ use crate::with_timeout;
 macro_rules! event_op {
     ($listener:ident,$pattern:pat,{$($ops:tt)+}) => {
         async move{
-        loop{
-            let ev = crate::handle_listener_result!($listener);
-            if let SwarmEvent::Behaviour(BehaviourEvent::Messaging($pattern)) = ev.as_ref() {
-                $($ops)+
-            } else {
-                continue;
+            while let Ok(ev) = $listener.recv().await {
+                if let SwarmEvent::Behaviour(BehaviourEvent::Messaging($pattern)) = ev.as_ref() {
+                    $($ops)+
+                };
             }
-        }}
+            unreachable!()
+        }
     };
 }
 use self::error::SendError;
@@ -100,5 +99,148 @@ impl Handle {
     }
     fn next_id(&self) -> u64 {
         self.counter.fetch_add(1, Ordering::SeqCst)
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use super::*;
+    use crate::net::p2p::{
+        setup_default,
+        swarm::{behaviour::BehaviourEvent, Manager, SwarmEvent},
+    };
+    use libp2p::Multiaddr;
+    use std::{thread, time::Duration};
+    use tokio::sync::mpsc;
+
+    #[test]
+    fn test_sigle_send_recv() {
+        let (peer1, _) = setup_default();
+        let (peer2, _) = setup_default();
+        peer1
+            .swarm()
+            .listen_blocking(&"/ip4/127.0.0.1/tcp/0".parse::<Multiaddr>().unwrap())
+            .unwrap();
+        let mut peer1_message_watcher = spawn_watcher(&peer1);
+        let mut peer2_message_watcher = spawn_watcher(&peer2);
+        thread::sleep(Duration::from_millis(100));
+        peer2
+            .swarm()
+            .dial_blocking(&peer1.swarm().list_listeners_blocking()[0])
+            .unwrap();
+        let peer1_id = peer1.identity().get_peer_id();
+        let peer2_id = peer2.identity().get_peer_id();
+        thread::sleep(Duration::from_millis(100));
+        assert!(
+            peer1.swarm().is_connected_blocking(peer2_id)
+                && peer2.swarm().is_connected_blocking(peer1_id)
+        );
+        single_send_recv(&peer1, &peer2, &mut peer2_message_watcher, 1);
+        single_send_recv(&peer2, &peer1, &mut peer1_message_watcher, 2);
+    }
+
+    #[test]
+    #[allow(unused_variables)] // remove when the test is complete
+    fn multi_send_recv() {
+        let (peer1, _) = setup_default();
+        let (peer2, peer2_shutdown) = setup_default();
+        let (peer3, _) = setup_default();
+        let (peer4, _) = setup_default();
+        let (peer5, peer5_shutdown) = setup_default();
+        let peer1_id = peer1.identity().get_peer_id();
+        let peer2_id = peer2.identity().get_peer_id();
+        let peer3_id = peer3.identity().get_peer_id();
+        let peer4_id = peer4.identity().get_peer_id();
+        let peer5_id = peer5.identity().get_peer_id();
+        peer1
+            .swarm()
+            .listen_blocking(&"/ip4/127.0.0.1/tcp/0".parse::<Multiaddr>().unwrap())
+            .unwrap();
+        thread::sleep(Duration::from_millis(100));
+        let peer1_listen_addr = peer1.swarm().list_listeners_blocking()[0].clone();
+        let mut peer1_watcher = spawn_watcher(&peer1);
+        let mut peer2_watcher = spawn_watcher(&peer2);
+        let mut peer3_watcher = spawn_watcher(&peer3);
+        let mut peer4_watcher = spawn_watcher(&peer4);
+        let mut peer5_watcher = spawn_watcher(&peer5);
+        peer2.swarm().dial_blocking(&peer1_listen_addr).unwrap();
+        peer3.swarm().dial_blocking(&peer1_listen_addr).unwrap();
+        peer4.swarm().dial_blocking(&peer1_listen_addr).unwrap();
+        peer5.swarm().dial_blocking(&peer1_listen_addr).unwrap();
+        thread::sleep(Duration::from_millis(100));
+        assert!(
+            peer1.swarm().is_connected_blocking(peer2_id)
+                && peer1.swarm().is_connected_blocking(peer3_id)
+                && peer1.swarm().is_connected_blocking(peer4_id)
+                && peer1.swarm().is_connected_blocking(peer5_id)
+        );
+        single_send_recv(&peer1, &peer2, &mut peer2_watcher, 1);
+        single_send_recv(&peer1, &peer3, &mut peer3_watcher, 2);
+        single_send_recv(&peer1, &peer4, &mut peer4_watcher, 3);
+        single_send_recv(&peer1, &peer5, &mut peer5_watcher, 4);
+        single_send_recv(&peer2, &peer1, &mut peer1_watcher, 5);
+        single_send_recv(&peer3, &peer1, &mut peer1_watcher, 6);
+        single_send_recv(&peer4, &peer1, &mut peer1_watcher, 7);
+        single_send_recv(&peer5, &peer1, &mut peer1_watcher, 8);
+        peer5_shutdown.notify_one();
+        thread::sleep(Duration::from_millis(100));
+        peer1
+            .executor()
+            .block_on(
+                peer1
+                    .messaging()
+                    .send_message(peer5_id, Message::new_ordered(peer1_id, peer5_id, 9)),
+            )
+            .unwrap_err();
+        single_send_recv(&peer1, &peer2, &mut peer2_watcher, 1);
+        single_send_recv(&peer1, &peer3, &mut peer3_watcher, 2);
+        single_send_recv(&peer4, &peer1, &mut peer1_watcher, 3);
+        single_send_recv(&peer2, &peer1, &mut peer1_watcher, 4);
+        single_send_recv(&peer3, &peer1, &mut peer1_watcher, 5);
+        // TODO: complete this test
+    }
+
+    fn eq_message(lhs: &Message, rhs: &Message) -> bool {
+        lhs.time == rhs.time && lhs.from == rhs.from && lhs.to == rhs.to && lhs.msg == rhs.msg
+    }
+    fn spawn_watcher(manager: &Manager) -> mpsc::Receiver<(PeerId, Message)> {
+        manager.executor().block_on(async {
+            let mut listener = manager.event_subscriber().subscribe();
+            let (tx, rx) = mpsc::channel(8);
+            tokio::spawn(async move {
+                while let Ok(ev) = listener.recv().await {
+                    if let SwarmEvent::Behaviour(BehaviourEvent::Messaging(
+                        OutEvent::IncomingMessage { from, msg },
+                    )) = ev.as_ref()
+                    {
+                        tx.send((*from, msg.clone())).await.unwrap();
+                    }
+                }
+            });
+            rx
+        })
+    }
+    fn single_send_recv(
+        from: &Manager,
+        to: &Manager,
+        watcher: &mut mpsc::Receiver<(PeerId, Message)>,
+        order: u32,
+    ) {
+        let from_peer_id = from.identity().get_peer_id();
+        let to_peer_id = to.identity().get_peer_id();
+        from.executor()
+            .block_on(from.messaging().send_message(
+                to_peer_id,
+                Message::new_ordered(from_peer_id, to_peer_id, order),
+            ))
+            .unwrap();
+        let message_received = watcher.blocking_recv().unwrap();
+        assert!(
+            message_received.0 == from_peer_id
+                && eq_message(
+                    &message_received.1,
+                    &Message::new_ordered(from_peer_id, to_peer_id, order)
+                )
+        );
     }
 }

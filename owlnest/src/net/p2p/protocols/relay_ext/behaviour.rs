@@ -88,7 +88,7 @@ impl NetworkBehaviour for Behaviour {
                 from: peer_id,
                 list: result,
             }),
-            Error(e) => self.pending_out_events.push_front(OutEvent::Error(e)),
+            Error(e) => self.pending_out_events.push_back(OutEvent::Error(e)),
         }
     }
     fn poll(

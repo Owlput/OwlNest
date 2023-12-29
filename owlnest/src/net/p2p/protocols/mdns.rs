@@ -16,14 +16,13 @@ pub enum InEvent {
 macro_rules! event_op {
     ($listener:ident,$pattern:pat,{$($ops:tt)+}) => {
         async move{
-        loop{
-            let ev = handle_listener_result!($listener);
-            if let SwarmEvent::Behaviour(BehaviourEvent::Mdns($pattern)) = ev.as_ref() {
-                $($ops)+
-            } else {
-                continue;
+            while let Ok(ev) = $listener.recv().await{
+                if let SwarmEvent::Behaviour(BehaviourEvent::Mdns($pattern)) = ev.as_ref() {
+                    $($ops)+
+                }
             }
-        }}
+            unreachable!()
+        }
     };
 }
 

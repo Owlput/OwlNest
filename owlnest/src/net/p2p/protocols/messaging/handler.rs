@@ -87,7 +87,7 @@ impl ConnectionHandler for Handler {
     }
     fn on_behaviour_event(&mut self, event: Self::FromBehaviour) {
         trace!("Received event {:#?}", event);
-        self.pending_in_events.push_front(event)
+        self.pending_in_events.push_back(event)
     }
     fn connection_keep_alive(&self) -> bool {
         true
@@ -118,7 +118,7 @@ impl ConnectionHandler for Handler {
                 Poll::Ready(Err(e)) => {
                     let error = Error::IO(format!("IO Error: {:?}", e));
                     self.pending_out_events
-                        .push_front(ToBehaviourEvent::Error(error));
+                        .push_back(ToBehaviourEvent::Error(error));
                     self.inbound = None;
                 }
                 Poll::Ready(Ok((stream, bytes))) => {
@@ -154,6 +154,9 @@ impl ConnectionHandler for Handler {
                                 .push_back(ToBehaviourEvent::SendResult(Ok(rtt), id));
                             // Free the outbound
                             self.outbound = Some(OutboundState::Idle(stream));
+                            if let Some(ev) = self.pending_out_events.pop_front() {
+                                return Poll::Ready(ConnectionHandlerEvent::NotifyBehaviour(ev));
+                            }
                         }
                         // Ready but resolved to an error
                         Poll::Ready(Err(e)) => {
@@ -164,7 +167,7 @@ impl ConnectionHandler for Handler {
                 }
                 // Outbound is free, get the next message sent
                 Some(OutboundState::Idle(stream)) => {
-                    if let Some(ev) = self.pending_in_events.pop_back() {
+                    if let Some(ev) = self.pending_in_events.pop_front() {
                         match ev {
                             FromBehaviourEvent::PostMessage(msg, id) => {
                                 // Put Outbound into send state
@@ -193,7 +196,7 @@ impl ConnectionHandler for Handler {
                 }
             }
         }
-        if let Some(ev) = self.pending_out_events.pop_back() {
+        if let Some(ev) = self.pending_out_events.pop_front() {
             return Poll::Ready(ConnectionHandlerEvent::NotifyBehaviour(ev));
         }
         Poll::Pending

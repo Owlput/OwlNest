@@ -4,7 +4,7 @@ use libp2p::{
 };
 use std::str::FromStr;
 use tokio::sync::{mpsc, oneshot};
-use tracing::{debug, info, trace, warn};
+use tracing::{debug, info, trace};
 
 use crate::{
     handle_callback_sender,
@@ -29,13 +29,13 @@ pub(crate) enum InEvent {
 
 macro_rules! event_op {
     ($listener:ident,$pattern:pat,{$($ops:tt)+}) => {
-        loop{
-            let ev = crate::handle_listener_result!($listener);
-            if let SwarmEvent::Behaviour(BehaviourEvent::Kad($pattern)) = ev.as_ref() {
-                $($ops)+
-            } else {
-                continue;
+        async move{
+            while let Ok(ev) = $listener.recv().await{
+                if let SwarmEvent::Behaviour(BehaviourEvent::Kad($pattern)) = ev.as_ref() {
+                    $($ops)+
+                }
             }
+            unreachable!()
         }
     };
 }
@@ -74,13 +74,14 @@ impl Handle {
     pub async fn lookup(&self, peer_id: PeerId) -> Vec<kad::QueryResult> {
         let mut listener = self.event_tx.subscribe();
         let (callback_tx, callback_rx) = oneshot::channel();
+
         self.sender_swarm
             .send(InEvent::PeerLookup(peer_id, callback_tx))
             .await
             .expect("sending event to succeed");
         let query_id = callback_rx.await.expect("callback to succeed");
         let mut results = Vec::new();
-        event_op!(
+        let handle = tokio::spawn(event_op!(
             listener,
             OutEvent::OutboundQueryProgressed {
                 id,
@@ -98,18 +99,16 @@ impl Handle {
                     break;
                 }
             }
-        );
-        results
+        ));
+        handle.await.unwrap()
     }
     async fn set_mode(&self, mode: Option<Mode>) -> Result<Mode, ()> {
         let ev = InEvent::SetMode(mode);
         let mut listener = self.event_tx.subscribe();
         self.sender_swarm.send(ev).await.expect("send to succeed");
-        let fut = async move {
-            event_op!(listener, OutEvent::ModeChanged { new_mode }, {
-                break new_mode.clone();
-            })
-        };
+        let fut = event_op!(listener, OutEvent::ModeChanged { new_mode }, {
+            return new_mode.clone();
+        });
         match with_timeout!(fut, 10) {
             Ok(result) => return Ok(result),
             Err(_) => return Err(()),

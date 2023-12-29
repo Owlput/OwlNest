@@ -20,6 +20,18 @@ impl Message {
             msg,
         }
     }
+    #[allow(unused)]
+    pub(crate) fn new_ordered(from: PeerId, to: PeerId, order: u32) -> Self {
+        Self {
+            time: order.into(),
+            from,
+            to,
+            msg: format!(
+                "This is a message for test only. \n 该信息仅用于测试目的。 The order is {}.",
+                order
+            ),
+        }
+    }
     #[inline]
     pub fn as_bytes(&self) -> Vec<u8> {
         serde_json::to_vec(self).unwrap()

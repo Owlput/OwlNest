@@ -60,7 +60,7 @@ pub mod behaviour {
         ) -> std::task::Poll<
             libp2p::swarm::ToSwarm<Self::ToSwarm, libp2p::swarm::THandlerInEvent<Self>>,
         > {
-            if let Some(v) = self.pending_disconnect.pop_back() {
+            if let Some(v) = self.pending_disconnect.pop_front() {
                 return Poll::Ready(ToSwarm::CloseConnection {
                     peer_id: v,
                     connection: libp2p::swarm::CloseConnection::All,
@@ -101,7 +101,7 @@ pub mod behaviour {
             if !self.policy.remove_peer(peer) {
                 return false;
             }
-            self.pending_disconnect.push_front(*peer);
+            self.pending_disconnect.push_back(*peer);
             if let Some(waker) = self.waker.take() {
                 waker.wake()
             }

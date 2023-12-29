@@ -30,7 +30,7 @@ pub enum OutEvent {
     },
     /// Local provider state.
     ProviderState(bool, u64),
-    AdvertisedPeerChanged(PeerId,bool),
+    AdvertisedPeerChanged(PeerId, bool),
     Error(Error),
 }
 
@@ -92,15 +92,13 @@ pub enum InEvent {
 macro_rules! event_op {
     ($listener:ident,$pattern:pat=>{$($ops:tt)+}) => {
         async move{
-        loop{
-            let ev = crate::handle_listener_result!($listener);
-            if let SwarmEvent::Behaviour(BehaviourEvent::RelayExt($pattern)) = ev.as_ref() {
-                $($ops)+
-            } else {
-                continue;
+            while let Ok(ev) = $listener.recv().await{
+                if let SwarmEvent::Behaviour(BehaviourEvent::RelayExt($pattern)) = ev.as_ref() {
+                    $($ops)+
+                }
             }
+            unreachable!()
         }
-    }
     };
 }
 
@@ -172,7 +170,7 @@ impl Handle {
         };
         self.sender.send(ev).await.expect("Send to succeed");
     }
-    pub async fn remove_advertised(&self,peer_id:&PeerId)->bool{
+    pub async fn remove_advertised(&self, peer_id: &PeerId) -> bool {
         let ev = InEvent::RemoveAdvertised(*peer_id);
         let mut listener = self.event_tx.subscribe();
         let fut = event_op!(listener,OutEvent::AdvertisedPeerChanged(target,state )=>{
@@ -181,9 +179,9 @@ impl Handle {
             }
         });
         self.sender.send(ev).await.expect("Send to succeed");
-        with_timeout!(fut,10).expect("Future to finish in 10s")
+        with_timeout!(fut, 10).expect("Future to finish in 10s")
     }
-    pub async fn clear_advertised(&self){
+    pub async fn clear_advertised(&self) {
         let ev = InEvent::ClearAdvertised;
         self.sender.send(ev).await.expect("Send to succeed")
     }
@@ -195,11 +193,9 @@ impl Handle {
 
 #[cfg(test)]
 mod test {
-    use std::{thread, time::Duration};
-
-    use libp2p::Multiaddr;
-
     use crate::net::p2p::setup_default;
+    use libp2p::Multiaddr;
+    use std::{thread, time::Duration};
 
     #[test]
     fn test() {
@@ -209,6 +205,7 @@ mod test {
             .swarm()
             .listen_blocking(&"/ip4/127.0.0.1/tcp/0".parse::<Multiaddr>().unwrap())
             .unwrap();
+        thread::sleep(Duration::from_millis(100));
         let peer1_id = peer1_m.identity().get_peer_id();
         let peer2_id = peer2_m.identity().get_peer_id();
         peer2_m
@@ -230,12 +227,34 @@ mod test {
             .block_on(peer2_m.relay_ext().query_advertised_peer(peer1_id))
             .unwrap()
             .contains(&peer2_id));
-        assert!(!peer1_m.executor().block_on(peer1_m.relay_ext().set_provider_state(false)));
+        assert!(!peer1_m
+            .executor()
+            .block_on(peer1_m.relay_ext().set_provider_state(false)));
         thread::sleep(Duration::from_millis(200));
-        assert!(peer2_m.executor().block_on(peer2_m.relay_ext().query_advertised_peer(peer1_id)).unwrap().len() == 0);
-        peer2_m.executor().block_on(peer2_m.relay_ext().set_remote_advertisement(peer1_id, false));
-        assert!(peer1_m.executor().block_on(peer1_m.relay_ext().set_provider_state(true)));
+        assert!(
+            peer2_m
+                .executor()
+                .block_on(peer2_m.relay_ext().query_advertised_peer(peer1_id))
+                .unwrap()
+                .len()
+                == 0
+        );
+        peer2_m.executor().block_on(
+            peer2_m
+                .relay_ext()
+                .set_remote_advertisement(peer1_id, false),
+        );
+        assert!(peer1_m
+            .executor()
+            .block_on(peer1_m.relay_ext().set_provider_state(true)));
         thread::sleep(Duration::from_millis(200));
-        assert!(peer2_m.executor().block_on(peer2_m.relay_ext().query_advertised_peer(peer1_id)).unwrap().len() == 0);
+        assert!(
+            peer2_m
+                .executor()
+                .block_on(peer2_m.relay_ext().query_advertised_peer(peer1_id))
+                .unwrap()
+                .len()
+                == 0
+        );
     }
 }

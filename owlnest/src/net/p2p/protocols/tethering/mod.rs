@@ -32,8 +32,7 @@ pub use subprotocols::Subprotocol;
 
 use self::subprotocols::exec::OpResult;
 use crate::{
-    handle_listener_result,
-    net::p2p::swarm::{SwarmEvent,behaviour::BehaviourEvent, EventSender},
+    net::p2p::swarm::{behaviour::BehaviourEvent, EventSender, SwarmEvent},
     with_timeout,
 };
 
@@ -99,17 +98,18 @@ impl Handle {
         self.sender.send(ev).await.expect("send to succeed");
         let mut listener = self.event_tx.subscribe();
         let fut = async move {
-            loop {
+            while let Ok(ev) = listener.recv().await {
                 if let SwarmEvent::Behaviour(BehaviourEvent::Tethering(OutEvent::LocalExec(
                     result,
                     id,
-                ))) = handle_listener_result!(listener).as_ref()
+                ))) = ev.as_ref()
                 {
                     if *id == ev_id {
                         return result.clone();
                     }
                 }
             }
+            unreachable!()
         };
         with_timeout!(fut, 10).expect("future to finish in 10s")
     }
