@@ -96,7 +96,7 @@ impl Handle {
                 results.push(result.clone());
                 if step.last {
                     drop(listener);
-                    break;
+                    return results;
                 }
             }
         ));
