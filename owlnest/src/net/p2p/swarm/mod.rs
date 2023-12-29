@@ -94,7 +94,12 @@ impl Builder {
                         handle_swarm_event(&out_event,&mut swarm).await;
                         let _ = event_out.send(Arc::new(out_event));
                     }
-                    _ = timer => warn!("Slow receiver for swarm events detected.")
+                    _ = timer =>{
+                        if event_out.len() > 5 {
+                            warn!("Slow receiver for swarm events detected.")
+                        }
+                        
+                    } 
                 };
             }
         });
