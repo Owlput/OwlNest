@@ -239,7 +239,7 @@ impl SwarmEvent {
                     address: address.clone(),
                 }
             }
-            _ => unimplemented!("New branch not covered"),
+            uncovered => unimplemented!("New branch {:?} not covered", uncovered),
         };
         Ok(ev)
     }
@@ -346,7 +346,7 @@ impl TryFrom<super::SwarmEvent> for SwarmEvent {
             libp2p::swarm::SwarmEvent::NewExternalAddrOfPeer { peer_id, address } => {
                 Self::NewExternalAddrOfPeer { peer_id, address }
             }
-            _ => unimplemented!("New branch not covered"),
+            uncovered => unimplemented!("New branch {:?} not covered", uncovered),
         };
         Ok(ev)
     }

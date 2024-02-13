@@ -188,7 +188,7 @@ async fn handle_swarm_event(ev: &SwarmEvent, swarm: &mut Swarm) {
         }
         SwarmEvent::NewExternalAddrOfPeer { .. }=>{
         }
-        _ => unimplemented!("New branch not covered"),
+        uncovered => unimplemented!("New branch {:?} not covered", uncovered),
     }
 }
 

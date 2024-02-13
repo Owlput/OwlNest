@@ -1,6 +1,5 @@
 use super::{protocol, Config, Error, PROTOCOL_NAME};
 use crate::net::p2p::handler_prelude::*;
-use tokio::sync::oneshot;
 use futures::Future;
 use hyper::body::Incoming;
 use hyper::client::conn::http1::SendRequest;
@@ -9,6 +8,7 @@ use hyper::service::service_fn;
 use hyper::{Request, Response};
 use std::collections::VecDeque;
 use tokio::sync::mpsc;
+use tokio::sync::oneshot;
 use tokio::task::JoinHandle;
 use tokio_util::bytes::Bytes;
 use tokio_util::compat::FuturesAsyncReadCompatExt;
@@ -307,11 +307,11 @@ impl ConnectionHandler for Handler {
             ConnectionEvent::DialUpgradeError(e) => {
                 self.on_dial_upgrade_error(e);
             }
-            ConnectionEvent::ListenUpgradeError(_)=>{}
+            ConnectionEvent::ListenUpgradeError(_) => {}
             ConnectionEvent::AddressChange(_) | ConnectionEvent::ListenUpgradeError(_) => {}
             ConnectionEvent::LocalProtocolsChange(_) => {}
             ConnectionEvent::RemoteProtocolsChange(_) => {}
-            _ => unimplemented!("New branch not handled!"),
+            uncovered => unimplemented!("New branch {:?} not covered", uncovered),
         }
     }
 }

@@ -477,10 +477,9 @@ impl ConnectionHandler for Handler {
             ConnectionEvent::DialUpgradeError(e) => {
                 self.on_dial_upgrade_error(e);
             }
-            ConnectionEvent::ListenUpgradeError(_)=>{}
             ConnectionEvent::LocalProtocolsChange(_) => {}
             ConnectionEvent::RemoteProtocolsChange(_) => {}
-            _ => unimplemented!("New branch not handled!"),
+            uncovered => unimplemented!("New branch {:?} not covered", uncovered),
         }
     }
 }

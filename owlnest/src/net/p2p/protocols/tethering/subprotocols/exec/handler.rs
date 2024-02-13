@@ -118,7 +118,8 @@ impl ExecHandler {
             e => {
                 tracing::debug!(
                     "Error occurred when negotiating protocol {}: {}",
-                    EXEC_PROTOCOL_NAME, e
+                    EXEC_PROTOCOL_NAME,
+                    e
                 )
             }
         }
@@ -202,9 +203,8 @@ impl ConnectionHandler for ExecHandler {
                                 self.pending_out_events
                                     .push_back(OutEvent::CallbackResult(result, id))
                             } else {
-                                self.pending_out_events.push_back(OutEvent::Error(
-                                    Error::CallbackNotFound(id, result),
-                                ))
+                                self.pending_out_events
+                                    .push_back(OutEvent::Error(Error::CallbackNotFound(id, result)))
                             }
                         }
                     }
@@ -294,11 +294,10 @@ impl ConnectionHandler for ExecHandler {
             ConnectionEvent::DialUpgradeError(e) => {
                 self.on_dial_upgrade_error(e);
             }
-            ConnectionEvent::ListenUpgradeError(_)=>{}
             ConnectionEvent::AddressChange(_) | ConnectionEvent::ListenUpgradeError(_) => {}
             ConnectionEvent::LocalProtocolsChange(_) => {}
             ConnectionEvent::RemoteProtocolsChange(_) => {}
-            _ => unimplemented!("New branch not covered")
+            uncovered => unimplemented!("New branch {:?} not covered", uncovered),
         }
     }
 }
