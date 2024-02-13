@@ -4,7 +4,8 @@ use tracing::{debug, info};
 pub type Behaviour = libp2p::relay::Behaviour;
 pub type OutEvent = libp2p::relay::Event;
 
-pub fn ev_dispatch(ev: &OutEvent) {
+/// Log the events to tracing
+pub(crate) fn ev_dispatch(ev: &OutEvent) {
     use libp2p::relay::Event::*;
     match ev {
         ReservationReqAccepted {

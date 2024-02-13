@@ -5,7 +5,6 @@ use libp2p::{
 use std::str::FromStr;
 use tokio::sync::{mpsc, oneshot};
 use tracing::{debug, info, trace};
-
 use crate::{
     handle_callback_sender,
     net::p2p::swarm::{behaviour::BehaviourEvent, EventSender, SwarmEvent},

@@ -4,7 +4,7 @@ pub use libp2p::identify::Event as OutEvent;
 pub use libp2p::identify::PROTOCOL_NAME;
 use tracing::{debug, trace, warn};
 
-pub fn ev_dispatch(ev: &OutEvent) {
+pub(crate) fn ev_dispatch(ev: &OutEvent) {
     use OutEvent::*;
     match ev {
         Received { peer_id, info } => {

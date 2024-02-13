@@ -9,9 +9,9 @@
 /// })
 /// ```
 ///
-/// Supported parameter must be in the same type and order with EventVariant.
+/// Supplied parameters must be in the same type and order with EventVariant.
 /// `&self` is automatically filled in, but EventVariant must be a tuple.   
-/// Variant can hold no data, leaving the function parameter blank.   
+/// Variant can hold no data(except callback), which means leaving the function parameter blank.   
 ///
 #[macro_export]
 macro_rules! generate_handler_method_blocking {
@@ -37,29 +37,33 @@ macro_rules! generate_handler_method_blocking {
 /// })
 /// ```
 ///
-/// Supported parameter must be in the same type and order with EventVariant.
+/// Supplied parameters must be in the same type and order with EventVariant.
 /// `&self` is automatically filled in, but EventVariant must be a tuple.   
-/// Variant can hold no data, leaving the function parameter blank.  
+/// Variant can hold no data(except callback), which means leaving the function parameter blank.  
 ///  
 /// Method with callback and without callback need to be generated separately.
 #[macro_export]
 macro_rules! generate_handler_method {
-    {$($variant:ident:$name:ident($($params:ident:$param_type:ty$(,)?)*)->();)+} => {
-        $(pub async fn $name(&self,$($params:$param_type,)*){
-            let ev = InEvent::$variant($($params,)*);
-            self.sender.send(ev).await.unwrap();
-        }
-    )*
+    {$($(#[$metas:meta])*$variant:ident:$name:ident($($params:ident:$param_type:ty$(,)?)*)->();)+} => {
+        $(
+            $(#[$metas])*
+            pub async fn $name(&self,$($params:$param_type,)*){
+                let ev = InEvent::$variant($($params,)*);
+                self.sender.send(ev).await.unwrap();
+            }
+        )*
     };
-    {$($variant:ident:$name:ident($($params:ident:$param_type:ty$(,)?)*)->$return_type:ty;)+} => {
-        $(pub async fn $name(&self,$($params:$param_type,)*)->$return_type{
-            use tokio::sync::oneshot::*;
-            let (tx,rx) = channel();
-            let ev = InEvent::$variant($($params,)*tx);
-            self.sender.send(ev).await.unwrap();
-            rx.await.unwrap()
-        }
-    )*
+    {$($(#[$metas:meta])*$variant:ident:$name:ident($($params:ident:$param_type:ty$(,)?)*)->$return_type:ty;)+} => {
+        $(
+            $(#[$metas])*
+            pub async fn $name(&self,$($params:$param_type,)*)->$return_type{
+                use tokio::sync::oneshot::*;
+                let (tx,rx) = channel();
+                let ev = InEvent::$variant($($params,)*tx);
+                self.sender.send(ev).await.unwrap();
+                rx.await.unwrap()
+            }
+        )*
     };
 }
 

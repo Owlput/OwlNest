@@ -24,6 +24,18 @@ pub struct SwarmConfig {
     pub relay_server: libp2p::relay::Config,
 }
 impl SwarmConfig {
+    pub fn default_with_ident(ident: &IdentityUnion) -> Self {
+        Self {
+            local_ident: ident.clone(),
+            kad: Default::default(),
+            identify: identify::Config::new("/owlnest/0.0.1".into(), ident.get_pubkey()),
+            mdns: Default::default(),
+            messaging: Default::default(),
+            relay_server: Default::default(),
+            #[cfg(feature = "tethering")]
+            tethering: Default::default()
+        }
+    }
     pub fn ident(&self) -> &IdentityUnion {
         &self.local_ident
     }
@@ -97,7 +109,7 @@ pub(crate) fn setup_logging() {
         .with_target("libp2p_noise", Level::WARN)
         .with_target("libp2p_mdns", Level::DEBUG)
         .with_target("hickory_proto", Level::WARN)
-        .with_target("", Level::INFO);
+        .with_target("", Level::DEBUG);
     let layer = tracing_subscriber::fmt::Layer::default()
         .with_ansi(false)
         .with_writer(Mutex::new(stdout()))

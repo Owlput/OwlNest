@@ -7,7 +7,7 @@ pub use libp2p::mdns::Event as OutEvent;
 use libp2p::PeerId;
 use tokio::sync::{mpsc, oneshot::*};
 
-pub enum InEvent {
+pub(crate) enum InEvent {
     ListDiscoveredNodes(Sender<Vec<PeerId>>),
     HasNode(PeerId, Sender<bool>),
 }
@@ -33,7 +33,7 @@ pub struct Handle {
     event_tx: EventSender,
 }
 impl Handle {
-    pub fn new(buffer: usize, event_tx: &EventSender) -> (Self, mpsc::Receiver<InEvent>) {
+    pub(crate) fn new(buffer: usize, event_tx: &EventSender) -> (Self, mpsc::Receiver<InEvent>) {
         let (tx, rx) = mpsc::channel(buffer);
         (
             Self {

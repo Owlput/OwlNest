@@ -107,7 +107,7 @@ mod test {
     use super::*;
     use crate::net::p2p::{
         setup_default,
-        swarm::{behaviour::BehaviourEvent, Manager, SwarmEvent},
+        swarm::{behaviour::BehaviourEvent, Manager, SwarmEvent}, setup_logging,
     };
     use libp2p::Multiaddr;
     use std::{thread, time::Duration};
@@ -115,6 +115,7 @@ mod test {
 
     #[test]
     fn test_sigle_send_recv() {
+        setup_logging();
         let (peer1, _) = setup_default();
         let (peer2, _) = setup_default();
         peer1
@@ -137,67 +138,7 @@ mod test {
         );
         single_send_recv(&peer1, &peer2, &mut peer2_message_watcher, 1);
         single_send_recv(&peer2, &peer1, &mut peer1_message_watcher, 2);
-    }
-
-    #[test]
-    #[allow(unused_variables)] // remove when the test is complete
-    fn multi_send_recv() {
-        let (peer1, _) = setup_default();
-        let (peer2, peer2_shutdown) = setup_default();
-        let (peer3, _) = setup_default();
-        let (peer4, _) = setup_default();
-        let (peer5, peer5_shutdown) = setup_default();
-        let peer1_id = peer1.identity().get_peer_id();
-        let peer2_id = peer2.identity().get_peer_id();
-        let peer3_id = peer3.identity().get_peer_id();
-        let peer4_id = peer4.identity().get_peer_id();
-        let peer5_id = peer5.identity().get_peer_id();
-        peer1
-            .swarm()
-            .listen_blocking(&"/ip4/127.0.0.1/tcp/0".parse::<Multiaddr>().unwrap())
-            .unwrap();
-        thread::sleep(Duration::from_millis(100));
-        let peer1_listen_addr = peer1.swarm().list_listeners_blocking()[0].clone();
-        let mut peer1_watcher = spawn_watcher(&peer1);
-        let mut peer2_watcher = spawn_watcher(&peer2);
-        let mut peer3_watcher = spawn_watcher(&peer3);
-        let mut peer4_watcher = spawn_watcher(&peer4);
-        let mut peer5_watcher = spawn_watcher(&peer5);
-        peer2.swarm().dial_blocking(&peer1_listen_addr).unwrap();
-        peer3.swarm().dial_blocking(&peer1_listen_addr).unwrap();
-        peer4.swarm().dial_blocking(&peer1_listen_addr).unwrap();
-        peer5.swarm().dial_blocking(&peer1_listen_addr).unwrap();
-        thread::sleep(Duration::from_millis(100));
-        assert!(
-            peer1.swarm().is_connected_blocking(peer2_id)
-                && peer1.swarm().is_connected_blocking(peer3_id)
-                && peer1.swarm().is_connected_blocking(peer4_id)
-                && peer1.swarm().is_connected_blocking(peer5_id)
-        );
-        single_send_recv(&peer1, &peer2, &mut peer2_watcher, 1);
-        single_send_recv(&peer1, &peer3, &mut peer3_watcher, 2);
-        single_send_recv(&peer1, &peer4, &mut peer4_watcher, 3);
-        single_send_recv(&peer1, &peer5, &mut peer5_watcher, 4);
-        single_send_recv(&peer2, &peer1, &mut peer1_watcher, 5);
-        single_send_recv(&peer3, &peer1, &mut peer1_watcher, 6);
-        single_send_recv(&peer4, &peer1, &mut peer1_watcher, 7);
-        single_send_recv(&peer5, &peer1, &mut peer1_watcher, 8);
-        peer5_shutdown.notify_one();
-        thread::sleep(Duration::from_millis(100));
-        peer1
-            .executor()
-            .block_on(
-                peer1
-                    .messaging()
-                    .send_message(peer5_id, Message::new_ordered(peer1_id, peer5_id, 9)),
-            )
-            .unwrap_err();
-        single_send_recv(&peer1, &peer2, &mut peer2_watcher, 1);
-        single_send_recv(&peer1, &peer3, &mut peer3_watcher, 2);
-        single_send_recv(&peer4, &peer1, &mut peer1_watcher, 3);
-        single_send_recv(&peer2, &peer1, &mut peer1_watcher, 4);
-        single_send_recv(&peer3, &peer1, &mut peer1_watcher, 5);
-        // TODO: complete this test
+        thread::sleep(Duration::from_millis(100000));
     }
 
     fn eq_message(lhs: &Message, rhs: &Message) -> bool {

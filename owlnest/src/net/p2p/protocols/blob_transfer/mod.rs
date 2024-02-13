@@ -67,9 +67,7 @@ pub enum OutEvent {
         local_send_id: u64,
         error: String,
     },
-    /// Receiver cancelled the send
     CancelledSend(u64),
-    ///
     CancelledRecv(u64),
     Error(Error),
     InboundNegotiated(PeerId),
@@ -158,6 +156,10 @@ impl Handle {
             }
         }
     }
+    /// Accept a pending recv.
+    /// If the path provided is an existing directory, the file will be written
+    /// to the directory with its original name.
+    /// If the path provided is an existing file, an error will be returned.
     pub async fn recv_file(
         &self,
         recv_id: u64,
@@ -165,7 +167,7 @@ impl Handle {
     ) -> Result<Duration, FileRecvError> {
         let path_to_write = path_to_write.as_ref();
         let folder_or_file = match fs::OpenOptions::new()
-            .create(true)
+            .create_new(true)
             .read(true)
             .write(true)
             .open(path_to_write)
@@ -198,7 +200,15 @@ impl Handle {
     generate_handler_method!(
         ListPendingRecv:list_pending_recv()->Vec<RecvInfo>;
         ListPendingSend:list_pending_send()->Vec<SendInfo>;
+        /// Cancel a send operation on local node.
+        /// Remote will be notified.
+        /// Return an error if the send operation is not found.
+        /// If `Ok(())` is returned, it is guaranteed that no more bytes will be sent to remote.
         CancelSend:cancel_send(local_send_id:u64)->Result<(),()>;
+        /// Cancel a recv operation on local node.
+        /// Remote will be notified.
+        /// Return an error if the recv operation is not found.
+        /// If `Ok(())` is returned, it is guaranteed that no more bytes will be written to the file.
         CancelRecv:cancel_recv(local_recv_id:u64)->Result<(),()>;
     );
     fn next_id(&self) -> u64 {
@@ -208,13 +218,13 @@ impl Handle {
 
 #[cfg(test)]
 mod test {
-    use std::{fs, io::Read, str::FromStr, thread, time::Duration};
-    use libp2p::{Multiaddr, PeerId};
     #[allow(unused)]
     use crate::net::p2p::{
         setup_default, setup_logging,
         swarm::{behaviour::BehaviourEvent, Manager, SwarmEvent},
     };
+    use libp2p::{Multiaddr, PeerId};
+    use std::{fs, io::Read, str::FromStr, thread, time::Duration};
     const SOURCE_FILE: &str = "../Cargo.lock";
     const DEST_FILE: &str = "../test_lock_file";
 

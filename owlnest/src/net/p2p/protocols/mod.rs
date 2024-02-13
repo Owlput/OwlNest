@@ -44,6 +44,8 @@ pub mod upnp;
 
 pub mod ping;
 
+// pub mod hyper;
+
 pub mod event_listener {}
 #[allow(unused)]
 mod universal;

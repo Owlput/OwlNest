@@ -15,7 +15,7 @@ use crate::generate_handler_method;
 use crate::handle_callback_sender;
 use crate::net::p2p::swarm::SwarmEvent;
 
-pub enum InEvent {
+pub(crate) enum InEvent {
     AddServer(PeerId, Option<Multiaddr>),
     RemoveServer(PeerId),
     Probe(Multiaddr),
@@ -29,7 +29,7 @@ pub struct Handle {
     sender: mpsc::Sender<InEvent>,
 }
 impl Handle {
-    pub fn new(
+    pub(crate) fn new(
         buffer: usize,
         swarm_source: &broadcast::Sender<Arc<SwarmEvent>>,
     ) -> (Self, mpsc::Receiver<InEvent>) {

@@ -25,6 +25,7 @@ macro_rules! behaviour_select {
 
         generate_event_select!(
             #[derive(Debug)]
+            /// A collection of all events from behaviours
             BehaviourEvent{
             $($behaviour:<$name::Behaviour as ::libp2p::swarm::NetworkBehaviour>::ToSwarm,)*
         });

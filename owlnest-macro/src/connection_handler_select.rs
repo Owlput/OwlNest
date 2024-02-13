@@ -12,7 +12,13 @@ macro_rules! connection_handler_select {
             }
         }
 
-        ::owlnest_macro::generate_event_select!(#[derive(Debug)]FromBehaviourSelect{$($behaviour:<$handler as ::libp2p::swarm::ConnectionHandler>::FromBehaviour,)*});
+        ::owlnest_macro::generate_event_select!(
+            #[derive(Debug)]
+            /// An
+            FromBehaviourSelect {
+                $($behaviour:<$handler as ::libp2p::swarm::ConnectionHandler>::FromBehaviour,)*
+            }
+        );
         ::owlnest_macro::generate_event_select!(#[derive(Debug)]ToBehaviourSelect{$($behaviour:<$handler as ::libp2p::swarm::ConnectionHandler>::ToBehaviour,)*});
         ::owlnest_macro::generate_inbound_upgrade_select!($($name=>$behaviour:<$handler as ::libp2p::swarm::ConnectionHandler>::InboundProtocol,)*);
         ::owlnest_macro::generate_outbound_upgrade_select!($($name=>$behaviour:<$handler as ::libp2p::swarm::ConnectionHandler>::OutboundProtocol,)*);

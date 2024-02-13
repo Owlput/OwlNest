@@ -13,6 +13,7 @@ behaviour_select! {
     autonat:AutoNat,
     upnp:Upnp,
     ping:Ping,
+    // hyper:Hyper,
 }
 
 // use libp2p_swarm::NetworkBehaviour;

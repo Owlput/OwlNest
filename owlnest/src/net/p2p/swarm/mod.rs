@@ -74,7 +74,10 @@ impl Builder {
                     tethering: tethering::Behaviour::new(self.config.tethering),
                     relay_server: libp2p::relay::Behaviour::new(
                         self.config.local_ident.get_peer_id(),
-                        self.config.relay_server,
+                        libp2p::relay::Config {
+                            max_circuit_bytes: u64::MAX,
+                            ..Default::default()
+                        },
                     ),
                     relay_client: relay,
                     relay_ext: relay_ext::Behaviour::new(),
@@ -82,7 +85,8 @@ impl Builder {
                     blob_transfer: blob_transfer::Behaviour::new(Default::default()),
                     autonat: autonat::Behaviour::new(ident.get_peer_id(), Default::default()),
                     upnp: upnp::Behaviour::default(),
-                    ping:ping::Behaviour::new(Default::default()),
+                    ping: ping::Behaviour::new(Default::default()),
+                    // hyper:hyper::Behaviour::new(Default::default())
                 })
                 .expect("behaviour incorporation to succeed")
                 .build();
@@ -98,8 +102,8 @@ impl Builder {
                         if event_out.len() > 5 {
                             warn!("Slow receiver for swarm events detected.")
                         }
-                        
-                    } 
+
+                    }
                 };
             }
         });
@@ -260,7 +264,7 @@ fn handle_behaviour_event(swarm: &mut Swarm, ev: &BehaviourEvent) {
         Dcutr(ev) => dcutr::ev_dispatch(ev),
         AutoNat(ev) => autonat::ev_dispatch(ev),
         Upnp(ev) => upnp::ev_dispatch(ev),
-        Ping(ev)=> ping::ev_dispatch(ev),
+        Ping(ev) => ping::ev_dispatch(ev),
         _ => {}
     }
 }
