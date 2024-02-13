@@ -133,9 +133,11 @@ pub enum SwarmEvent {
     ExternalAddrConfirmed { address: Multiaddr },
     /// An external address of the local node expired, i.e. is no-longer confirmed.
     ExternalAddrExpired { address: Multiaddr },
+    /// We have discovered a new address of a peer.
+    NewExternalAddrOfPeer { peer_id: PeerId, address: Multiaddr },
 }
-impl SwarmEvent{
-    pub fn try_from_ref_swarm_event(ev:&super::SwarmEvent)->Result<Self,()>{
+impl SwarmEvent {
+    pub fn try_from_ref_swarm_event(ev: &super::SwarmEvent) -> Result<Self, ()> {
         let ev = match ev {
             libp2p::swarm::SwarmEvent::Behaviour(_) => return Err(()),
             libp2p::swarm::SwarmEvent::ConnectionEstablished {
@@ -146,12 +148,12 @@ impl SwarmEvent{
                 established_in,
                 connection_id,
             } => Self::ConnectionEstablished {
-                peer_id:*peer_id,
-                endpoint:endpoint.clone(),
-                num_established:num_established.clone(),
+                peer_id: *peer_id,
+                endpoint: endpoint.clone(),
+                num_established: num_established.clone(),
                 concurrent_dial_errors: format!("{:?}", concurrent_dial_errors),
-                established_in:established_in.clone(),
-                connection_id:*connection_id
+                established_in: established_in.clone(),
+                connection_id: *connection_id,
             },
             libp2p::swarm::SwarmEvent::ConnectionClosed {
                 peer_id,
@@ -160,20 +162,20 @@ impl SwarmEvent{
                 cause,
                 connection_id,
             } => Self::ConnectionClosed {
-                peer_id:*peer_id,
-                endpoint:endpoint.clone(),
-                num_established:*num_established,
+                peer_id: *peer_id,
+                endpoint: endpoint.clone(),
+                num_established: *num_established,
                 cause: format!("{:?}", cause),
-                connection_id:*connection_id,
+                connection_id: *connection_id,
             },
             libp2p::swarm::SwarmEvent::IncomingConnection {
                 local_addr,
                 send_back_addr,
                 connection_id,
             } => Self::IncomingConnection {
-                local_addr:local_addr.clone(),
-                send_back_addr:send_back_addr.clone(),
-                connection_id:*connection_id,
+                local_addr: local_addr.clone(),
+                send_back_addr: send_back_addr.clone(),
+                connection_id: *connection_id,
             },
             libp2p::swarm::SwarmEvent::IncomingConnectionError {
                 local_addr,
@@ -181,46 +183,46 @@ impl SwarmEvent{
                 error,
                 connection_id,
             } => Self::IncomingConnectionError {
-                local_addr:local_addr.clone(),
-                send_back_addr:send_back_addr.clone(),
+                local_addr: local_addr.clone(),
+                send_back_addr: send_back_addr.clone(),
                 error: format!("{:?}", error),
-                connection_id:*connection_id,
+                connection_id: *connection_id,
             },
             libp2p::swarm::SwarmEvent::OutgoingConnectionError {
                 peer_id,
                 error,
                 connection_id,
             } => Self::OutgoingConnectionError {
-                peer_id:*peer_id,
+                peer_id: *peer_id,
                 error: format!("{:?}", error),
-                connection_id:*connection_id,
+                connection_id: *connection_id,
             },
             libp2p::swarm::SwarmEvent::NewListenAddr {
                 listener_id,
                 address,
             } => Self::NewListenAddr {
-                listener_id:*listener_id,
-                address:address.clone(),
+                listener_id: *listener_id,
+                address: address.clone(),
             },
             libp2p::swarm::SwarmEvent::ExpiredListenAddr {
                 listener_id,
                 address,
             } => Self::ExpiredListenAddr {
-                listener_id:*listener_id,
-                address:address.clone(),
+                listener_id: *listener_id,
+                address: address.clone(),
             },
             libp2p::swarm::SwarmEvent::ListenerClosed {
                 listener_id,
                 addresses,
                 reason,
             } => Self::ListenerClosed {
-                listener_id:*listener_id,
-                addresses:addresses.clone(),
+                listener_id: *listener_id,
+                addresses: addresses.clone(),
                 reason: format!("{:?}", reason),
             },
             libp2p::swarm::SwarmEvent::ListenerError { listener_id, error } => {
                 Self::ListenerError {
-                    listener_id:*listener_id,
+                    listener_id: *listener_id,
                     error: format!("{:?}", error),
                 }
             }
@@ -228,9 +230,15 @@ impl SwarmEvent{
                 peer_id,
                 connection_id,
             } => Self::Dialing {
-                peer_id:*peer_id,
-                connection_id:*connection_id,
+                peer_id: *peer_id,
+                connection_id: *connection_id,
             },
+            libp2p::swarm::SwarmEvent::NewExternalAddrOfPeer { peer_id, address } => {
+                Self::NewExternalAddrOfPeer {
+                    peer_id: *peer_id,
+                    address: address.clone(),
+                }
+            }
             _ => unimplemented!("New branch not covered"),
         };
         Ok(ev)
@@ -335,6 +343,9 @@ impl TryFrom<super::SwarmEvent> for SwarmEvent {
                 peer_id,
                 connection_id,
             },
+            libp2p::swarm::SwarmEvent::NewExternalAddrOfPeer { peer_id, address } => {
+                Self::NewExternalAddrOfPeer { peer_id, address }
+            }
             _ => unimplemented!("New branch not covered"),
         };
         Ok(ev)

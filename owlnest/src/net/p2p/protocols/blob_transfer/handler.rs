@@ -473,10 +473,11 @@ impl ConnectionHandler for Handler {
                 self.pending_out_events
                     .push_back(ToBehaviourEvent::OutboundNegotiated)
             }
+            ConnectionEvent::AddressChange(_) | ConnectionEvent::ListenUpgradeError(_) => {}
             ConnectionEvent::DialUpgradeError(e) => {
                 self.on_dial_upgrade_error(e);
             }
-            ConnectionEvent::AddressChange(_) | ConnectionEvent::ListenUpgradeError(_) => {}
+            ConnectionEvent::ListenUpgradeError(_)=>{}
             ConnectionEvent::LocalProtocolsChange(_) => {}
             ConnectionEvent::RemoteProtocolsChange(_) => {}
             _ => unimplemented!("New branch not handled!"),

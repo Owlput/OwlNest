@@ -102,7 +102,6 @@ impl Builder {
                         if event_out.len() > 5 {
                             warn!("Slow receiver for swarm events detected.")
                         }
-
                     }
                 };
             }
@@ -186,6 +185,8 @@ async fn handle_swarm_event(ev: &SwarmEvent, swarm: &mut Swarm) {
         }
         SwarmEvent::ExternalAddrExpired { address } => {
             debug!("A possible external address has expired: {}", address);
+        }
+        SwarmEvent::NewExternalAddrOfPeer { .. }=>{
         }
         _ => unimplemented!("New branch not covered"),
     }

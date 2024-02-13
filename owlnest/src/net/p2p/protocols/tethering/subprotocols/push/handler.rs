@@ -250,6 +250,7 @@ impl ConnectionHandler for PushHandler {
             ConnectionEvent::DialUpgradeError(e) => {
                 self.on_dial_upgrade_error(e);
             }
+            ConnectionEvent::ListenUpgradeError(_)=>{}
             ConnectionEvent::AddressChange(_) | ConnectionEvent::ListenUpgradeError(_) => {}
             ConnectionEvent::LocalProtocolsChange(_) => {}
             ConnectionEvent::RemoteProtocolsChange(_) => {}
