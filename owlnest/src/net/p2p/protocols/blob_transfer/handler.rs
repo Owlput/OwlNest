@@ -14,6 +14,7 @@ pub enum FromBehaviourEvent {
         file_name: String,
         local_send_id: u64,
         callback: oneshot::Sender<Result<Duration, FileSendError>>,
+        bytes_total: u64,
     },
     /// A chunk of file
     File {
@@ -46,6 +47,7 @@ pub enum ToBehaviourEvent {
     IncomingFile {
         file_name: String,
         remote_send_id: u64,
+        bytes_total: u64,
     },
     /// Remote has accepted our file.
     /// Now local peer can start streaming the file.
@@ -79,6 +81,7 @@ enum Packet {
         file_name: String,
         /// remote when observed by receiver
         remote_send_id: u64,
+        bytes_total: u64,
     },
     /// Accept a send request.
     /// When observed by remote, the file with the corresponding send ID will be streamed via `Packet::File`.
@@ -228,11 +231,13 @@ impl ConnectionHandler for Handler {
                         IncomingFile {
                             file_name,
                             remote_send_id, // send ID from remote peer
+                            bytes_total,
                         } => {
                             trace!("New incoming file {}", file_name);
                             ToBehaviourEvent::IncomingFile {
                                 file_name,
                                 remote_send_id,
+                                bytes_total
                             }
                         }
                         AcceptFileSend { local_send_id } => {
@@ -333,10 +338,12 @@ impl ConnectionHandler for Handler {
                                 file_name,
                                 local_send_id,
                                 callback,
+                                bytes_total
                             } => {
                                 let packet = Packet::IncomingFile {
                                     file_name,
                                     remote_send_id: local_send_id,
+                                    bytes_total
                                 };
                                 // Put Outbound into send state
                                 self.outbound = Some(OutboundState::Busy(

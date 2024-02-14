@@ -10,7 +10,7 @@ use std::io::{Read, Write};
 use std::{collections::VecDeque, task::Poll};
 use tracing::info;
 
-pub(crate) const FILE_CHUNK_SIZE: usize = 65536;
+pub(crate) const FILE_CHUNK_SIZE: usize = 130048;
 
 pub struct Behaviour {
     config: Config,
@@ -24,7 +24,7 @@ pub struct Behaviour {
     /// List of pending receive indexed by recv ID.
     pending_recv: HashMap<u64, RecvInfo>,
     /// List of pending send indexed by send ID.
-    pending_send: HashMap<u64, SendInfo>,
+    pending_send: HashMap<u64, PendingSend>,
     /// Ongoing receive indexed by remote send id.
     /// If the record is removed from the list, no more bytes will be written to the file.
     ongoing_recv: HashMap<u64, OngoingFileRecv>,
@@ -38,15 +38,35 @@ pub struct Behaviour {
 pub struct RecvInfo {
     pub local_recv_id: u64,
     pub remote_send_id: u64,
+    pub bytes_total: u64,
     pub file_name: String,
     pub remote: PeerId,
 }
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug)]
+struct PendingSend {
+    local_send_id: u64,
+    remote: PeerId,
+    file_path: PathBuf,
+    file_name: String,
+    file: File,
+}
+
+#[derive(Debug, Serialize, Clone)]
 pub struct SendInfo {
     pub local_send_id: u64,
     pub remote: PeerId,
     pub file_path: PathBuf,
     pub file_name: String,
+}
+impl From<&PendingSend> for SendInfo {
+    fn from(value: &PendingSend) -> Self {
+        Self {
+            local_send_id: value.local_send_id,
+            remote: value.remote,
+            file_path: value.file_path.clone(),
+            file_name: value.file_name.clone(),
+        }
+    }
 }
 
 impl Behaviour {
@@ -67,8 +87,9 @@ impl Behaviour {
         use InEvent::*;
         match ev {
             SendFile {
-                file_path,
+                file,
                 file_name,
+                file_path,
                 to,
                 local_send_id,
                 callback,
@@ -80,14 +101,16 @@ impl Behaviour {
                         .expect("callback to succeed");
                     return;
                 }
+                let bytes_total = file.metadata().unwrap().len();
                 // Queue the send
                 self.pending_send.insert(
                     local_send_id,
-                    SendInfo {
+                    PendingSend {
                         local_send_id,
                         remote: to,
                         file_path,
                         file_name: file_name.clone(),
+                        file,
                     },
                 );
                 // Notify the remote for new send
@@ -99,6 +122,7 @@ impl Behaviour {
                             file_name,
                             local_send_id,
                             callback,
+                            bytes_total,
                         },
                     });
             }
@@ -125,11 +149,17 @@ impl Behaviour {
                 handle_callback_sender!(self.pending_recv.values().cloned().collect()=>callback)
             }
             ListPendingSend(callback) => {
-                handle_callback_sender!(self.pending_send.values().cloned().collect()=>callback)
+                handle_callback_sender!(self.pending_send.values().map(|v|v.into()).collect()=>callback)
             }
         }
     }
-    fn new_pending_recv(&mut self, from: PeerId, file_name: String, remote_send_id: u64) {
+    fn on_new_pending_recv(
+        &mut self,
+        from: PeerId,
+        file_name: String,
+        remote_send_id: u64,
+        bytes_total: u64,
+    ) {
         let local_recv_id = self.next_recv_id();
         self.pending_recv.insert(
             local_recv_id,
@@ -137,6 +167,7 @@ impl Behaviour {
                 local_recv_id,
                 remote_send_id,
                 remote: from,
+                bytes_total,
                 file_name: file_name.clone(),
             },
         );
@@ -156,6 +187,7 @@ impl Behaviour {
             remote_send_id,
             remote,
             file_name,
+            bytes_total,
             ..
         } = match self.pending_recv.remove(&recv_id) {
             Some(v) => v,
@@ -189,7 +221,8 @@ impl Behaviour {
                 remote_send_id,
                 local_recv_id: recv_id,
                 file_handle: file,
-                chunks_received: 0,
+                bytes_received: 0,
+                bytes_total,
                 remote,
             },
         );
@@ -205,42 +238,27 @@ impl Behaviour {
     }
 
     /// Accept a pending send. If not found in the pending list, will return `Result::Err`.
-    fn pending_send_accepted(&mut self, local_send_id: u64) {
+    fn accept_pending_send(&mut self, local_send_id: u64) -> Result<u64, ()> {
         if let None = self.pending_send.get(&local_send_id) {
             self.cancel_send_by_local_send_id(local_send_id);
-            return;
+            return Err(());
         }
-        let SendInfo {
+        let PendingSend {
             local_send_id,
             remote,
-            file_path,
+            file,
             ..
         } = self.pending_send.remove(&local_send_id).unwrap();
-        let file_handle = match std::fs::OpenOptions::new()
-            .read(true)
-            .write(false)
-            .open(&file_path)
-        {
-            Ok(handle) => handle,
-            Err(e) => {
-                // let _ = match e.kind() {
-                //     std::io::ErrorKind::NotFound => FileSendError::FileNotFound,
-                //     std::io::ErrorKind::PermissionDenied => FileSendError::PermissionDenied,
-                //     e => FileSendError::OtherFsError(e),
-                // };
-                self.out_events.push_back(OutEvent::OngoingSendError {
-                    local_send_id,
-                    error: e.to_string(),
-                });
-                self.cancel_send_by_local_send_id(local_send_id);
-                return;
-            }
-        };
+        let bytes_total = file.metadata().unwrap().len();
         self.ongoing_send.push_back(OngoingFileSend {
             local_send_id,
             remote,
-            file_handle,
+            bytes_total,
+            file_handle: file,
+            bytes_sent: 0,
         });
+        self.handle_ongoing_send();
+        Ok(bytes_total)
     }
     /// Called when local node cancel transmission.
     /// Once called, it is guaranteed that no more bytes will be written to the file.
@@ -290,9 +308,9 @@ impl Behaviour {
         };
         None
     }
-    fn handle_ongoing_send(&mut self) -> Option<(PeerId, FromBehaviourEvent)> {
+    fn handle_ongoing_send(&mut self) {
         if self.ongoing_send.len() == 0 {
-            return None;
+            return;
         }
         let mut ongoing_send = self.ongoing_send.pop_front().unwrap();
         let mut buf = [0u8; FILE_CHUNK_SIZE];
@@ -308,17 +326,18 @@ impl Behaviour {
         if bytes_read < FILE_CHUNK_SIZE {
             vec.truncate(bytes_read)
         }
-        let v = (
-            ongoing_send.remote,
-            FromBehaviourEvent::File {
-                contents: vec,
-                local_send_id: ongoing_send.local_send_id,
-            },
-        );
+        self.pending_handler_event
+            .push_back(ToSwarm::NotifyHandler {
+                peer_id: ongoing_send.remote,
+                handler: NotifyHandler::Any,
+                event: FromBehaviourEvent::File {
+                    contents: vec,
+                    local_send_id: ongoing_send.local_send_id,
+                },
+            });
         if bytes_read != 0 {
             self.ongoing_send.push_back(ongoing_send);
         }
-        Some(v)
     }
     fn remove_recv_record(&mut self, local_recv_id: u64) -> Option<(PeerId, u64)> {
         if let Some(v) = self.pending_recv.remove(&local_recv_id) {
@@ -332,7 +351,7 @@ impl Behaviour {
     /// Called when remote cancelled its receiving.
     /// Once called, it is guaranteed that no more bytes will be sent to remote.
     fn remove_send_record(&mut self, local_send_id: u64) -> Option<(PeerId, u64)> {
-        if let Some(SendInfo {
+        if let Some(PendingSend {
             local_send_id,
             remote,
             ..
@@ -391,6 +410,8 @@ impl NetworkBehaviour for Behaviour {
                     self.out_events.push_back(OutEvent::RecvProgressed {
                         local_recv_id: ongoing_recv.local_recv_id,
                         finished: true,
+                        bytes_received: ongoing_recv.bytes_total,
+                        bytes_total: ongoing_recv.bytes_total,
                     });
                     if let Err(e) = ongoing_recv.file_handle.flush() {
                         tracing::error!("Unsuccessful file flushing: {:?}", e)
@@ -411,8 +432,8 @@ impl NetworkBehaviour for Behaviour {
                         self.out_events.push_back(ev);
                     }
                 };
-                ongoing_recv.chunks_received += 1;
-                if ongoing_recv.chunks_received % 16 == 0 {
+                ongoing_recv.bytes_received += contents.len() as u64;
+                if ongoing_recv.bytes_received % 1 << 15 == 0 {
                     // TODO: Better error handling
                     // Flush after 16 chunks
                     if let Err(e) = ongoing_recv.file_handle.flush() {
@@ -424,7 +445,8 @@ impl NetworkBehaviour for Behaviour {
             IncomingFile {
                 file_name,
                 remote_send_id,
-            } => self.new_pending_recv(peer_id, file_name, remote_send_id),
+                bytes_total,
+            } => self.on_new_pending_recv(peer_id, file_name, remote_send_id, bytes_total),
             Error(e) => {
                 info!(
                     "Error occurred on peer {}:{:?}: {:#?}",
@@ -448,27 +470,30 @@ impl NetworkBehaviour for Behaviour {
                 trace!("Send ID {} acknowledged by remote", local_send_id)
             }
             FileSendAccepted { local_send_id } => {
-                self.out_events.push_back(OutEvent::SendProgressed {
-                    local_send_id,
-                    time_taken: None,
-                    finished: false,
-                });
-                self.pending_send_accepted(local_send_id)
+                if let Ok(bytes_total) = self.accept_pending_send(local_send_id) {
+                    self.out_events.push_back(OutEvent::SendProgressed {
+                        local_send_id,
+                        time_taken: None,
+                        finished: false,
+                        bytes_total,
+                        bytes_sent: 0,
+                    });
+                }
             }
             SendProgressed { local_send_id, rtt } => {
-                self.out_events.push_back(OutEvent::SendProgressed {
-                    local_send_id,
-                    time_taken: Some(rtt),
-                    finished: false,
-                });
-                if let Some((peer_id, event)) = self.handle_ongoing_send() {
-                    self.pending_handler_event
-                        .push_back(ToSwarm::NotifyHandler {
-                            peer_id,
-                            handler: NotifyHandler::Any,
-                            event,
-                        })
+                for entry in &self.ongoing_send {
+                    if entry.local_send_id == local_send_id {
+                        self.out_events.push_back(OutEvent::SendProgressed {
+                            local_send_id,
+                            time_taken: Some(rtt),
+                            finished: false,
+                            bytes_sent: entry.bytes_sent,
+                            bytes_total: entry.bytes_total,
+                        });
+                        break;
+                    }
                 }
+                self.handle_ongoing_send();
             }
             CancelSend { local_send_id } => {
                 self.out_events
@@ -531,12 +556,15 @@ struct OngoingFileRecv {
     remote_send_id: u64,
     local_recv_id: u64,
     remote: PeerId,
-    chunks_received: u64,
+    bytes_received: u64,
+    bytes_total: u64,
     file_handle: std::fs::File,
 }
 
 struct OngoingFileSend {
     local_send_id: u64,
     remote: PeerId,
+    bytes_sent: u64,
+    bytes_total: u64,
     file_handle: std::fs::File,
 }

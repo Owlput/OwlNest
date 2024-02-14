@@ -26,8 +26,9 @@ pub use protocol::PROTOCOL_NAME;
 
 pub enum InEvent {
     SendFile {
-        file_path: PathBuf,
+        file: File,
         file_name: String,
+        file_path: PathBuf,
         to: PeerId,
         local_send_id: u64,
         callback: oneshot::Sender<Result<Duration, FileSendError>>,
@@ -53,6 +54,8 @@ pub enum OutEvent {
     RecvProgressed {
         local_recv_id: u64,
         finished: bool,
+        bytes_received: u64,
+        bytes_total: u64,
     },
     OngoingRecvError {
         local_recv_id: u64,
@@ -62,6 +65,8 @@ pub enum OutEvent {
         local_send_id: u64,
         finished: bool,
         time_taken: Option<Duration>,
+        bytes_sent: u64,
+        bytes_total: u64,
     },
     OngoingSendError {
         local_send_id: u64,
@@ -124,7 +129,7 @@ impl Handle {
             return Err(FileSendError::IsDirectory);
         }
         // Get the handle to the file(locking)
-        let _ = std::fs::OpenOptions::new()
+        let file = std::fs::OpenOptions::new()
             .read(true)
             .write(false)
             .open(path.as_ref())
@@ -136,13 +141,14 @@ impl Handle {
         let (tx, rx) = oneshot::channel();
         let local_send_id = self.next_id();
         let ev = InEvent::SendFile {
-            file_path: path.as_ref().to_owned(),
+            file,
             file_name: path
                 .as_ref()
                 .file_name()
                 .unwrap()
                 .to_string_lossy()
                 .to_string(),
+            file_path: path.as_ref().to_owned(),
             to,
             local_send_id,
             callback: tx,
@@ -224,30 +230,26 @@ mod test {
         swarm::{behaviour::BehaviourEvent, Manager, SwarmEvent},
     };
     use libp2p::{Multiaddr, PeerId};
+    use serial_test::serial;
     use std::{fs, io::Read, str::FromStr, thread, time::Duration};
     const SOURCE_FILE: &str = "../Cargo.lock";
     const DEST_FILE: &str = "../test_lock_file";
 
     #[test]
+    #[serial]
     fn single_send_recv() {
         let (peer1_m, peer2_m) = setup_peer();
-        send(&peer1_m, peer2_m.identity().get_peer_id(), SOURCE_FILE);
-        assert_eq!(
-            peer1_m
-                .executor()
-                .block_on(peer1_m.blob_transfer().list_pending_send())
-                .len(),
-            1
-        );
-        wait_recv(
-            &peer2_m,
-            peer2_m
-                .executor()
-                .block_on(peer2_m.blob_transfer().list_pending_recv())[0]
-                .local_recv_id,
-            DEST_FILE,
-        );
-        assert!(verify_file(SOURCE_FILE, DEST_FILE));
+        send_recv(&peer1_m, &peer2_m)
+    }
+    #[test]
+    #[serial]
+    fn multi_send_recv(){
+        let (peer1_m, peer2_m) = setup_peer();
+        send_recv(&peer1_m, &peer2_m);
+        send_recv(&peer1_m, &peer2_m);
+        send_recv(&peer2_m, &peer1_m);
+        send_recv(&peer1_m, &peer2_m);
+        send_recv(&peer2_m, &peer1_m);
     }
 
     #[test]
@@ -406,6 +408,26 @@ mod test {
             .block_on(manager.blob_transfer().recv_file(recv_id, file))
             .unwrap();
         manager.executor().block_on(handle).unwrap();
+    }
+
+    fn send_recv(peer1:&Manager, peer2:&Manager){
+        send(&peer1, peer2.identity().get_peer_id(), SOURCE_FILE);
+        assert_eq!(
+            peer1
+                .executor()
+                .block_on(peer1.blob_transfer().list_pending_send())
+                .len(),
+            1
+        );
+        wait_recv(
+            &peer2,
+            peer2
+                .executor()
+                .block_on(peer2.blob_transfer().list_pending_recv())[0]
+                .local_recv_id,
+            DEST_FILE,
+        );
+        assert!(verify_file(SOURCE_FILE, DEST_FILE));
     }
 
     /// Verify and clean up

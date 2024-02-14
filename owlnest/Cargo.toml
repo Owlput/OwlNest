@@ -33,3 +33,6 @@ hyper={version = "1.1",features = ["http1","server","client"]}
 http-body-util = "0.1"
 hyper-util = { version = "0.1", features = ["full"] }
 tokio-util = {version = "0.7", features = ["compat"]}
+
+[dev-dependencies]
+serial_test = "3"

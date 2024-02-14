@@ -22,9 +22,9 @@ where
     stream.flush().await?;
     let mut chunks = msg_bytes.chunks_exact(CHUNK_SIZE);
     for _ in 1..chunks_number {
-        stream.write_all(chunks.next().unwrap()).await?;
-        stream.flush().await?;
+        stream.write_all(chunks.next().unwrap()).await?;  
     }
+    stream.flush().await?;
     let mut remainder = chunks.remainder().to_vec();
     drop(msg_bytes);
     remainder.resize(CHUNK_SIZE, 32u8);
@@ -50,7 +50,7 @@ where
     let mut buf = [0u8; 8];
     stream.read_exact(&mut buf).await?;
     let chunks_to_read = usize::from_be_bytes(buf);
-    if chunks_to_read > 512 {
+    if chunks_to_read > 128 {
         return io::Result::Err(io::Error::new(
             io::ErrorKind::ConnectionAborted,
             "Stream too long. Terminating.",
