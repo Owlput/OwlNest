@@ -4,6 +4,7 @@ use crate::net::p2p::protocols::blob_transfer::handler::FromBehaviourEvent;
 use super::*;
 use libp2p::swarm::{ConnectionId, NetworkBehaviour, NotifyHandler, ToSwarm};
 use libp2p::PeerId;
+use libp2p_swarm::ConnectionClosed;
 use std::collections::{HashMap, HashSet};
 use std::io::{Read, Write};
 use std::{collections::VecDeque, task::Poll};
@@ -349,6 +350,15 @@ impl Behaviour {
         });
         found
     }
+    fn on_disconnect(&mut self, info: &ConnectionClosed) {
+        if info.remaining_established < 1 {
+            self.connected_peers.remove(&info.peer_id);
+            self.pending_send.retain(|_, v| v.remote != info.peer_id);
+            self.pending_recv.retain(|_, v| v.remote != info.peer_id);
+            self.ongoing_send.retain(|v| v.remote != info.peer_id);
+            self.ongoing_recv.retain(|_, v| v.remote != info.peer_id);
+        }
+    }
     fn next_recv_id(&mut self) -> u64 {
         let id = self.recv_counter;
         self.recv_counter += 1;
@@ -450,7 +460,15 @@ impl NetworkBehaviour for Behaviour {
                     local_send_id,
                     time_taken: Some(rtt),
                     finished: false,
-                })
+                });
+                if let Some((peer_id, event)) = self.handle_ongoing_send() {
+                    self.pending_handler_event
+                        .push_back(ToSwarm::NotifyHandler {
+                            peer_id,
+                            handler: NotifyHandler::Any,
+                            event,
+                        })
+                }
             }
             CancelSend { local_send_id } => {
                 self.out_events
@@ -476,27 +494,12 @@ impl NetworkBehaviour for Behaviour {
         if let Some(ev) = self.pending_handler_event.pop_front() {
             return Poll::Ready(ev);
         }
-        if let Some((peer_id, event)) = self.handle_ongoing_send() {
-            return Poll::Ready(ToSwarm::NotifyHandler {
-                peer_id,
-                handler: NotifyHandler::Any,
-                event,
-            });
-        }
         Poll::Pending
     }
 
     fn on_swarm_event(&mut self, event: libp2p::swarm::FromSwarm) {
         match &event {
-            libp2p_swarm::FromSwarm::ConnectionClosed(info) => {
-                if info.remaining_established < 1 {
-                    self.connected_peers.remove(&info.peer_id);
-                    self.pending_send.retain(|_, v| v.remote != info.peer_id);
-                    self.pending_recv.retain(|_, v| v.remote != info.peer_id);
-                    self.ongoing_send.retain(|v| v.remote != info.peer_id);
-                    self.ongoing_recv.retain(|_, v| v.remote != info.peer_id);
-                }
-            }
+            libp2p_swarm::FromSwarm::ConnectionClosed(info) => self.on_disconnect(info),
             _ => {}
         }
     }
