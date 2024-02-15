@@ -42,18 +42,6 @@ mod protocol {
 use tokio::sync::mpsc;
 
 use crate::with_timeout;
-macro_rules! event_op {
-    ($listener:ident,$pattern:pat,{$($ops:tt)+}) => {
-        async move{
-            while let Ok(ev) = $listener.recv().await {
-                if let SwarmEvent::Behaviour(BehaviourEvent::Messaging($pattern)) = ev.as_ref() {
-                    $($ops)+
-                };
-            }
-            unreachable!()
-        }
-    };
-}
 use self::error::SendError;
 use std::sync::atomic::{AtomicU64, Ordering};
 #[derive(Debug, Clone)]
@@ -82,7 +70,7 @@ impl Handle {
         let op_id = self.next_id();
         let ev = InEvent::SendMessage(peer_id, message, op_id);
         let mut listener = self.event_tx.subscribe();
-        let fut = event_op!(listener, OutEvent::SendResult(result, id), {
+        let fut = listen_event!(listener for Messaging, OutEvent::SendResult(result, id)=>{
             if *id != op_id {
                 continue;
             }

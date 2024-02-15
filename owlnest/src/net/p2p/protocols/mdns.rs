@@ -1,6 +1,6 @@
-use crate::generate_handler_method;
 use crate::net::p2p::swarm::EventSender;
 use crate::net::p2p::swarm::Swarm;
+
 pub use libp2p::mdns::tokio::Behaviour;
 pub use libp2p::mdns::Config;
 pub use libp2p::mdns::Event as OutEvent;
@@ -10,20 +10,6 @@ use tokio::sync::{mpsc, oneshot::*};
 pub(crate) enum InEvent {
     ListDiscoveredNodes(Sender<Vec<PeerId>>),
     HasNode(PeerId, Sender<bool>),
-}
-
-#[allow(unused)]
-macro_rules! event_op {
-    ($listener:ident,$pattern:pat,{$($ops:tt)+}) => {
-        async move{
-            while let Ok(ev) = $listener.recv().await{
-                if let SwarmEvent::Behaviour(BehaviourEvent::Mdns($pattern)) = ev.as_ref() {
-                    $($ops)+
-                }
-            }
-            unreachable!()
-        }
-    };
 }
 
 #[derive(Debug, Clone)]

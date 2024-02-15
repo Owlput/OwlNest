@@ -1,19 +1,14 @@
 use std::sync::Arc;
 
+use crate::net::p2p::swarm::SwarmEvent;
 pub use libp2p::autonat::Behaviour;
 pub use libp2p::autonat::Config;
 pub use libp2p::autonat::Event as OutEvent;
 pub use libp2p::autonat::NatStatus;
 use libp2p::Multiaddr;
 use libp2p::PeerId;
-use tokio::sync::broadcast;
-use tokio::sync::mpsc;
-use tokio::sync::oneshot;
+use tokio::sync::{broadcast, mpsc, oneshot};
 use tracing::info;
-
-use crate::generate_handler_method;
-use crate::handle_callback_sender;
-use crate::net::p2p::swarm::SwarmEvent;
 
 pub(crate) enum InEvent {
     AddServer(PeerId, Option<Multiaddr>),
@@ -61,10 +56,12 @@ pub(crate) fn map_in_event(behaviour: &mut Behaviour, ev: InEvent) {
     }
 }
 
-pub(crate) fn ev_dispatch(ev:&OutEvent){
-    match ev{
-        OutEvent::InboundProbe(probe) => info!("Incoming probe: {:?}",probe),
-        OutEvent::OutboundProbe(probe) => info!("Probe sent: {:?}",probe),
-        OutEvent::StatusChanged { old, new } => info!("Nat statue changed from {:?} to {:?}",old,new),
+pub(crate) fn ev_dispatch(ev: &OutEvent) {
+    match ev {
+        OutEvent::InboundProbe(probe) => info!("Incoming probe: {:?}", probe),
+        OutEvent::OutboundProbe(probe) => info!("Probe sent: {:?}", probe),
+        OutEvent::StatusChanged { old, new } => {
+            info!("Nat statue changed from {:?} to {:?}", old, new)
+        }
     }
 }

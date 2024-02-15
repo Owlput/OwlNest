@@ -1,4 +1,3 @@
-use crate::handle_callback_sender;
 use crate::net::p2p::protocols::blob_transfer::handler::FromBehaviourEvent;
 
 use super::*;
@@ -175,6 +174,7 @@ impl Behaviour {
             file_name,
             from,
             local_recv_id,
+            bytes_total
         });
     }
     fn accept_pending_recv(
@@ -274,6 +274,7 @@ impl Behaviour {
                     handler: NotifyHandler::Any,
                     event: FromBehaviourEvent::CancelRecv { remote_send_id },
                 });
+            self.out_events.push_back(OutEvent::CancelledRecv(local_recv_id));
             return true;
         }
         false

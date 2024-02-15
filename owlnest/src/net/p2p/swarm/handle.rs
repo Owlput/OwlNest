@@ -1,4 +1,4 @@
-use crate::{generate_handler_method_blocking, net::p2p::swarm::in_event::InEvent, generate_handler_method};
+use crate::net::p2p::swarm::InEvent;
 use libp2p::{
     swarm::{derive_prelude::ListenerId, DialError},
     Multiaddr, PeerId, TransportError,
@@ -20,7 +20,10 @@ impl SwarmHandle {
         self.sender.blocking_send(ev).unwrap();
         rx.blocking_recv().unwrap()
     }
-    pub fn listen_blocking(&self, addr: &Multiaddr) -> Result<ListenerId, TransportError<std::io::Error>> {
+    pub fn listen_blocking(
+        &self,
+        addr: &Multiaddr,
+    ) -> Result<ListenerId, TransportError<std::io::Error>> {
         let (tx, rx) = channel();
         let ev = InEvent::Listen(addr.clone(), tx);
         self.sender.blocking_send(ev).unwrap();
@@ -32,7 +35,10 @@ impl SwarmHandle {
         self.sender.send(ev).await.unwrap();
         rx.await.unwrap()
     }
-    pub async fn listen(&self, addr: &Multiaddr) -> Result<ListenerId, TransportError<std::io::Error>> {
+    pub async fn listen(
+        &self,
+        addr: &Multiaddr,
+    ) -> Result<ListenerId, TransportError<std::io::Error>> {
         let (tx, rx) = channel();
         let ev = InEvent::Listen(addr.clone(), tx);
         self.sender.send(ev).await.unwrap();

@@ -1,3 +1,7 @@
+use crate::{
+    net::p2p::swarm::{behaviour::BehaviourEvent, EventSender, SwarmEvent},
+    with_timeout,
+};
 use libp2p::{
     kad::{self, Mode, NoKnownPeers, QueryId, RoutingUpdate},
     Multiaddr, PeerId,
@@ -5,11 +9,6 @@ use libp2p::{
 use std::str::FromStr;
 use tokio::sync::{mpsc, oneshot};
 use tracing::{debug, info, trace};
-use crate::{
-    handle_callback_sender,
-    net::p2p::swarm::{behaviour::BehaviourEvent, EventSender, SwarmEvent},
-    with_timeout,
-};
 
 pub use kad::Config;
 pub type Behaviour = kad::Behaviour<kad::store::MemoryStore>;
@@ -17,6 +16,7 @@ pub type OutEvent = kad::Event;
 pub use libp2p::kad::PROTOCOL_NAME;
 
 pub mod cli;
+pub mod swarm_hooks;
 
 #[derive(Debug)]
 pub(crate) enum InEvent {
@@ -24,19 +24,6 @@ pub(crate) enum InEvent {
     BootStrap(oneshot::Sender<Result<QueryId, NoKnownPeers>>),
     InsertNode(PeerId, Multiaddr, oneshot::Sender<RoutingUpdate>),
     SetMode(Option<Mode>),
-}
-
-macro_rules! event_op {
-    ($listener:ident,$pattern:pat,{$($ops:tt)+}) => {
-        async move{
-            while let Ok(ev) = $listener.recv().await{
-                if let SwarmEvent::Behaviour(BehaviourEvent::Kad($pattern)) = ev.as_ref() {
-                    $($ops)+
-                }
-            }
-            unreachable!()
-        }
-    };
 }
 
 #[derive(Debug, Clone)]
@@ -80,14 +67,14 @@ impl Handle {
             .expect("sending event to succeed");
         let query_id = callback_rx.await.expect("callback to succeed");
         let mut results = Vec::new();
-        let handle = tokio::spawn(event_op!(
-            listener,
+        let handle = tokio::spawn(listen_event!(
+            listener for Kad,
             OutEvent::OutboundQueryProgressed {
                 id,
                 result,
                 step,
                 ..
-            },
+            }=>
             {
                 if query_id != *id {
                     continue;
@@ -105,7 +92,7 @@ impl Handle {
         let ev = InEvent::SetMode(mode);
         let mut listener = self.event_tx.subscribe();
         self.sender_swarm.send(ev).await.expect("send to succeed");
-        let fut = event_op!(listener, OutEvent::ModeChanged { new_mode }, {
+        let fut = listen_event!(listener for Kad, OutEvent::ModeChanged { new_mode }=>{
             return new_mode.clone();
         });
         match with_timeout!(fut, 10) {

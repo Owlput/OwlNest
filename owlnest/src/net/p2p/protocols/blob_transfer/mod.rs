@@ -1,4 +1,4 @@
-use crate::{generate_handler_method, net::p2p::swarm::EventSender};
+use crate::net::p2p::swarm::EventSender;
 use either::Either;
 use libp2p::PeerId;
 use serde::{Deserialize, Serialize};
@@ -50,6 +50,7 @@ pub enum OutEvent {
         from: PeerId,
         file_name: String,
         local_recv_id: u64,
+        bytes_total: u64,
     },
     RecvProgressed {
         local_recv_id: u64,
@@ -83,21 +84,6 @@ pub enum OutEvent {
 use tokio::sync::{mpsc, oneshot};
 
 use crate::with_timeout;
-#[allow(unused_macros)]
-macro_rules! event_op {
-    ($listener:ident,$pattern:pat,{$($ops:tt)+}) => {
-        async move{
-            while let Ok(ev) = listener.recv().await{
-               if let SwarmEvent::Behaviour(BehaviourEvent::Messaging($pattern)) = ev.as_ref() {
-                $($ops)+
-            } else {
-                continue;
-            }
-            }
-        }
-    };
-}
-
 use std::sync::atomic::{AtomicU64, Ordering};
 #[derive(Debug, Clone)]
 #[allow(dead_code)]
@@ -243,7 +229,7 @@ mod test {
     }
     #[test]
     #[serial]
-    fn multi_send_recv(){
+    fn multi_send_recv() {
         let (peer1_m, peer2_m) = setup_peer();
         send_recv(&peer1_m, &peer2_m);
         send_recv(&peer1_m, &peer2_m);
@@ -410,7 +396,7 @@ mod test {
         manager.executor().block_on(handle).unwrap();
     }
 
-    fn send_recv(peer1:&Manager, peer2:&Manager){
+    fn send_recv(peer1: &Manager, peer2: &Manager) {
         send(&peer1, peer2.identity().get_peer_id(), SOURCE_FILE);
         assert_eq!(
             peer1

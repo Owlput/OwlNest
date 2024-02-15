@@ -1,6 +1,5 @@
 use super::error::{FileRecvError, FileSendError};
 use super::{protocol, Config, Error, PROTOCOL_NAME};
-use crate::handle_callback_sender;
 use crate::net::p2p::handler_prelude::*;
 use futures_timer::Delay;
 use serde::{Deserialize, Serialize};

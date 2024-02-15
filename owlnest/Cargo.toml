@@ -2,7 +2,7 @@
 name = "owlnest"
 version = "0.0.1"
 edition = "2021"
-
+license = "AGPL-3.0"
 [lib]
 crate-type = ["lib"]
 
@@ -22,7 +22,7 @@ rand = "*"
 xxhash-rust = { version = "*", features = ["xxh3"] }
 futures = "0.3"
 futures-timer = "3"
-rustyline = "12"
+rustyline = "13"
 chrono = "0.4"
 owlnest-proc = { path = "../owlnest-proc" }
 void = "1"

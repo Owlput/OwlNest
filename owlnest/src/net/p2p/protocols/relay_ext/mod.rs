@@ -89,19 +89,6 @@ pub enum InEvent {
     ClearAdvertised,
 }
 
-macro_rules! event_op {
-    ($listener:ident,$pattern:pat=>{$($ops:tt)+}) => {
-        async move{
-            while let Ok(ev) = $listener.recv().await{
-                if let SwarmEvent::Behaviour(BehaviourEvent::RelayExt($pattern)) = ev.as_ref() {
-                    $($ops)+
-                }
-            }
-            unreachable!()
-        }
-    };
-}
-
 #[derive(Debug, Clone)]
 pub struct Handle {
     sender: mpsc::Sender<InEvent>,
@@ -122,7 +109,7 @@ impl Handle {
     }
     pub async fn query_advertised_peer(&self, relay: PeerId) -> Result<Vec<PeerId>, Error> {
         let mut listener = self.event_tx.subscribe();
-        let fut = event_op!(listener, OutEvent::QueryAnswered { from, list }=> {
+        let fut = listen_event!(listener for RelayExt, OutEvent::QueryAnswered { from, list }=> {
             if *from == relay {
                 return list.clone();
             }
@@ -138,7 +125,7 @@ impl Handle {
     pub async fn set_provider_state(&self, state: bool) -> bool {
         let op_id = self.next_id();
         let mut listener = self.event_tx.subscribe();
-        let fut = event_op!(listener, OutEvent::ProviderState(state, id)=> {
+        let fut = listen_event!(listener for RelayExt, OutEvent::ProviderState(state, id)=> {
             if *id != op_id {
                 continue;
             }
@@ -151,7 +138,7 @@ impl Handle {
     pub async fn provider_state(&self) -> bool {
         let op_id = self.next_id();
         let mut listener = self.event_tx.subscribe();
-        let fut = event_op!(listener, OutEvent::ProviderState(state, id)=> {
+        let fut = listen_event!(listener for RelayExt, OutEvent::ProviderState(state, id)=> {
             if *id != op_id {
                 continue;
             }
@@ -173,7 +160,7 @@ impl Handle {
     pub async fn remove_advertised(&self, peer_id: &PeerId) -> bool {
         let ev = InEvent::RemoveAdvertised(*peer_id);
         let mut listener = self.event_tx.subscribe();
-        let fut = event_op!(listener,OutEvent::AdvertisedPeerChanged(target,state )=>{
+        let fut = listen_event!(listener for RelayExt,OutEvent::AdvertisedPeerChanged(target,state)=>{
             if *target == *peer_id{
                 return *state
             }
