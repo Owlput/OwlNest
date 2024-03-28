@@ -35,8 +35,8 @@ where
     V: Hash + Clone + Send + 'static,
 {
     /// Create a new ``MapManager`` and spawn a task for managing a ``MapStore``.
-    pub fn new() -> Self {
-        let (sender, receiver) = mpsc::channel(8);
+    pub fn new(buffer:usize) -> Self {
+        let (sender, receiver) = mpsc::channel(buffer);
         let mut store = MapStore::new(receiver);
         tokio::spawn(async move {
             while let Some(op) = store.receiver.recv().await {

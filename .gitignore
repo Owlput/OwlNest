@@ -11,3 +11,7 @@ owlport/Cargo.lock
 
 target
 certs
+.vscode
+logs
+*.keypair
+*.libp2pkeypair

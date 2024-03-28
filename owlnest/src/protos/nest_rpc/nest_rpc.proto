@@ -1,8 +1,0 @@
-syntax = "proto3";
-package nest_rpc;
-
-import "nest_status.proto";
-
-service NestRpc{
-    rpc Hb(HbRequest) returns (HbReply);
-}
