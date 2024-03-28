@@ -1,8 +1,6 @@
 use std::num::NonZeroU32;
 
 use super::*;
-use libp2p::{swarm::derive_prelude::ListenerId, Multiaddr};
-use libp2p_swarm::ConnectionId;
 use tokio::sync::mpsc;
 
 #[derive(Debug, Clone)]

@@ -2,7 +2,6 @@ use crate::net::p2p::protocols::blob_transfer::handler::FromBehaviourEvent;
 
 use super::*;
 use libp2p::swarm::{ConnectionId, NetworkBehaviour, NotifyHandler, ToSwarm};
-use libp2p::PeerId;
 use libp2p_swarm::ConnectionClosed;
 use std::collections::{HashMap, HashSet};
 use std::io::{Read, Write};

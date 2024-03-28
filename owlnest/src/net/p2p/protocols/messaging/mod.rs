@@ -41,8 +41,8 @@ mod protocol {
 
 use tokio::sync::mpsc;
 
-use crate::with_timeout;
 use self::error::SendError;
+use crate::with_timeout;
 use std::sync::atomic::{AtomicU64, Ordering};
 #[derive(Debug, Clone)]
 pub struct Handle {
@@ -93,13 +93,9 @@ impl Handle {
 #[cfg(test)]
 mod test {
     use super::*;
-    use crate::net::p2p::{
-        setup_default,
-        swarm::{behaviour::BehaviourEvent, Manager, SwarmEvent}, setup_logging,
-    };
+    use crate::net::p2p::{setup_default, setup_logging, swarm::Manager};
     use libp2p::Multiaddr;
-    use std::{thread, time::Duration};
-    use tokio::sync::mpsc;
+    use std::thread;
 
     #[test]
     fn test_sigle_send_recv() {

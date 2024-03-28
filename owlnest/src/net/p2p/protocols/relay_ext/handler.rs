@@ -56,7 +56,6 @@ pub struct Handler {
     outbound: Option<OutboundState>,
 }
 
-use libp2p::swarm::{handler::DialUpgradeError, StreamUpgradeError};
 impl Handler {
     pub fn new() -> Self {
         Self {
@@ -93,7 +92,6 @@ impl Handler {
 }
 
 use libp2p::core::upgrade::ReadyUpgrade;
-use libp2p::swarm::{ConnectionHandlerEvent, SubstreamProtocol};
 impl ConnectionHandler for Handler {
     type FromBehaviour = FromBehaviour;
     type ToBehaviour = ToBehaviour;

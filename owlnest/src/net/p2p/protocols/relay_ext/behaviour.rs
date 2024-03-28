@@ -1,6 +1,5 @@
 use super::*;
 use libp2p::swarm::{ConnectionId, NetworkBehaviour, NotifyHandler, ToSwarm};
-use libp2p::PeerId;
 use libp2p_swarm::FromSwarm;
 use std::collections::HashSet;
 use std::{collections::VecDeque, task::Poll};
