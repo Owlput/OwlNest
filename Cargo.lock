@@ -1418,16 +1418,16 @@ dependencies = [
 
 [[package]]
 name = "h2"
-version = "0.4.2"
+version = "0.4.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "31d030e59af851932b72ceebadf4a2b5986dba4c3b99dd2493f8273a0f151943"
+checksum = "51ee2dd2e4f378392eeff5d51618cd9a63166a2513846bbc55f21cfacd9199d4"
 dependencies = [
  "bytes",
  "fnv",
  "futures-core",
  "futures-sink",
  "futures-util",
- "http 1.0.0",
+ "http 1.1.0",
  "indexmap",
  "slab",
  "tokio",
@@ -1593,9 +1593,9 @@ dependencies = [
 
 [[package]]
 name = "http"
-version = "1.0.0"
+version = "1.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b32afd38673a8016f7c9ae69e5af41a58f81b1d31689040f2f1959594ce194ea"
+checksum = "21b9ddb458710bc376481b842f5da65cdf31522de232c1ca8146abce2a358258"
 dependencies = [
  "bytes",
  "fnv",
@@ -1620,18 +1620,18 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "1cac85db508abc24a2e48553ba12a996e87244a0395ce011e62b37158745d643"
 dependencies = [
  "bytes",
- "http 1.0.0",
+ "http 1.1.0",
 ]
 
 [[package]]
 name = "http-body-util"
-version = "0.1.0"
+version = "0.1.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "41cb79eb393015dadd30fc252023adb0b2400a0caee0fa2a077e6e21a551e840"
+checksum = "0475f8b2ac86659c21b64320d5d653f9efe42acd2a4e560073ec61a155a34f1d"
 dependencies = [
  "bytes",
- "futures-util",
- "http 1.0.0",
+ "futures-core",
+ "http 1.1.0",
  "http-body 1.0.0",
  "pin-project-lite",
 ]
@@ -1665,7 +1665,7 @@ dependencies = [
  "httpdate",
  "itoa",
  "pin-project-lite",
- "socket2 0.4.10",
+ "socket2 0.5.6",
  "tokio",
  "tower-service",
  "tracing",
@@ -1674,20 +1674,21 @@ dependencies = [
 
 [[package]]
 name = "hyper"
-version = "1.1.0"
+version = "1.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "fb5aa53871fc917b1a9ed87b683a5d86db645e23acb32c2e0785a353e522fb75"
+checksum = "186548d73ac615b32a73aafe38fb4f56c0d340e110e5a200bcadbaf2e199263a"
 dependencies = [
  "bytes",
  "futures-channel",
  "futures-util",
- "h2 0.4.2",
- "http 1.0.0",
+ "h2 0.4.3",
+ "http 1.1.0",
  "http-body 1.0.0",
  "httparse",
  "httpdate",
  "itoa",
  "pin-project-lite",
+ "smallvec",
  "tokio",
  "want",
 ]
@@ -1701,9 +1702,9 @@ dependencies = [
  "bytes",
  "futures-channel",
  "futures-util",
- "http 1.0.0",
+ "http 1.1.0",
  "http-body 1.0.0",
- "hyper 1.1.0",
+ "hyper 1.2.0",
  "pin-project-lite",
  "socket2 0.5.6",
  "tokio",
@@ -2992,28 +2993,70 @@ dependencies = [
  "either",
  "futures",
  "futures-timer",
- "http-body-util",
- "hyper 1.1.0",
- "hyper-util",
  "libp2p",
  "libp2p-noise",
  "libp2p-swarm",
  "libp2p-tls",
  "libp2p-yamux",
+ "owlnest-advertise",
+ "owlnest-blob",
  "owlnest-macro",
+ "owlnest-messaging",
  "owlnest-proc",
  "rand 0.8.5",
  "rustyline",
  "serde",
  "serde_json",
- "serial_test",
  "tokio",
- "tokio-util",
  "tracing",
  "tracing-log",
  "tracing-subscriber",
  "void",
+]
+
+[[package]]
+name = "owlnest-advertise"
+version = "0.1.0"
+dependencies = [
+ "futures-timer",
+ "owlnest-macro",
+ "owlnest-prelude",
+ "serde",
+ "serde_json",
+ "tokio",
+ "tracing",
+]
+
+[[package]]
+name = "owlnest-blob"
+version = "0.1.0"
+dependencies = [
+ "futures",
+ "futures-timer",
+ "owlnest-macro",
+ "owlnest-prelude",
+ "serde",
+ "serde_json",
+ "serial_test",
+ "tokio",
+ "tracing",
  "xxhash-rust",
+]
+
+[[package]]
+name = "owlnest-hyper"
+version = "0.1.0"
+dependencies = [
+ "futures",
+ "http-body-util",
+ "hyper 1.2.0",
+ "hyper-util",
+ "owlnest-macro",
+ "owlnest-prelude",
+ "serde",
+ "tokio",
+ "tokio-util",
+ "tracing",
 ]
 
 [[package]]
@@ -3022,6 +3065,29 @@ version = "0.1.0"
 dependencies = [
  "libp2p",
  "libp2p-swarm",
+]
+
+[[package]]
+name = "owlnest-messaging"
+version = "0.1.0"
+dependencies = [
+ "futures-timer",
+ "owlnest-macro",
+ "owlnest-prelude",
+ "serde",
+ "serde_json",
+ "tokio",
+ "tracing",
+]
+
+[[package]]
+name = "owlnest-prelude"
+version = "0.1.0"
+dependencies = [
+ "futures",
+ "libp2p",
+ "libp2p-swarm",
+ "xxhash-rust",
 ]
 
 [[package]]
@@ -4802,9 +4868,9 @@ dependencies = [
 
 [[package]]
 name = "xxhash-rust"
-version = "0.8.8"
+version = "0.8.10"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "53be06678ed9e83edb1745eb72efc0bbcd7b5c3c35711a860906aed827a13d61"
+checksum = "927da81e25be1e1a2901d59b81b37dd2efd1fc9c9345a55007f09bf5a2d3ee03"
 
 [[package]]
 name = "yamux"

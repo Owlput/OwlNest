@@ -3,6 +3,7 @@ use libp2p::{
     swarm::{derive_prelude::ListenerId, DialError},
     Multiaddr, PeerId, TransportError,
 };
+use owlnest_macro::{generate_handler_method, generate_handler_method_blocking};
 use tokio::sync::{mpsc, oneshot::*};
 
 #[derive(Debug, Clone)]

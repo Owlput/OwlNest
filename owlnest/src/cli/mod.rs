@@ -3,7 +3,7 @@ mod utils;
 use std::io::stdout;
 use std::sync::Arc;
 
-use crate::net::p2p::protocols::{*, self};
+use crate::net::p2p::protocols::*;
 use crate::net::p2p::swarm::manager::Manager;
 use crate::net::p2p::{identity::IdentityUnion, swarm};
 use crossterm::style::Stylize;
@@ -23,7 +23,8 @@ pub fn setup_interactive_shell(
     std::thread::spawn(move || {
         stdout().execute(Clear(ClearType::All)).unwrap();
         println!("OwlNest is now running in interactive mode, type \"help\" for more information.");
-        protocols::messaging::cli::setup(&manager);
+        #[cfg(feature = "owlnest-protocols")]
+        messaging::cli::setup(&manager);
         let mut rl = DefaultEditor::new().unwrap();
         let mut retry_times = 0u32;
         loop {
@@ -77,13 +78,16 @@ fn handle_command(
             shutdown_notifier.notify_one()
         }
         "swarm" => swarm::cli::handle_swarm(&manager.swarm(), command),
-        #[cfg(feature = "tethering")]
-        "tethering" => tethering::cli::handle_tethering(manager, command),
-        "messaging" => messaging::handle_messaging(manager, ident, command),
+        #[cfg(feature = "owlnest-protocols")]
+        "messaging" => messaging::cli::handle_messaging(manager, ident, command),
+        #[cfg(feature = "libp2p-protocols")]
         "kad" => kad::cli::handle_kad(manager, command),
+        #[cfg(feature = "libp2p-protocols")]
         "mdns" => mdns::cli::handle_mdns(manager, command),
+        #[cfg(feature = "libp2p-protocols")]
         "relay-client" => relay_client::cli::handle_relayclient(manager, command),
-        "relay-ext" => relay_ext::cli::handle_relay_ext(manager, command),
+        #[cfg(feature = "owlnest-protocols")]
+        "advertise" => advertise::cli::handle_advertise(manager, command),
         "utils" => handle_utils(command),
         "" => {}
         _ => println!("Unrecognized command. Type `help` for more info."),

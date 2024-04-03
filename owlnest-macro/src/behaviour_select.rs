@@ -21,8 +21,6 @@ macro_rules! behaviour_select {
         use ::owlnest_macro::*;
         $(use crate::net::p2p::protocols::$name;)*
 
-        generate_select_struct!(Behaviour{$($name:$name::Behaviour,)*});
-
         generate_event_select!(
             #[derive(Debug)]
             /// A collection of all events from behaviours

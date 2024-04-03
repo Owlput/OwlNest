@@ -1,127 +1,212 @@
 use proc_macro::TokenStream;
-use quote::quote;
+use quote::{quote, ToTokens};
+use syn::Path;
 
 #[proc_macro_attribute]
-pub fn impl_stamp(_attr: TokenStream, item: TokenStream) -> TokenStream {
+pub fn generate_behaviour_select(_attr: TokenStream, item: TokenStream) -> TokenStream {
     let ast: syn::DeriveInput = syn::parse(item).unwrap();
-    let ident = &ast.ident;
-    let data_enum = match &ast.data {
-        syn::Data::Enum(data) => data,
-        _ => panic!("Not applicable for types outside enum"),
+    let selective_struct = match &ast.data {
+        syn::Data::Struct(data) => data,
+        _ => panic!("Not applicable for types outside struct"),
     };
-    let arm_iter = data_enum.variants.iter().map(|variant| {
-        let ident = &variant.ident;
-        let field_pat = match &variant.fields {
-            syn::Fields::Named(_) => {
-                quote!({stamp,..})
-            }
-            syn::Fields::Unnamed(_) => quote!((stamp, ..)),
-            syn::Fields::Unit => panic!("Not applicable for variants without stamp"),
-        };
+    let struct_fields = selective_struct.fields.iter().map(|field| {
+        let ident = field.ident.as_ref().expect("Only for named field");
+        let path = syn::parse::<Path>(ident.to_token_stream().into()).unwrap();
+        let vis = &field.vis;
         quote! {
-            Self::#ident #field_pat=> *stamp
+            #vis #ident: #path::Behaviour,
+        }
+    });
+    let macro_fields = selective_struct.fields.iter().map(|field| {
+        let ident = field.ident.as_ref().expect("Only for named field");
+        let variant = syn::parse::<syn::Variant>(field.ty.to_token_stream().into()).unwrap();
+        quote! {
+            #ident: #variant,
         }
     });
     quote! {
-        #ast
-        impl #ident{
-            pub fn stamp(&self)->u128{
-                match self{
-                    #(#arm_iter),*
-                }
-            }
+        pub struct Behaviour {
+            #(#struct_fields)*
+        }
+        behaviour_select!{
+            #(#macro_fields)*
         }
     }
     .into()
 }
-
 
 #[proc_macro_attribute]
-pub fn generate_kind(_attr: TokenStream, item: TokenStream) -> TokenStream {
-    let ast:syn::DeriveInput = syn::parse(item).unwrap();
-    into_kind(&ast)
-}
-fn into_kind(ast:&syn::DeriveInput) -> TokenStream {
-    let identif = &ast.ident;
-    let data_enum = match &ast.data {
-        syn::Data::Enum(data) => data,
-        _ => panic!("Not applicable for types outside enum"),
+pub fn with_field(attr: TokenStream, item: TokenStream) -> TokenStream {
+    let ast: syn::DeriveInput = syn::parse(item).unwrap();
+    let selective_struct = match &ast.data {
+        syn::Data::Struct(data) => data,
+        _ => panic!("Not applicable for types outside struct"),
     };
-    let variant_iter = data_enum.variants.iter().map(|variant|{
-        let ident = &variant.ident;
-        quote!(
-            #ident,
-        )
-    });
-    let arm_iter = data_enum.variants.iter().map(|variant| {
-        let ident = &variant.ident;
-        let field_pat = match &variant.fields {
-            syn::Fields::Named(_) => quote!({..}=>),
-            syn::Fields::Unnamed(_) => quote!((..)=>),
-            syn::Fields::Unit => quote!(=>),
-        };
-        quote! (
-            #ident #field_pat Kind::#ident,
-        )
-    });
+    let attributes = &ast.attrs;
+    let struct_name = &ast.ident;
+    let fields_to_append = syn::parse::<syn::FieldsNamed>(attr.into()).unwrap();
+    let fields_to_append_iter = fields_to_append.named.iter();
+    let struct_fields = selective_struct.fields.iter();
+    let vis = &ast.vis;
     quote! {
-        #ast
-        #[derive(Debug, Clone,Copy, PartialEq, Eq)]
-        pub enum Kind{
-            #(#variant_iter)*
-        }
-        impl Into<Kind> for &#identif {
-            fn into(self)->Kind{
-                match self{
-                    #(#identif::#arm_iter)*
-                }
-            }
-        }
-        impl std::fmt::Display for Kind{
-            fn fmt(&self,f:&mut std::fmt::Formatter<'_>)->Result<(),std::fmt::Error>{
-                f.write_str(&format!("{}:{:?}",EVENT_IDENT,self))
-            }
+        #(#attributes)*
+        #vis struct #struct_name {
+            #(#struct_fields,)*
+            #(#fields_to_append_iter)*,
         }
     }
     .into()
 }
 
-// #[proc_macro_attribute]
-// pub fn generate_op(_attr: TokenStream, item: TokenStream) -> TokenStream {
-//     let ast: syn::DeriveInput = syn::parse(item).unwrap();
-//     let ident = &ast.ident;
-//     if &ident.to_string() != "InEvent"{
-//         panic!("Must be put on InEvent")
-//     }
-//     let data_enum = match &ast.data {
-//         syn::Data::Enum(data) => data,
-//         _ => panic!("Not applicable for types outside enum"),
-//     }; // Parse the enum
-//     let variant_iter = data_enum.variants.iter().map(|variant|{
-//         let ident = &variant.ident;
-//         quote!(
-//             #ident,
-//         )
-//     }); // Get an iterator for all identifiers of its variants
-//     let param_iter = data_enum.variants.iter().map(|variant|{
-//         if variant.fields.len() < 1{
-//             panic!("The variant should have at least one field")
-//         };
-//         let field_iter = variant.fields.iter().peekable();
-//         let named = field_iter.peek().unwrap().ident.is_some();
-//         drop(field_iter);
-//         let field_iter = variant.fields.into_iter();
-//         field_iter.next_back();
-//         if named {
-//             if field_iternext_back().unwrap().ident.unwrap().to_string() != "callback"{
-//                 panic!("The last named field should be 'callback'")
-//             }
-//         } else {
-//             field_iter.next_back()
-//         }; // Throw away the callback part because we don't need it.
+#[proc_macro_attribute]
+pub fn generate_manager(_attr: TokenStream, item: TokenStream) -> TokenStream {
+    let ast: syn::DeriveInput = syn::parse(item).unwrap();
+    let selective_struct = match &ast.data {
+        syn::Data::Struct(data) => data,
+        _ => panic!("Not applicable for types outside struct"),
+    };
+    let vis = &ast.vis;
+    let paths = selective_struct.fields.iter().map(|field| {
+        let ident = field.ident.as_ref().expect("Only for named field");
+        syn::parse::<Path>(ident.to_token_stream().into()).unwrap()
+    });
+    let paths1 = paths.clone();
+    let paths2 = paths.clone();
+    let paths3 = paths.clone();
+    let paths4 = paths.clone();
+    let idents = selective_struct.fields.iter().map(|field| {
+        field.ident.clone().expect("Only for named field")
+    });
+    let idents1 = idents.clone();
+    let idents2 = idents.clone();
+    let idents3 = idents.clone();
+    let idents4 = idents.clone();
+    let idents5 = idents.clone();
+    let idents6 = idents.clone();
+    let idents7 = idents.clone();
+    let idents8 = idents.clone();
+    let idents9 = idents.clone();
+    let idents10 = idents.clone();
+    let variants = selective_struct.fields.iter().map(|field| {
+        syn::parse::<syn::Variant>(field.ty.to_token_stream().into()).unwrap().to_token_stream()
+    });
+    let variants1 = variants.clone();
+    let variants2 = variants.clone();
+    quote! {
+        use std::task::{Poll,Context};
+        use std::pin::Pin;
+        use tokio::sync::mpsc;
+        use futures::{Stream,Future};
+        use futures::stream::FusedStream;
+        use crate::net::p2p::swarm::{self, EventSender};
+        use super::handle::SwarmHandle;
+        use std::sync::Arc;
+        use crate::net::p2p::IdentityUnion;
+
+        #vis struct RxBundle {
+            pub swarm:mpsc::Receiver<swarm::InEvent>,
+            #(pub #idents:mpsc::Receiver<#paths::InEvent>,)*
+        }
+        impl Future for RxBundle{
+            type Output = Rx;
         
+            fn poll(self:Pin<&mut Self>,cx: &mut Context<'_>)->Poll<Self::Output>{
+                let mutable_self = self.get_mut();
+                match mutable_self.swarm.poll_recv(cx){
+                    Poll::Pending => {}
+                    Poll::Ready(Some(message)) => return Poll::Ready(Rx::Swarm(message)),
+                    Poll::Ready(None) => unreachable!()
+                }
+                #(
+                    match mutable_self.#idents1.poll_recv(cx){
+                        Poll::Pending => {}
+                        Poll::Ready(Some(message)) => return Poll::Ready(Rx::#variants(message)),
+                        Poll::Ready(None) => unreachable!()
+                    }
+                )*
+                Poll::Pending
+            }
+        }
+        impl Stream for RxBundle{
+            type Item = Rx;
+        
+            fn poll_next(self:Pin<&mut Self>,cx: &mut Context<'_>)->Poll<Option<Self::Item>>{
+                let mutable_self = self.get_mut();
+                match mutable_self.swarm.poll_recv(cx){
+                    Poll::Pending => {}
+                    Poll::Ready(Some(message)) => return Poll::Ready(Some(Rx::Swarm(message))),
+                    Poll::Ready(None) => unreachable!()
+                }
+                #(
+                    match mutable_self.#idents2.poll_recv(cx){
+                        Poll::Pending => {}
+                        Poll::Ready(Some(message)) => return Poll::Ready(Some(Rx::#variants1(message))),
+                        Poll::Ready(None) => unreachable!()
+                    }
+                )*
+                Poll::Pending
+            }
+        }
+        impl FusedStream for RxBundle{
+            fn is_terminated(&self)->bool{false}
+        }
+        
+        pub(crate) enum Rx{
+            #(#variants2(#paths1::InEvent),)*
+            Swarm(swarm::InEvent)
+        }
+        
+        pub(crate) struct HandleBundle{
+            swarm:SwarmHandle,
+            #(pub #idents3:#paths2::Handle,)*
+        }
+        impl HandleBundle{
+            pub fn new(buffer: usize,event_tx:&EventSender)->(Self,RxBundle){
+                let swarm = SwarmHandle::new(buffer);
+                #(let #idents4 = #paths3::Handle::new(buffer,event_tx);)*
+                (Self{
+                    swarm:swarm.0.clone(),
+                    #(#idents5:#idents6.0.clone(),)*
+                }, RxBundle{
+                    swarm:swarm.1,
+                    #(#idents7:#idents8.1,)*
+                })
+            }
+        }
+        #[derive(Clone)]
+        pub struct Manager{
+            handle_bundle:Arc<HandleBundle>,
+            identity:IdentityUnion,
+            executor:tokio::runtime::Handle,
+            event_out:tokio::sync::broadcast::Sender<Arc<super::SwarmEvent>>,
+        }
 
-
-//     });
-
-// }
+        impl Manager{
+            pub(crate) fn new(
+                handle_bundle:Arc<HandleBundle>,
+                identity:IdentityUnion,
+                executor:tokio::runtime::Handle,
+                event_out:tokio::sync::broadcast::Sender<Arc<super::SwarmEvent>>
+            )->Self
+            {
+                Self { handle_bundle,identity, executor, event_out}
+            }
+            pub fn executor(&self)->&tokio::runtime::Handle{
+                &self.executor
+            }
+            pub fn identity(&self)->&IdentityUnion{
+                &self.identity
+            }
+            pub fn swarm(&self)-> &SwarmHandle{
+                &self.handle_bundle.swarm
+            }
+            pub fn event_subscriber(&self) -> tokio::sync::broadcast::Sender<Arc<super::SwarmEvent>>{
+                self.event_out.clone()
+            }
+            #(pub fn #idents9(&self)->&#paths4::Handle{
+                &self.handle_bundle.#idents10
+            })*
+        }
+    }
+    .into()
+}

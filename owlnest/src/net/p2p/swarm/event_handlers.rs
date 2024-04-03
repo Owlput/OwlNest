@@ -1,20 +1,30 @@
 use super::{behaviour::BehaviourEvent, manager::Rx, InEvent, Swarm};
 use crate::net::p2p::protocols;
 use libp2p::Multiaddr;
+use owlnest_macro::handle_callback_sender;
 use tracing::{debug, info, trace};
 
 #[inline]
 pub async fn handle_swarm_event(ev: &super::SwarmEvent, swarm: &mut Swarm) {
+    #[cfg(feature = "libp2p-protocols")]
     use crate::net::p2p::kad::swarm_hooks::*;
     use libp2p::swarm::SwarmEvent::*;
+    #[allow(unused)]
     match ev {
         Behaviour(event) => handle_behaviour_event(swarm, event),
         ConnectionEstablished {
             peer_id, endpoint, ..
-        } => kad_add(swarm, *peer_id, endpoint.clone()),
+        } => {
+            #[cfg(feature = "libp2p-protocols")]
+            kad_add(swarm, *peer_id, endpoint.clone());
+        }
         ConnectionClosed {
             peer_id, endpoint, ..
-        } => kad_remove(swarm, *peer_id, endpoint.clone()),
+        } =>
+        {
+            #[cfg(feature = "libp2p-protocols")]
+            kad_remove(swarm, *peer_id, endpoint.clone())
+        }
         IncomingConnection {
             send_back_addr,
             local_addr,
@@ -46,18 +56,17 @@ pub async fn handle_swarm_event(ev: &super::SwarmEvent, swarm: &mut Swarm) {
                     .iter()
                     .map(closure)
                     .collect::<Vec<(Multiaddr, String)>>();
-                info!("Outgoing connection error: {:?}", info)
+                info!("Outgoing connection error: {:?}", info);
+                return;
             }
-
             info!(
                 "Outgoing connection error to peer {:?}: {:?}",
                 peer_id, error
             );
         }
         NewListenAddr { address, .. } => info!("Listening on {:?}", address),
-        ExpiredListenAddr { address, .. } => {
-            info!("Expired listen address: {}", address)
-        }
+        ExpiredListenAddr { address, .. } => info!("Expired listen address: {}", address),
+
         ListenerClosed {
             addresses, reason, ..
         } => trace!("Listener on address {:?} closed: {:?}", addresses, reason),
@@ -78,7 +87,7 @@ pub async fn handle_swarm_event(ev: &super::SwarmEvent, swarm: &mut Swarm) {
             );
         }
         ExternalAddrExpired { address } => {
-            debug!("A possible external address has expired: {}", address);
+            debug!("A possible external address has expired: {}", address)
         }
         NewExternalAddrOfPeer { .. } => {}
         uncovered => unimplemented!("New branch {:?} not covered", uncovered),
@@ -87,17 +96,22 @@ pub async fn handle_swarm_event(ev: &super::SwarmEvent, swarm: &mut Swarm) {
 
 #[inline]
 pub fn handle_incoming_event(ev: Rx, swarm: &mut Swarm) {
+    #[allow(unused)]
     use crate::net::p2p::protocols::*;
     use Rx::*;
     match ev {
-        Kad(ev) => kad::map_in_event(ev, &mut swarm.behaviour_mut().kad),
-        Messaging(ev) => swarm.behaviour_mut().messaging.push_event(ev),
-        #[cfg(feature = "tethering")]
-        Tethering(ev) => swarm.behaviour_mut().tethering.push_event(ev),
-        Mdns(ev) => mdns::map_in_event(ev, &mut swarm.behaviour_mut().mdns),
         Swarm(ev) => swarm_op_exec(swarm, ev),
-        RelayExt(ev) => swarm.behaviour_mut().relay_ext.push_event(ev),
-        BlobTransfer(ev) => swarm.behaviour_mut().blob_transfer.push_event(ev),
+        #[cfg(feature = "owlnest-protocols")]
+        Advertise(ev) => swarm.behaviour_mut().advertise.push_event(ev),
+        #[cfg(feature = "owlnest-protocols")]
+        Blob(ev) => swarm.behaviour_mut().blob.push_event(ev),
+        #[cfg(feature = "owlnest-protocols")]
+        Messaging(ev) => swarm.behaviour_mut().messaging.push_event(ev),
+        #[cfg(feature = "libp2p-protocols")]
+        Kad(ev) => kad::map_in_event(ev, &mut swarm.behaviour_mut().kad),
+        #[cfg(feature = "libp2p-protocols")]
+        Mdns(ev) => mdns::map_in_event(ev, &mut swarm.behaviour_mut().mdns),
+        #[cfg(feature = "libp2p-protocols")]
         AutoNat(ev) => autonat::map_in_event(&mut swarm.behaviour_mut().autonat, ev),
     }
 }
@@ -138,20 +152,28 @@ pub fn swarm_op_exec(swarm: &mut Swarm, ev: InEvent) {
     }
 }
 
+/// Use for external protocol that doesn't expose callback communication only
+#[allow(unused)]
 #[inline]
-pub fn handle_behaviour_event(swarm: &mut Swarm, ev: &BehaviourEvent) {
-    use protocols::*;
+fn handle_behaviour_event(swarm: &mut Swarm, ev: &BehaviourEvent) {
     use super::behaviour::BehaviourEvent::*;
+    use protocols::*;
     match ev {
+        #[cfg(feature = "libp2p-protocols")]
         Kad(ev) => kad::ev_dispatch(ev),
+        #[cfg(feature = "libp2p-protocols")]
         Identify(ev) => identify::ev_dispatch(ev),
+        #[cfg(feature = "libp2p-protocols")]
         Mdns(ev) => mdns::ev_dispatch(ev, swarm),
-        #[cfg(feature = "tethering")]
-        Tethering(ev) => tethering::ev_dispatch(ev),
+        #[cfg(feature = "libp2p-protocols")]
         RelayServer(ev) => relay_server::ev_dispatch(ev),
+        #[cfg(feature = "libp2p-protocols")]
         Dcutr(ev) => dcutr::ev_dispatch(ev),
+        #[cfg(feature = "libp2p-protocols")]
         AutoNat(ev) => autonat::ev_dispatch(ev),
+        #[cfg(feature = "libp2p-protocols")]
         Upnp(ev) => upnp::ev_dispatch(ev),
+        #[cfg(feature = "libp2p-protocols")]
         Ping(ev) => ping::ev_dispatch(ev),
         _ => {}
     }

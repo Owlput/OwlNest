@@ -7,8 +7,6 @@
 
 
 pub mod cli;
-#[macro_use]
-pub mod macros;
 pub mod net;
 pub mod utils;
 // pub mod db;

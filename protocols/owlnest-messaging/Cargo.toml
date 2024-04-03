@@ -1,0 +1,13 @@
+[package]
+name = "owlnest-messaging"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+tokio = { workspace = true }
+serde = { workspace = true }
+tracing = { workspace = true }
+owlnest-macro = { path = "../../owlnest-macro" }
+owlnest-prelude = { path = "../../owlnest-prelude" ,features = ["universal-protocol"]}
+serde_json = "1"
+futures-timer = { workspace = true }

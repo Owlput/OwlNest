@@ -1,0 +1,19 @@
+[package]
+name = "owlnest-blob"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+owlnest-prelude = { path = "../../owlnest-prelude" }
+tracing = { workspace = true }
+serde = { workspace = true, features = ["derive"] }
+futures = { workspace = true }
+tokio = { workdspace = true }
+owlnest-macro = { path = "../../owlnest-macro" }
+xxhash-rust = { version = "*", features = ["xxh3"] }
+futures-timer = { workspace = true }
+serde_json = "1"
+
+
+[dev-dependencies]
+serial_test = "3"
