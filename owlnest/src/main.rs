@@ -22,19 +22,19 @@ fn main() {
     let _ = rt.block_on(shutdown_notifier.notified());
 }
 
-pub fn setup_peer(
-    ident: IdentityUnion,
-    executor: tokio::runtime::Handle,
-) -> Manager {
+pub fn setup_peer(ident: IdentityUnion, executor: tokio::runtime::Handle) -> Manager {
     let _guard = executor.enter();
     let swarm_config = net::p2p::SwarmConfig {
         local_ident: ident.clone(),
+        #[cfg(feature = "libp2p-protocols")]
         kad: protocols::kad::Config::default(),
+        #[cfg(feature = "libp2p-protocols")]
         identify: protocols::identify::Config::new("/owlnest/0.0.1".into(), ident.get_pubkey()),
+        #[cfg(feature = "libp2p-protocols")]
         mdns: protocols::mdns::Config::default(),
+        #[cfg(feature = "owlnest-protocols")]
         messaging: protocols::messaging::Config::default(),
-        #[cfg(feature="tethering")]
-        tethering: protocols::tethering::Config,
+        #[cfg(feature = "libp2p-protocols")]
         relay_server: protocols::relay_server::Config::default(),
     };
     net::p2p::swarm::Builder::new(swarm_config).build(8, executor)

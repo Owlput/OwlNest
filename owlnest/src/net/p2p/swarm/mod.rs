@@ -17,8 +17,8 @@ pub use libp2p::swarm::ConnectionId;
 pub use manager::Manager;
 pub type EventSender = tokio::sync::broadcast::Sender<Arc<SwarmEvent>>;
 
-use behaviour::BehaviourEvent;
 use super::SwarmConfig;
+use behaviour::BehaviourEvent;
 use event_handlers::*;
 
 pub type Swarm = libp2p::Swarm<behaviour::Behaviour>;
@@ -35,8 +35,8 @@ impl Builder {
         let guard = executor.enter();
         let ident = self.config.local_ident.clone();
         use crate::net::p2p::protocols::*;
-        use libp2p::kad::store::MemoryStore;
-        let kad_store = MemoryStore::new(ident.get_peer_id());
+        #[cfg(feature = "libp2p-protocols")]
+        let kad_store = libp2p::kad::store::MemoryStore::new(ident.get_peer_id());
         let (swarm_event_out, _) = tokio::sync::broadcast::channel(16);
         let (handle_bundle, mut rx_bundle) = HandleBundle::new(buffer_size, &swarm_event_out);
         let manager = manager::Manager::new(
@@ -62,13 +62,20 @@ impl Builder {
                 .expect("upgrade to succeed")
                 .with_relay_client(libp2p_noise::Config::new, libp2p_yamux::Config::default)
                 .expect("transport upgrade to succeed")
-                .with_behaviour(|_key, relay| behaviour::Behaviour {
-                    kad: kad::Behaviour::new(ident.get_peer_id(), kad_store),
-                    mdns: mdns::Behaviour::new(self.config.mdns, ident.get_peer_id()).unwrap(),
-                    identify: identify::Behaviour::new(self.config.identify),
+                .with_behaviour(|_key, #[allow(unused)]relay| behaviour::Behaviour {
+                    #[cfg(feature = "owlnest-protocols")]
+                    blob: blob::Behaviour::new(Default::default()),
+                    #[cfg(feature = "owlnest-protocols")]
+                    advertise: advertise::Behaviour::new(),
+                    #[cfg(feature = "owlnest-protocols")]
                     messaging: messaging::Behaviour::new(self.config.messaging),
-                    #[cfg(feature = "tethering")]
-                    tethering: tethering::Behaviour::new(self.config.tethering),
+                    #[cfg(feature = "libp2p-protocols")]
+                    kad: kad::Behaviour::new(ident.get_peer_id(), kad_store),
+                    #[cfg(feature = "libp2p-protocols")]
+                    mdns: mdns::Behaviour::new(self.config.mdns, ident.get_peer_id()).unwrap(),
+                    #[cfg(feature = "libp2p-protocols")]
+                    identify: identify::Behaviour::new(self.config.identify),
+                    #[cfg(feature = "libp2p-protocols")]
                     relay_server: libp2p::relay::Behaviour::new(
                         self.config.local_ident.get_peer_id(),
                         libp2p::relay::Config {
@@ -76,12 +83,15 @@ impl Builder {
                             ..Default::default()
                         },
                     ),
+                    #[cfg(feature = "libp2p-protocols")]
                     relay_client: relay,
-                    relay_ext: relay_ext::Behaviour::new(),
+                    #[cfg(feature = "libp2p-protocols")]
                     dcutr: dcutr::Behaviour::new(ident.get_peer_id()),
-                    blob_transfer: blob_transfer::Behaviour::new(Default::default()),
+                    #[cfg(feature = "libp2p-protocols")]
                     autonat: autonat::Behaviour::new(ident.get_peer_id(), Default::default()),
+                    #[cfg(feature = "libp2p-protocols")]
                     upnp: upnp::Behaviour::default(),
+                    #[cfg(feature = "libp2p-protocols")]
                     ping: ping::Behaviour::new(Default::default()),
                     // hyper:hyper::Behaviour::new(Default::default())
                 })

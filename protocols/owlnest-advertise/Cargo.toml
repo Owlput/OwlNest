@@ -1,0 +1,15 @@
+[package]
+name = "owlnest-advertise"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+owlnest-prelude = { path = "../../owlnest-prelude", features = [
+    "universal-protocol",
+] }
+owlnest-macro = { path = "../../owlnest-macro" }
+tracing = { workspace = true }
+serde = { workspace = true }
+serde_json = "*"
+tokio = { workspace = true }
+futures-timer = "*"

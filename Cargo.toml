@@ -1,12 +1,23 @@
 [workspace]
-members = ["owlnest","memcache","owlnest-proc","owlnest-macro"]
+members = [
+    "owlnest",
+    "memcache",
+    "owlnest-proc",
+    "owlnest-macro",
+    "protocols/owlnest-blob",
+    "owlnest-prelude"
+, "protocols/owlnest-hyper", "protocols/owlnest-messaging", "protocols/owlnest-advertise"]
 default_member = ["owlnest"]
 resolver = "2"
 
 [workspace.dependencies]
-tokio = {version="1", features = ["full"] }
-libp2p = {path = "../rust-libp2p/libp2p", features = ["full"] }
-libp2p-swarm = { path = "../rust-libp2p/swarm"}
-libp2p-tls = { path="../rust-libp2p/transports/tls"}
-libp2p-noise = { path = "../rust-libp2p/transports/noise"}
-libp2p-yamux = { path = "../rust-libp2p/muxers/yamux"}
+tokio = { version = "1", features = ["full"] }
+libp2p = { path = "../rust-libp2p/libp2p", features = ["full"] }
+libp2p-swarm = { path = "../rust-libp2p/swarm" }
+libp2p-tls = { path = "../rust-libp2p/transports/tls" }
+libp2p-noise = { path = "../rust-libp2p/transports/noise" }
+libp2p-yamux = { path = "../rust-libp2p/muxers/yamux" }
+futures = "0.3"
+futures-timer = "3"
+tracing = "0.1"
+serde = { version = "1", features = ["derive"] }

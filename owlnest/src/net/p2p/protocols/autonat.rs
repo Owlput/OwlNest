@@ -1,5 +1,4 @@
 use std::sync::Arc;
-
 use crate::net::p2p::swarm::SwarmEvent;
 pub use libp2p::autonat::Behaviour;
 pub use libp2p::autonat::Config;
@@ -7,6 +6,8 @@ pub use libp2p::autonat::Event as OutEvent;
 pub use libp2p::autonat::NatStatus;
 use libp2p::Multiaddr;
 use libp2p::PeerId;
+use owlnest_macro::generate_handler_method;
+use owlnest_macro::handle_callback_sender;
 use tokio::sync::{broadcast, mpsc, oneshot};
 use tracing::info;
 

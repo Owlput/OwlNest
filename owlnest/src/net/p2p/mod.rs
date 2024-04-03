@@ -15,25 +15,31 @@ pub use libp2p::PeerId;
 
 pub struct SwarmConfig {
     pub local_ident: IdentityUnion,
+    #[cfg(feature = "libp2p-protocols")]
     pub kad: kad::Config,
+    #[cfg(feature = "libp2p-protocols")]
     pub identify: identify::Config,
+    #[cfg(feature = "libp2p-protocols")]
     pub mdns: mdns::Config,
+    #[cfg(feature = "owlnest-protocols")]
     pub messaging: messaging::Config,
-    #[cfg(feature = "tethering")]
-    pub tethering: tethering::Config,
+    #[cfg(feature = "libp2p-protocols")]
     pub relay_server: libp2p::relay::Config,
 }
 impl SwarmConfig {
     pub fn default_with_ident(ident: &IdentityUnion) -> Self {
         Self {
             local_ident: ident.clone(),
+            #[cfg(feature = "libp2p-protocols")]
             kad: Default::default(),
+            #[cfg(feature = "libp2p-protocols")]
             identify: identify::Config::new("/owlnest/0.0.1".into(), ident.get_pubkey()),
+            #[cfg(feature = "libp2p-protocols")]
             mdns: Default::default(),
+            #[cfg(feature = "owlnest-protocols")]
             messaging: Default::default(),
+            #[cfg(feature = "libp2p-protocols")]
             relay_server: Default::default(),
-            #[cfg(feature = "tethering")]
-            tethering: Default::default()
         }
     }
     pub fn ident(&self) -> &IdentityUnion {
@@ -75,12 +81,15 @@ pub fn setup_default() -> (Manager, Arc<Notify>) {
     let guard = rt.enter();
     let swarm_config = SwarmConfig {
         local_ident: ident.clone(),
+        #[cfg(feature = "libp2p-protocols")]
         kad: protocols::kad::Config::default(),
+        #[cfg(feature = "libp2p-protocols")]
         identify: protocols::identify::Config::new("/owlnest/0.0.1".into(), ident.get_pubkey()),
+        #[cfg(feature = "libp2p-protocols")]
         mdns: protocols::mdns::Config::default(),
+        #[cfg(feature = "owlnest-protocols")]
         messaging: protocols::messaging::Config::default(),
-        #[cfg(feature = "tethering")]
-        tethering: protocols::tethering::Config,
+        #[cfg(feature = "libp2p-protocols")]
         relay_server: protocols::relay_server::Config::default(),
     };
     let mgr = swarm::Builder::new(swarm_config).build(8, rt.handle().clone());
@@ -117,19 +126,4 @@ pub(crate) fn setup_logging() {
     let reg = tracing_subscriber::registry().with(layer);
     tracing::subscriber::set_global_default(reg).expect("you can only set global default once");
     LogTracer::init().unwrap()
-}
-
-#[macro_export]
-macro_rules! with_timeout {
-    ($future:ident,$timeout:literal) => {{
-        let timer = futures_timer::Delay::new(std::time::Duration::from_secs($timeout));
-        tokio::select! {
-            _ = timer =>{
-                Err(())
-            }
-            v = $future => {
-                Ok(v)
-            }
-        }
-    }};
 }

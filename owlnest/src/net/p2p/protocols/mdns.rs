@@ -5,6 +5,7 @@ pub use libp2p::mdns::tokio::Behaviour;
 pub use libp2p::mdns::Config;
 pub use libp2p::mdns::Event as OutEvent;
 use libp2p::PeerId;
+use owlnest_macro::generate_handler_method;
 use tokio::sync::{mpsc, oneshot::*};
 
 pub(crate) enum InEvent {

@@ -352,9 +352,10 @@ impl TryFrom<super::SwarmEvent> for SwarmEvent {
 
 use crate::net::p2p::protocols::*;
 pub struct OutEventBundle {
+    #[cfg(feature = "owlnest-protocols")]
     pub messaging_rx: mpsc::Receiver<messaging::OutEvent>,
-    #[cfg(feature = "tethering")]
-    pub tethering_rx: mpsc::Receiver<tethering::OutEvent>,
+    #[cfg(feature = "libp2p-protocols")]
     pub relay_client_rx: mpsc::Receiver<relay_client::OutEvent>,
+    #[cfg(feature = "libp2p-protocols")]
     pub relay_server_rx: mpsc::Receiver<relay_server::OutEvent>,
 }

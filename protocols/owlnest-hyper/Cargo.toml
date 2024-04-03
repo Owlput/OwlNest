@@ -1,0 +1,16 @@
+[package]
+name = "owlnest-hyper"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+owlnest-prelude = { path = "../../owlnest-prelude" }
+owlnest-macro = { path = "../../owlnest-macro" }
+hyper = { version = "1.1", features = ["http1", "server", "client"] }
+http-body-util = "0.1"
+hyper-util = { version = "0.1", features = ["full"] }
+tokio-util = { version = "0.7", features = ["compat"] }
+tokio = { workspace = true }
+tracing = { workspace = true }
+serde = { workspace = true }
+futures = { workspace = true }
