@@ -9,7 +9,7 @@ pub struct Message {
     pub msg: String,
 }
 impl Message {
-    pub fn new(from: PeerId, to: PeerId, msg: String) -> Self {
+    pub fn new(from: PeerId, to: PeerId, msg: impl ToString) -> Self {
         Self {
             time: SystemTime::now()
                 .duration_since(SystemTime::UNIX_EPOCH)
@@ -17,19 +17,7 @@ impl Message {
                 .as_millis(),
             from,
             to,
-            msg,
-        }
-    }
-    #[allow(unused)]
-    pub(crate) fn new_ordered(from: PeerId, to: PeerId, order: u32) -> Self {
-        Self {
-            time: order.into(),
-            from,
-            to,
-            msg: format!(
-                "This is a message for test only. \n 该信息仅用于测试目的。 The order is {}.",
-                order
-            ),
+            msg:msg.to_string(),
         }
     }
     #[inline]

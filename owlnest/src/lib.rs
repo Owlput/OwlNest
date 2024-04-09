@@ -17,3 +17,6 @@ pub mod logging_prelude {
     pub use tracing_log::LogTracer;
     pub use tracing_subscriber::prelude::__tracing_subscriber_SubscriberExt;
 }
+
+#[cfg(feature = "test-suits")]
+pub use net::p2p::test_suit;

@@ -17,3 +17,4 @@ serde_json = "1"
 
 [dev-dependencies]
 serial_test = "3"
+owlnest = { path = "../../owlnest", features = ["owlnest-protocols","test-suits"] }
