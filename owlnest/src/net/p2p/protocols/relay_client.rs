@@ -102,7 +102,7 @@ pub(crate) mod cli {
 
 #[cfg(test)]
 mod test {
-    use crate::net::p2p::setup_default;
+    use crate::net::p2p::test_suit::setup_default;
     use libp2p::{multiaddr::Protocol, Multiaddr};
     use std::{thread, time::Duration};
 

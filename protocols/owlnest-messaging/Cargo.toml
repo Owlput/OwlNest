@@ -8,6 +8,11 @@ tokio = { workspace = true }
 serde = { workspace = true }
 tracing = { workspace = true }
 owlnest-macro = { path = "../../owlnest-macro" }
-owlnest-prelude = { path = "../../owlnest-prelude" ,features = ["universal-protocol"]}
+owlnest-prelude = { path = "../../owlnest-prelude", features = [
+    "universal-protocol",
+] }
 serde_json = "1"
 futures-timer = { workspace = true }
+
+[dev-dependencies]
+owlnest = { path = "../../owlnest", features = ["owlnest-protocols"] }

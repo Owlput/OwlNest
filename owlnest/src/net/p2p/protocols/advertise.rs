@@ -247,3 +247,71 @@ Available subcommands:
                 Query all for advertised peers on a given peer.
 "#;
 }
+
+#[cfg(test)]
+mod test {
+    use libp2p::Multiaddr;
+    use crate::net::p2p::test_suit::setup_default;
+    use std::{thread, time::Duration};
+
+    #[test]
+    fn test() {
+        let (peer1_m, _) = setup_default();
+        let (peer2_m, _) = setup_default();
+        peer1_m
+            .swarm()
+            .listen_blocking(&"/ip4/127.0.0.1/tcp/0".parse::<Multiaddr>().unwrap())
+            .unwrap();
+        thread::sleep(Duration::from_millis(100));
+        let peer1_id = peer1_m.identity().get_peer_id();
+        let peer2_id = peer2_m.identity().get_peer_id();
+        peer2_m
+            .swarm()
+            .dial_blocking(&peer1_m.swarm().list_listeners_blocking()[0])
+            .unwrap();
+        thread::sleep(Duration::from_millis(200));
+        assert!(peer1_m
+            .executor()
+            .block_on(peer1_m.advertise().set_provider_state(true)));
+        thread::sleep(Duration::from_millis(200));
+        peer2_m
+            .executor()
+            .block_on(peer2_m.advertise().set_remote_advertisement(peer1_id, true));
+        assert!(peer2_m.swarm().is_connected_blocking(peer1_id));
+        thread::sleep(Duration::from_millis(200));
+        assert!(peer2_m
+            .executor()
+            .block_on(peer2_m.advertise().query_advertised_peer(peer1_id))
+            .unwrap()
+            .contains(&peer2_id));
+        assert!(!peer1_m
+            .executor()
+            .block_on(peer1_m.advertise().set_provider_state(false)));
+        thread::sleep(Duration::from_millis(200));
+        assert!(
+            peer2_m
+                .executor()
+                .block_on(peer2_m.advertise().query_advertised_peer(peer1_id))
+                .unwrap()
+                .len()
+                == 0
+        );
+        peer2_m.executor().block_on(
+            peer2_m
+                .advertise()
+                .set_remote_advertisement(peer1_id, false),
+        );
+        assert!(peer1_m
+            .executor()
+            .block_on(peer1_m.advertise().set_provider_state(true)));
+        thread::sleep(Duration::from_millis(200));
+        assert!(
+            peer2_m
+                .executor()
+                .block_on(peer2_m.advertise().query_advertised_peer(peer1_id))
+                .unwrap()
+                .len()
+                == 0
+        );
+    }
+}

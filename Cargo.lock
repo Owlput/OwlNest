@@ -3007,11 +3007,13 @@ dependencies = [
  "rustyline",
  "serde",
  "serde_json",
+ "serial_test",
  "tokio",
  "tracing",
  "tracing-log",
  "tracing-subscriber",
  "void",
+ "xxhash-rust",
 ]
 
 [[package]]
@@ -3019,6 +3021,7 @@ name = "owlnest-advertise"
 version = "0.1.0"
 dependencies = [
  "futures-timer",
+ "owlnest",
  "owlnest-macro",
  "owlnest-prelude",
  "serde",
@@ -3033,6 +3036,7 @@ version = "0.1.0"
 dependencies = [
  "futures",
  "futures-timer",
+ "owlnest",
  "owlnest-macro",
  "owlnest-prelude",
  "serde",
@@ -3051,6 +3055,7 @@ dependencies = [
  "http-body-util",
  "hyper 1.2.0",
  "hyper-util",
+ "owlnest",
  "owlnest-macro",
  "owlnest-prelude",
  "serde",
@@ -3072,6 +3077,7 @@ name = "owlnest-messaging"
 version = "0.1.0"
 dependencies = [
  "futures-timer",
+ "owlnest",
  "owlnest-macro",
  "owlnest-prelude",
  "serde",

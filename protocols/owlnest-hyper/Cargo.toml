@@ -14,3 +14,6 @@ tokio = { workspace = true }
 tracing = { workspace = true }
 serde = { workspace = true }
 futures = { workspace = true }
+
+[dev-dependencies]
+owlnest = { path = "../../owlnest", features = ["owlnest-protocols"] }

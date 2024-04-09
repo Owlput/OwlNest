@@ -13,3 +13,6 @@ serde = { workspace = true }
 serde_json = "*"
 tokio = { workspace = true }
 futures-timer = "*"
+
+[dev-dependencies]
+owlnest = { path = "../../owlnest", features = ["owlnest-protocols", "test-suits"] }
