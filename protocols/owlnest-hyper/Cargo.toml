@@ -6,7 +6,7 @@ edition = "2021"
 [dependencies]
 owlnest-prelude = { path = "../../owlnest-prelude" }
 owlnest-macro = { path = "../../owlnest-macro" }
-hyper = { version = "1.1", features = ["http1", "server", "client"] }
+hyper = { version = "1.2", features = ["http1", "server", "client"] }
 http-body-util = "0.1"
 hyper-util = { version = "0.1", features = ["full"] }
 tokio-util = { version = "0.7", features = ["compat"] }
