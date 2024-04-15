@@ -11,6 +11,7 @@ use owlnest_macro::handle_callback_sender;
 use tokio::sync::{broadcast, mpsc, oneshot};
 use tracing::info;
 
+#[derive(Debug)]
 pub(crate) enum InEvent {
     AddServer(PeerId, Option<Multiaddr>),
     RemoveServer(PeerId),

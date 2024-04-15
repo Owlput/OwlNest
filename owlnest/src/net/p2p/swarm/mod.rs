@@ -3,7 +3,7 @@ use futures::StreamExt;
 use libp2p::PeerId;
 use std::{fmt::Debug, sync::Arc};
 use tokio::select;
-use tracing::warn;
+use tracing::{trace, trace_span, warn};
 
 pub mod behaviour;
 pub mod cli;
@@ -32,6 +32,9 @@ impl Builder {
         Self { config }
     }
     pub fn build(self, buffer_size: usize, executor: tokio::runtime::Handle) -> Manager {
+        let span = trace_span!("Swarm Spawn");
+        let entered = span.enter();
+        trace!("Building swarm");
         let guard = executor.enter();
         let ident = self.config.local_ident.clone();
         use crate::net::p2p::protocols::*;
@@ -46,7 +49,11 @@ impl Builder {
             swarm_event_out.clone(),
         );
         let manager_clone = manager.clone();
+        drop(entered);
         tokio::spawn(async move {
+            let span = span;
+            let entered = span.enter();
+            trace!("Swarm task spawned");
             let event_out = swarm_event_out;
             let _manager = manager_clone;
             let mut swarm = libp2p::SwarmBuilder::with_existing_identity(ident.get_keypair())
@@ -62,7 +69,7 @@ impl Builder {
                 .expect("upgrade to succeed")
                 .with_relay_client(libp2p_noise::Config::new, libp2p_yamux::Config::default)
                 .expect("transport upgrade to succeed")
-                .with_behaviour(|_key, #[allow(unused)]relay| behaviour::Behaviour {
+                .with_behaviour(|_key, #[allow(unused)] relay| behaviour::Behaviour {
                     #[cfg(feature = "owlnest-protocols")]
                     blob: blob::Behaviour::new(Default::default()),
                     #[cfg(feature = "owlnest-protocols")]
@@ -97,15 +104,24 @@ impl Builder {
                 })
                 .expect("behaviour incorporation to succeed")
                 .build();
+            trace!("Starting swarm event loop");
+            drop(entered);
+            drop(span);
             loop {
-                let timer = futures_timer::Delay::new(std::time::Duration::from_millis(200));
+                trace!("Swarm event loop entered");
+                let timer = futures_timer::Delay::new(std::time::Duration::from_millis(1000));
                 select! {
-                    Some(ev) = rx_bundle.next() => handle_incoming_event(ev, &mut swarm),
+                    Some(ev) = rx_bundle.next() => {
+                        trace!("Received incoming event {:?}",ev);
+                        handle_incoming_event(ev, &mut swarm)
+                    },
                     out_event = swarm.select_next_some(), if event_out.len() < 12 => {
+                        trace!("Swarm generated an event {:?}",out_event);
                         handle_swarm_event(&out_event,&mut swarm).await;
                         let _ = event_out.send(Arc::new(out_event));
                     }
                     _ = timer =>{
+                        trace!("timer polled, queue length {}", event_out.len());
                         if event_out.len() > 5 {
                             warn!("Slow receiver for swarm events detected.")
                         }

@@ -3038,6 +3038,7 @@ dependencies = [
  "owlnest-macro",
  "owlnest-prelude",
  "serde",
+ "serde_bytes",
  "serde_json",
  "serial_test",
  "tokio",
@@ -3844,6 +3845,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "serde_bytes"
+version = "0.11.14"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "8b8497c313fd43ab992087548117643f6fcd935cbf36f176ffda0aacf9591734"
+dependencies = [
+ "serde",
+]
+
+[[package]]
 name = "serde_derive"
 version = "1.0.197"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4169,6 +4179,14 @@ checksum = "a75fb188eb626b924683e3b95e3a48e63551fcfb51949de2f06a9d91dbee93c9"
 dependencies = [
  "core-foundation-sys",
  "libc",
+]
+
+[[package]]
+name = "template"
+version = "0.1.0"
+dependencies = [
+ "owlnest-macro",
+ "owlnest-prelude",
 ]
 
 [[package]]

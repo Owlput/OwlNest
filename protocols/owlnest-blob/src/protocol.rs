@@ -1,10 +1,9 @@
 use futures::prelude::*;
 use std::io;
 use std::time::{Duration, Instant};
+use tracing::{trace, trace_span};
 use xxhash_rust::xxh3::xxh3_128;
-pub const PROTOCOL_NAME: &str = "/owlnest/blob_transfer/0.0.1";
-
-const CHUNK_SIZE:usize = 65536;
+pub const PROTOCOL_NAME: &str = "/owlnest/blob/0.0.1";
 
 /// Universal protocol for sending bytes
 
@@ -16,27 +15,45 @@ pub async fn send<S>(mut stream: S, msg_bytes: Vec<u8>) -> io::Result<(S, Durati
 where
     S: AsyncRead + AsyncWrite + Unpin,
 {
+    let span = trace_span!("protocol::send");
     let verf = xxh3_128(&msg_bytes);
-    let chunks_number = (msg_bytes.len() / CHUNK_SIZE) + 1;
-    stream.write_all(&chunks_number.to_be_bytes()).await?;
+    let len = msg_bytes.len();
+    span.in_scope(|| {
+        trace!("{} bytes to write, hash {}", len, verf);
+    });
+    stream.write_all(&(len as u64).to_be_bytes()).await?;
     stream.flush().await?;
-    let mut chunks = msg_bytes.chunks_exact(CHUNK_SIZE);
-    for _ in 1..chunks_number {
-        stream.write_all(chunks.next().unwrap()).await?;  
+    span.in_scope(|| {
+        trace!("stream length written and flushed");
+    });
+    let mut cursor = 0;
+    loop {
+        let bytes_write = stream.write(&msg_bytes[cursor..]).await?;
+        cursor += bytes_write;
+        let _entered = span.enter();
+        trace!("cursor at {} bytes, {} bytes total", bytes_write, len);
+        if cursor >= len {
+            trace!("All bytes written, exiting");
+            break;
+        }
     }
     stream.flush().await?;
-    let mut remainder = chunks.remainder().to_vec();
+    span.in_scope(|| {
+        trace!("all bytes written and flushed");
+    });
     drop(msg_bytes);
-    remainder.resize(CHUNK_SIZE, 32u8);
-    stream.write_all(&remainder).await?;
-    stream.flush().await?;
-    drop(remainder);
     let now = Instant::now();
     let mut verf_read = [0u8; 16];
+    span.in_scope(|| {
+        trace!("reading hash verifier from rmeote");
+    });
     stream.read_exact(&mut verf_read).await?;
+    let _entered = span.enter();
     if verf_read == verf.to_be_bytes() {
+        trace!("send finished");
         return Ok((stream, now.elapsed()));
     }
+    trace!("verifier mismatch");
     Err(std::io::Error::new(
         io::ErrorKind::InvalidData,
         "Verifier mismatch",
@@ -47,23 +64,39 @@ pub async fn recv<S>(mut stream: S) -> io::Result<(S, Vec<u8>)>
 where
     S: AsyncRead + AsyncWrite + Unpin,
 {
+    let span = trace_span!("protocol::recv");
     let mut buf = [0u8; 8];
     stream.read_exact(&mut buf).await?;
-    let chunks_to_read = usize::from_be_bytes(buf);
-    if chunks_to_read > 128 {
+    let bytes_to_read = u64::from_be_bytes(buf);
+    span.in_scope(|| {
+        trace!("reading stream length {}", bytes_to_read);
+    });
+    if bytes_to_read > (1 << 18) {
         return io::Result::Err(io::Error::new(
             io::ErrorKind::ConnectionAborted,
             "Stream too long. Terminating.",
         ));
     }
-    let mut msg_buf: Vec<u8> = Vec::new();
-    for _ in 0..chunks_to_read {
-        let mut buf = [0u8; CHUNK_SIZE];
-        stream.read_exact(&mut buf).await?;
-        msg_buf.extend_from_slice(&buf)
+    let mut msg_buf = [0u8; 1 << 17];
+    let mut cursor = 0;
+    loop {
+        let bytes_read = stream.read(&mut msg_buf[cursor..]).await?;
+        cursor += bytes_read;
+        span.in_scope(|| {
+            trace!("cursor at {} byte, {} bytes total", cursor, bytes_to_read);
+        });
+        if cursor as u64 >= bytes_to_read {
+            break;
+        }
     }
-    msg_buf = msg_buf.trim_ascii_end().to_vec();
-    stream.write_all(&xxh3_128(&msg_buf).to_be_bytes()).await?;
+    stream
+        .write_all(&xxh3_128(&msg_buf[..cursor]).to_be_bytes())
+        .await?;
     stream.flush().await?;
-    Ok((stream, msg_buf))
+    span.in_scope(|| {
+        trace!("verifier written and flushed");
+    });
+    let mut msg = Vec::with_capacity(bytes_to_read as usize);
+    msg.extend_from_slice(&msg_buf[..cursor]);
+    Ok((stream, msg))
 }

@@ -6,7 +6,7 @@ members = [
     "owlnest-macro",
     "protocols/owlnest-blob",
     "owlnest-prelude"
-, "protocols/owlnest-hyper", "protocols/owlnest-messaging", "protocols/owlnest-advertise"]
+, "protocols/owlnest-hyper", "protocols/owlnest-messaging", "protocols/owlnest-advertise","protocols/template"]
 default_member = ["owlnest"]
 resolver = "2"
 

@@ -20,6 +20,7 @@ macro_rules! behaviour_select {
     {$($name:ident:$behaviour:ident,)*} => {
         use ::owlnest_macro::*;
         $(use crate::net::p2p::protocols::$name;)*
+        use tracing::trace;
 
         generate_event_select!(
             #[derive(Debug)]
@@ -140,6 +141,7 @@ macro_rules! behaviour_select {
                     ::libp2p::swarm::derive_prelude::THandlerInEvent<Self>,
                 >,
             > {
+                trace!(name:"Poll","polling behaviour");
                 $(
                     match ::libp2p::swarm::NetworkBehaviour::poll(
                         &mut self.$name,
@@ -150,6 +152,7 @@ macro_rules! behaviour_select {
                                 event,
                             ),
                         ) => {
+                            trace!(name:"Poll","behaviour {} generated an event",stringify!($name));
                             return std::task::Poll::Ready(
                                 ::libp2p::swarm::derive_prelude::ToSwarm::GenerateEvent(
                                     BehaviourEvent::$behaviour(event),
@@ -159,6 +162,7 @@ macro_rules! behaviour_select {
                         std::task::Poll::Ready(
                             ::libp2p::swarm::derive_prelude::ToSwarm::Dial { opts },
                         ) => {
+                            trace!(name:"Poll","behaviour {} is trying to dial",stringify!($name));
                             return std::task::Poll::Ready(::libp2p::swarm::derive_prelude::ToSwarm::Dial {
                                 opts,
                             });
@@ -166,11 +170,13 @@ macro_rules! behaviour_select {
                         std::task::Poll::Ready(
                             ::libp2p::swarm::derive_prelude::ToSwarm::ListenOn { opts },
                         ) => {
+                            trace!(name:"Poll","behaviour {} is trying to listen",stringify!($name));
                             return std::task::Poll::Ready(::libp2p::swarm::derive_prelude::ToSwarm::ListenOn {
                                 opts,
                             });
                         }
                         std::task::Poll::Ready(::libp2p::swarm::derive_prelude::ToSwarm::RemoveListener{id})=>{
+                            trace!(name:"Poll","behaviour {} is removing listener id {}",stringify!($name), id);
                             return std::task::Poll::Ready(::libp2p::swarm::derive_prelude::ToSwarm::RemoveListener {
                                 id
                             });
@@ -182,6 +188,7 @@ macro_rules! behaviour_select {
                                 event,
                             },
                         ) => {
+                            trace!(name:"Poll","behaviour {} is notifying its handler",stringify!($name));
                             return std::task::Poll::Ready(::libp2p::swarm::derive_prelude::ToSwarm::NotifyHandler {
                                 peer_id,
                                 handler,
@@ -203,6 +210,7 @@ macro_rules! behaviour_select {
                                 connection,
                             },
                         ) => {
+                            trace!(name:"Poll","behaviour {} is closing connection to peer {}",stringify!($name), peer_id);
                             return std::task::Poll::Ready(::libp2p::swarm::derive_prelude::ToSwarm::CloseConnection {
                                 peer_id,
                                 connection,
@@ -217,6 +225,7 @@ macro_rules! behaviour_select {
                         std::task::Poll::Pending => {}
                     }
                 )*
+                trace!(name:"Poll","Nothing happening to swarm");
                 std::task::Poll::Pending
             }
             fn on_swarm_event(

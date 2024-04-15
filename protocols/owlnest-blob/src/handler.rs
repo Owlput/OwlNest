@@ -4,16 +4,17 @@ use futures_timer::Delay;
 use owlnest_macro::handle_callback_sender;
 use owlnest_prelude::handler_prelude::*;
 use serde::{Deserialize, Serialize};
+use serde_bytes::ByteBuf;
 use std::{collections::VecDeque, time::Duration};
 use tokio::sync::oneshot;
-use tracing::trace;
+use tracing::{trace, trace_span};
 
 #[derive(Debug)]
 pub enum FromBehaviourEvent {
     NewFileSend {
         file_name: String,
         local_send_id: u64,
-        callback: oneshot::Sender<Result<Duration, FileSendError>>,
+        callback: oneshot::Sender<Result<(), FileSendError>>,
         bytes_total: u64,
     },
     /// A chunk of file
@@ -92,7 +93,7 @@ enum Packet {
     /// When observed by remote, the contents will be written to the corresponding file.
     File {
         remote_send_id: u64,
-        contents: Vec<u8>,
+        contents: ByteBuf,
     },
     /// Cancel a transfer with the corresponding send ID.
     /// When observed by remote, a receive will be cancelled
@@ -163,6 +164,117 @@ impl Handler {
             }
         }
     }
+    fn on_packet(&mut self, packet: Packet) {
+        use Packet::*;
+        let ev = match packet {
+            IncomingFile {
+                file_name,
+                remote_send_id, // send ID from remote peer
+                bytes_total,
+            } => {
+                trace!("New incoming file {}", file_name);
+                ToBehaviourEvent::IncomingFile {
+                    file_name,
+                    remote_send_id,
+                    bytes_total,
+                }
+            }
+            AcceptFileSend { local_send_id } => {
+                trace!("Pending send accepted");
+                ToBehaviourEvent::FileSendAccepted { local_send_id }
+            }
+            File {
+                remote_send_id,
+                contents,
+            } => {
+                trace!("File stream with length {}", contents.len());
+                ToBehaviourEvent::RecvProgressed {
+                    remote_send_id,
+                    contents:contents.to_vec(),
+                }
+            }
+            ReceiveCancelled { local_send_id } => ToBehaviourEvent::CancelSend { local_send_id },
+            SendCancelled { remote_send_id } => {
+                trace!("File send cancelled by remote");
+                ToBehaviourEvent::CancelRecv { remote_send_id }
+            }
+        };
+        self.pending_out_events.push_back(ev);
+    }
+    fn progress_outbound(&mut self, ev: FromBehaviourEvent, stream: Stream) {
+        use FromBehaviourEvent::*;
+        match ev {
+            File {
+                mut contents,
+                local_send_id,
+            } => {
+                contents.shrink_to_fit();
+                let packet = Packet::File {
+                    remote_send_id: local_send_id,
+                    contents:ByteBuf::from(contents),
+                };
+                self.outbound = Some(OutboundState::Busy(
+                    protocol::send(stream, packet.as_bytes()).boxed(),
+                    SendType::FileSend(local_send_id),
+                    Delay::new(self.timeout),
+                ));
+            }
+            NewFileSend {
+                file_name,
+                local_send_id,
+                callback,
+                bytes_total,
+            } => {
+                let packet = Packet::IncomingFile {
+                    file_name,
+                    remote_send_id: local_send_id,
+                    bytes_total,
+                };
+                // Put Outbound into send state
+                self.outbound = Some(OutboundState::Busy(
+                    protocol::send(stream, packet.as_bytes()).boxed(),
+                    SendType::ControlSend(callback, local_send_id),
+                    Delay::new(self.timeout),
+                ))
+            }
+            AcceptFile {
+                remote_send_id,
+                callback,
+            } => {
+                let packet = Packet::AcceptFileSend {
+                    local_send_id: remote_send_id,
+                };
+                // Put Outbound into send state
+                self.outbound = Some(OutboundState::Busy(
+                    protocol::send(stream, packet.as_bytes()).boxed(),
+                    SendType::ControlRecv(callback),
+                    Delay::new(self.timeout),
+                ))
+            }
+            CancelSend { local_send_id } => {
+                self.cancell_send(local_send_id);
+
+                let packet = Packet::SendCancelled {
+                    remote_send_id: local_send_id,
+                };
+                self.outbound = Some(OutboundState::Busy(
+                    protocol::send(stream, packet.as_bytes()).boxed(),
+                    SendType::Cancel,
+                    Delay::new(self.timeout),
+                ))
+            }
+            CancelRecv { remote_send_id } => {
+                let packet = Packet::ReceiveCancelled {
+                    local_send_id: remote_send_id,
+                };
+                self.outbound = Some(OutboundState::Busy(
+                    protocol::send(stream, packet.as_bytes()).boxed(),
+                    SendType::Cancel,
+                    Delay::new(self.timeout),
+                ))
+            }
+        }
+    }
 }
 
 impl ConnectionHandler for Handler {
@@ -187,6 +299,8 @@ impl ConnectionHandler for Handler {
     ) -> std::task::Poll<
         ConnectionHandlerEvent<Self::OutboundProtocol, Self::OutboundOpenInfo, Self::ToBehaviour>,
     > {
+        let span = trace_span!("owlnest_blob::ConnectionHandler::poll");
+        let _entered = span.enter();
         match self.state {
             State::Inactive { reported: true } => return Poll::Pending,
             State::Inactive { reported: false } => {
@@ -198,66 +312,33 @@ impl ConnectionHandler for Handler {
             State::Active => {}
         };
         if let Some(fut) = self.inbound.as_mut() {
+            trace!("Polling inbound");
             match fut.poll_unpin(cx) {
-                Poll::Pending => {}
+                Poll::Pending => {trace!("Inbound pending")}
                 Poll::Ready(Err(e)) => {
                     let error = Error::IO(format!("IO Error: {:?}", e));
                     self.pending_out_events
                         .push_back(ToBehaviourEvent::Error(error));
+                    trace!("Inbound error");
                     self.inbound = None;
                 }
                 Poll::Ready(Ok((stream, bytes))) => {
+                    trace!("Inbound ready");
                     self.inbound = Some(super::protocol::recv(stream).boxed());
-                    let packet: Packet = match serde_json::from_slice(&bytes) {
-                        Ok(v) => v,
+                    match serde_json::from_slice::<Packet>(&bytes) {
+                        Ok(packet) => self.on_packet(packet),
                         Err(e) => {
                             self.pending_out_events.push_back(ToBehaviourEvent::Error(
                                 Error::UnrecognizedMessage(format!("{:?}", e)),
                             ));
-                            return Poll::Pending;
                         }
                     };
-                    use Packet::*;
-                    let event = match packet {
-                        IncomingFile {
-                            file_name,
-                            remote_send_id, // send ID from remote peer
-                            bytes_total,
-                        } => {
-                            trace!("New incoming file {}", file_name);
-                            ToBehaviourEvent::IncomingFile {
-                                file_name,
-                                remote_send_id,
-                                bytes_total,
-                            }
-                        }
-                        AcceptFileSend { local_send_id } => {
-                            trace!("Pending send accepted");
-                            ToBehaviourEvent::FileSendAccepted { local_send_id }
-                        }
-                        File {
-                            remote_send_id,
-                            contents,
-                        } => {
-                            trace!("File stream with length {}", contents.len());
-                            ToBehaviourEvent::RecvProgressed {
-                                remote_send_id,
-                                contents,
-                            }
-                        }
-                        ReceiveCancelled { local_send_id } => {
-                            ToBehaviourEvent::CancelSend { local_send_id }
-                        }
-                        SendCancelled { remote_send_id } => {
-                            trace!("File send cancelled by remote");
-                            ToBehaviourEvent::CancelRecv { remote_send_id }
-                        }
-                    };
-                    return Poll::Ready(ConnectionHandlerEvent::NotifyBehaviour(event));
+                    trace!("Inbound handled");
                 }
             }
         }
         loop {
+            trace!("Polling outbound");
             match self.outbound.take() {
                 Some(OutboundState::Busy(mut task, send_type, mut timer)) => {
                     match task.poll_unpin(cx) {
@@ -266,20 +347,21 @@ impl ConnectionHandler for Handler {
                                 self.pending_out_events
                                     .push_back(ToBehaviourEvent::Error(Error::IO("Timeout".into())))
                             } else {
+                                trace!("Outbound busy");
                                 // Put the future back
                                 self.outbound = Some(OutboundState::Busy(task, send_type, timer));
-                                // End the loop because the outbound is busy
-                                break;
+                                return Poll::Pending;
                             }
                         }
                         // Ready
                         Poll::Ready(Ok((stream, rtt))) => {
+                            trace!("Outbound ready");
                             match send_type {
                                 SendType::ControlSend(callback, local_send_id) => {
                                     self.pending_out_events.push_back(
                                         ToBehaviourEvent::FileSendPending { local_send_id },
                                     );
-                                    handle_callback_sender!(Ok(rtt)=>callback);
+                                    handle_callback_sender!(Ok(())=>callback);
                                 }
                                 SendType::ControlRecv(callback) => {
                                     handle_callback_sender!(Ok(rtt)=>callback);
@@ -294,12 +376,11 @@ impl ConnectionHandler for Handler {
                                 }
                                 SendType::Cancel => {}
                             }
-
-                            // Free the outbound
                             self.outbound = Some(OutboundState::Idle(stream));
                         }
                         // Ready but resolved to an error
                         Poll::Ready(Err(e)) => {
+                            trace!("Outbound error");
                             self.pending_out_events
                                 .push_back(ToBehaviourEvent::Error(Error::IO(e.to_string())));
                         }
@@ -307,131 +388,21 @@ impl ConnectionHandler for Handler {
                 }
                 // Outbound is free, get the next message sent
                 Some(OutboundState::Idle(stream)) => {
+                    trace!("Outbound idle");
                     // in favour of control messages
                     if let Some(ev) = self.pending_in_events.pop_front() {
-                        use FromBehaviourEvent::*;
-                        match ev {
-                            File {
-                                contents,
-                                local_send_id,
-                            } => {
-                                let packet = Packet::File {
-                                    remote_send_id: local_send_id,
-                                    contents,
-                                };
-                                self.outbound = Some(OutboundState::Busy(
-                                    protocol::send(stream, packet.as_bytes()).boxed(),
-                                    SendType::FileSend(local_send_id),
-                                    Delay::new(self.timeout),
-                                ));
-                            }
-                            NewFileSend {
-                                file_name,
-                                local_send_id,
-                                callback,
-                                bytes_total,
-                            } => {
-                                let packet = Packet::IncomingFile {
-                                    file_name,
-                                    remote_send_id: local_send_id,
-                                    bytes_total,
-                                };
-                                // Put Outbound into send state
-                                self.outbound = Some(OutboundState::Busy(
-                                    protocol::send(stream, packet.as_bytes()).boxed(),
-                                    SendType::ControlSend(callback, local_send_id),
-                                    Delay::new(self.timeout),
-                                ))
-                            }
-                            AcceptFile {
-                                remote_send_id,
-                                callback,
-                            } => {
-                                let packet = Packet::AcceptFileSend {
-                                    local_send_id: remote_send_id,
-                                };
-                                // Put Outbound into send state
-                                self.outbound = Some(OutboundState::Busy(
-                                    protocol::send(stream, packet.as_bytes()).boxed(),
-                                    SendType::ControlRecv(callback),
-                                    Delay::new(self.timeout),
-                                ))
-                            }
-                            CancelSend { local_send_id } => {
-                                self.cancell_send(local_send_id);
-
-                                let packet = Packet::SendCancelled {
-                                    remote_send_id: local_send_id,
-                                };
-                                self.outbound = Some(OutboundState::Busy(
-                                    protocol::send(stream, packet.as_bytes()).boxed(),
-                                    SendType::Cancel,
-                                    Delay::new(self.timeout),
-                                ))
-                            }
-                            CancelRecv { remote_send_id } => {
-                                let packet = Packet::ReceiveCancelled {
-                                    local_send_id: remote_send_id,
-                                };
-                                self.outbound = Some(OutboundState::Busy(
-                                    protocol::send(stream, packet.as_bytes()).boxed(),
-                                    SendType::Cancel,
-                                    Delay::new(self.timeout),
-                                ))
-                            }
-                        }
-
-                        continue;
+                        self.progress_outbound(ev, stream);
+                    } else {
+                        self.outbound = Some(OutboundState::Idle(stream));
+                        break;
                     };
-                    // let mut buf = [0u8; FILE_CHUNK_SIZE];
-                    // let bytes_read = match file.read(&mut buf) {
-                    //     Err(e) => {
-                    //         error!("{:?}", e);
-                    //         self.cancell_send(local_send_id);
-                    //         let packet = Packet::SendCancelled {
-                    //             remote_send_id: local_send_id,
-                    //         };
-                    //         self.outbound = Some(OutboundState::Busy(
-                    //             protocol::send(stream, packet.as_bytes()).boxed(),
-                    //             SendType::FileSend(local_send_id),
-                    //             Delay::new(self.timeout),
-                    //         ));
-                    //         continue;
-                    //     }
-                    //     Ok(bytes_read) => bytes_read,
-                    // };
-
-                    // let mut vec: Vec<u8> = buf.into();
-                    // if bytes_read < FILE_CHUNK_SIZE {
-                    //     vec.truncate(bytes_read)
-                    // }
-                    // let packet = Packet::File {
-                    //     remote_send_id: local_send_id,
-                    //     contents: vec,
-                    // };
-                    // self.outbound = Some(OutboundState::Busy(
-                    //     protocol::send(stream, packet.as_bytes()).boxed(),
-                    //     SendType::FileSend(local_send_id),
-                    //     Delay::new(self.timeout),
-                    // ));
-                    // if bytes_read == 0 {
-                    //     self.cancell_send(local_send_id);
-                    //     self.pending_out_events
-                    //         .push_back(ToBehaviourEvent::SendProgressed {
-                    //             local_send_id,
-                    //             rtt: None,
-                    //         });
-                    //     break;
-                    // }
-                    // self.ongoing_file_send = Some((file, local_send_id))
-                    self.outbound = Some(OutboundState::Idle(stream));
-                    break;
                 }
                 Some(OutboundState::OpenStream) => {
                     self.outbound = Some(OutboundState::OpenStream);
                     break;
                 }
                 None => {
+                    trace!("Opening stream");
                     self.outbound = Some(OutboundState::OpenStream);
                     let protocol =
                         SubstreamProtocol::new(ReadyUpgrade::new(protocol::PROTOCOL_NAME), ());
@@ -441,8 +412,10 @@ impl ConnectionHandler for Handler {
             }
         }
         if let Some(ev) = self.pending_out_events.pop_front() {
+            trace!("Generate event to behaviour");
             return Poll::Ready(ConnectionHandlerEvent::NotifyBehaviour(ev));
         }
+        trace!("nothing to do, returning");
         Poll::Pending
     }
     fn on_connection_event(
@@ -491,7 +464,7 @@ enum OutboundState {
     Busy(PendingSend, SendType, Delay),
 }
 enum SendType {
-    ControlSend(oneshot::Sender<Result<Duration, FileSendError>>, u64),
+    ControlSend(oneshot::Sender<Result<(), FileSendError>>, u64),
     ControlRecv(oneshot::Sender<Result<Duration, FileRecvError>>),
     Cancel,
     FileSend(u64),

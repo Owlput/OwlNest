@@ -65,7 +65,6 @@ pub fn generate_manager(_attr: TokenStream, item: TokenStream) -> TokenStream {
         syn::Data::Struct(data) => data,
         _ => panic!("Not applicable for types outside struct"),
     };
-    let vis = &ast.vis;
     let paths = selective_struct.fields.iter().map(|field| {
         let ident = field.ident.as_ref().expect("Only for named field");
         syn::parse::<Path>(ident.to_token_stream().into()).unwrap()
@@ -102,8 +101,9 @@ pub fn generate_manager(_attr: TokenStream, item: TokenStream) -> TokenStream {
         use super::handle::SwarmHandle;
         use std::sync::Arc;
         use crate::net::p2p::IdentityUnion;
+        use tracing::trace;
 
-        #vis struct RxBundle {
+        pub(crate) struct RxBundle {
             pub swarm:mpsc::Receiver<swarm::InEvent>,
             #(pub #idents:mpsc::Receiver<#paths::InEvent>,)*
         }
@@ -151,6 +151,7 @@ pub fn generate_manager(_attr: TokenStream, item: TokenStream) -> TokenStream {
             fn is_terminated(&self)->bool{false}
         }
         
+        #[derive(Debug)]
         pub(crate) enum Rx{
             #(#variants2(#paths1::InEvent),)*
             Swarm(swarm::InEvent)

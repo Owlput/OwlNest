@@ -1,12 +1,14 @@
 use super::*;
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone)]
 pub struct Config {
     pub timeout: Duration,
 }
 impl Config {
     pub fn new() -> Self {
-        Default::default()
+        Self {
+            timeout: Duration::from_secs(60),
+        }
     }
     pub fn with_timeout(mut self, timeout: Duration) -> Self {
         self.timeout = timeout;
@@ -15,8 +17,6 @@ impl Config {
 }
 impl Default for Config {
     fn default() -> Self {
-        Self {
-            timeout: Duration::from_secs(60),
-        }
+        Self::new()
     }
 }
