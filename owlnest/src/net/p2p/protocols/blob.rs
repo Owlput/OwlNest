@@ -99,6 +99,7 @@ impl Handle {
             file,
             recv_id,
             callback: tx,
+            path: path_to_write.into()
         };
         self.sender.send(ev).await.expect("send to succeed");
         match with_timeout!(rx, 10) {

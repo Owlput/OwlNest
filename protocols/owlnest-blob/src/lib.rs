@@ -45,6 +45,7 @@ pub enum InEvent {
         /// The ID is unique during the lifetime of the app,
         /// but the order is not guaranteed.
         recv_id: u64,
+        path: PathBuf,
         callback: oneshot::Sender<Result<Duration, error::FileRecvError>>,
     },
     ListPendingRecv(oneshot::Sender<Vec<RecvInfo>>),

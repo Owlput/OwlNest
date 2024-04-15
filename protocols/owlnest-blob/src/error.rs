@@ -6,6 +6,7 @@ pub enum Error {
     IO(String),                  // Serialize not available on the original type
     Channel,
     SendIdNotFound(u64),
+    UnexpectedEOF(u64),
 }
 impl std::fmt::Display for Error {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -15,6 +16,7 @@ impl std::fmt::Display for Error {
             IO(msg) => f.write_str(msg),
             Channel => f.write_str("Callback channel closed unexpectedly"),
             SendIdNotFound(id) => write!(f, "Send ID {} not found", id),
+            UnexpectedEOF(recv_id) => write!(f,"The file of recv ID {} meets an unexpected EOF", recv_id),
         }
     }
 }

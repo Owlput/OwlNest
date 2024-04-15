@@ -4,10 +4,11 @@ use owlnest_macro::handle_callback_sender;
 use owlnest_prelude::behaviour_prelude::*;
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::io::{Read, Write};
-use tracing::{info, trace_span};
+use tracing::{info, trace_span, warn};
 
 pub(crate) const FILE_CHUNK_SIZE: usize = 16384; // 120KB
 
+#[derive(Debug, Default)]
 pub struct Behaviour {
     config: Config,
     /// Pending events to emit to `Swarm`
@@ -30,16 +31,6 @@ pub struct Behaviour {
     ongoing_send: HashMap<u64, OngoingFileSend>,
 }
 
-#[derive(Debug, Clone)]
-struct PendingRecv {
-    local_recv_id: u64,
-    remote_send_id: u64,
-    bytes_total: u64,
-    file_name: String,
-    remote: PeerId,
-    span: tracing::Span,
-}
-
 #[derive(Debug, Clone, Serialize)]
 pub struct RecvInfo {
     pub local_recv_id: u64,
@@ -56,16 +47,6 @@ impl From<&PendingRecv> for RecvInfo {
             bytes_total: value.bytes_total,
         }
     }
-}
-
-#[derive(Debug)]
-struct PendingSend {
-    local_send_id: u64,
-    remote: PeerId,
-    file_path: PathBuf,
-    bytes_total: u64,
-    file: File,
-    span: tracing::Span,
 }
 
 #[derive(Debug, Serialize, Clone)]
@@ -88,14 +69,7 @@ impl Behaviour {
     pub fn new(config: Config) -> Self {
         Self {
             config,
-            out_events: VecDeque::new(),
-            pending_handler_event: VecDeque::new(),
-            connected_peers: HashSet::new(),
-            recv_counter: 0,
-            pending_recv: HashMap::new(),
-            ongoing_recv: HashMap::new(),
-            pending_send: HashMap::new(),
-            ongoing_send: HashMap::new(),
+            ..Default::default()
         }
     }
     /// Call this to insert an event.
@@ -161,10 +135,11 @@ impl Behaviour {
                     });
             }
             AcceptFile {
-                file: file_or_folder,
+                file,
                 recv_id,
                 callback,
-            } => self.accept_pending_recv(file_or_folder, recv_id, callback),
+                path,
+            } => self.accept_pending_recv(file, path, recv_id, callback),
             CancelRecv {
                 local_recv_id: recv_id,
                 callback,
@@ -195,6 +170,7 @@ impl Behaviour {
             }
         }
     }
+
     /// Called when received send request from remote.
     fn on_new_pending_recv(
         &mut self,
@@ -226,10 +202,12 @@ impl Behaviour {
             bytes_total,
         });
     }
+
     /// Called when local decided to accept the file.
     fn accept_pending_recv(
         &mut self,
         file: File,
+        mut path: PathBuf,
         recv_id: u64,
         callback: oneshot::Sender<Result<Duration, error::FileRecvError>>,
     ) {
@@ -238,6 +216,7 @@ impl Behaviour {
             remote,
             bytes_total,
             span,
+            file_name,
             ..
         } = match self.pending_recv.remove(&recv_id) {
             Some(v) => v,
@@ -250,6 +229,7 @@ impl Behaviour {
         let entered = span.enter();
         trace!("Pending recv accepted");
         drop(entered);
+        path.push(file_name);
         self.ongoing_recv.insert(
             remote_send_id,
             OngoingFileRecv {
@@ -260,6 +240,7 @@ impl Behaviour {
                 bytes_total,
                 remote,
                 span,
+                file_path: path,
             },
         );
         let ev = ToSwarm::NotifyHandler {
@@ -306,11 +287,12 @@ impl Behaviour {
         self.progress_ongoing_send(local_send_id);
         Ok(bytes_total)
     }
+
     /// Called when local node cancels the transmission.
     /// Once called, it is guaranteed that no more bytes will be written to the file.
     /// Receiving operation on local node will stop immediately without acknowledgement from remote.
     fn cancel_recv_by_local_recv_id(&mut self, local_recv_id: u64) -> bool {
-        trace!("Cancelling recv id {}",local_recv_id);
+        trace!("Cancelling recv id {}", local_recv_id);
         // Try to remove all recv record associted with the provided id.
         // If none is found, false is returned.
         if let Some((remote, remote_send_id)) = self.remove_recv_record(local_recv_id) {
@@ -327,10 +309,11 @@ impl Behaviour {
         }
         false
     }
+
     /// Called when local cancelled transmission.
     /// Once called, it is guaranteed that no more bytes will be read.
     fn cancel_send_by_local_send_id(&mut self, local_send_id: u64) -> bool {
-        trace!("Cancelling send id {}",local_send_id);
+        trace!("Cancelling send id {}", local_send_id);
         if let Some(remote) = self.remove_send_record(local_send_id) {
             // Notify remote about the cancellation.
             self.pending_handler_event
@@ -343,6 +326,7 @@ impl Behaviour {
         };
         false
     }
+
     /// Called when remote cancelled its sending.
     /// Once called, it is guaranteed that no more bytes will be written to the file.
     fn remove_recv_by_remote_send_id(&mut self, remote_send_id: u64) -> Option<(PeerId, u64)> {
@@ -358,23 +342,27 @@ impl Behaviour {
         };
         None
     }
+
     /// Call this to progress a send operation.
     fn progress_ongoing_send(&mut self, local_send_id: u64) {
-        if self.ongoing_send.get_mut(&local_send_id).is_none(){
-            return;
+        if self.ongoing_send.get_mut(&local_send_id).is_none() {
+            return;// record not found
         }
         let ongoing_send = self.ongoing_send.get_mut(&local_send_id).unwrap();
         let entered = ongoing_send.span.enter();
         trace!("Progressing send");
-        drop(entered);
         let mut buf = [0u8; FILE_CHUNK_SIZE];
         let bytes_read = match ongoing_send.file_handle.read(&mut buf) {
             Err(e) => {
                 error!("{:?}", e);
-                todo!()
+                drop(entered);
+                self.ongoing_send.remove(&local_send_id);
+                return; // Error reading the file
             }
             Ok(bytes_read) => bytes_read,
         };
+        ongoing_send.bytes_sent += bytes_read as u64;
+        trace!("Reading {} bytes, total bytes sent {}", bytes_read, ongoing_send.bytes_sent);
         let mut vec: Vec<u8> = buf.into();
         if bytes_read < FILE_CHUNK_SIZE {
             vec.truncate(bytes_read)
@@ -388,11 +376,10 @@ impl Behaviour {
                     local_send_id: ongoing_send.local_send_id,
                 },
             });
-        let entered = ongoing_send.span.enter();
         println!("Reading {} bytes", bytes_read);
         if bytes_read == 0 {
             trace!(
-                "Removing this send because it's finished, {} bytes total, {} bytes sent",
+                "Finished, {} bytes total, {} bytes sent",
                 ongoing_send.bytes_total,
                 ongoing_send.bytes_sent
             );
@@ -400,6 +387,71 @@ impl Behaviour {
             self.ongoing_send.remove(&local_send_id);
         }
     }
+
+    /// Called when local received a chunk of file.
+    fn progress_ongoing_recv(&mut self, remote_send_id: u64, contents: Vec<u8>) {
+        let mut ongoing_recv = if let Some(v) = self.ongoing_recv.remove(&remote_send_id) {
+            v
+        } else {
+            warn!(
+                "A chunk of file arrived but its record is dropped or not found. 
+                This suggests a corrupted internal state of either or both ends."
+            );
+            return; // Record not found
+        };
+        let content_len = contents.len();
+        let entered = ongoing_recv.span.enter();
+        trace!("Received {} bytes", content_len);
+        if content_len == 0 && ongoing_recv.bytes_received != ongoing_recv.bytes_total {
+            trace!("Unexpected EOF met, terminating the transmission.");
+            self.out_events
+                .push_back(OutEvent::Error(error::Error::UnexpectedEOF(
+                    ongoing_recv.local_recv_id,
+                )));
+            return; // Unexpected EOF.
+        }
+        if content_len == 0 {
+            self.out_events.push_back(OutEvent::RecvProgressed {
+                local_recv_id: ongoing_recv.local_recv_id,
+                bytes_received: ongoing_recv.bytes_total,
+                bytes_total: ongoing_recv.bytes_total,
+            });
+            if let Err(e) = ongoing_recv.file_handle.flush() {
+                tracing::error!("Unsuccessful file flushing: {:?}", e)
+            };
+            return; // EOF and all bytes written, transmission complete.
+        }
+        let mut cursor = 0;
+        loop {
+            match ongoing_recv.file_handle.write(&contents) {
+                Ok(bytes_written) => {
+                    trace!("Writing {} bytes to file", bytes_written);
+                    cursor += bytes_written;
+                    if cursor >= content_len {
+                        break;
+                    }
+                }
+                Err(e) => {
+                    let ev = OutEvent::OngoingRecvError {
+                        local_recv_id: ongoing_recv.local_recv_id,
+                        error: format!("{:?}", e),
+                    };
+                    trace!("Failed to write data to file {:?}, terminating.", ongoing_recv.file_path);
+                    self.out_events.push_back(ev);
+                    return; // Failed to write to file
+                }
+            };
+        }
+        ongoing_recv.bytes_received += cursor as u64;
+        drop(entered);
+        // The record will be inserted back only if
+        // - All bytes have been successfully written.
+        // - EOF not encountered.
+        self.ongoing_recv.insert(remote_send_id, ongoing_recv); // Back in queue
+    }
+
+    /// Try to remove a recv record from all record store.
+    /// Called when the recv is terminated, e.g cancelled or on error.
     fn remove_recv_record(&mut self, local_recv_id: u64) -> Option<(PeerId, u64)> {
         if let Some(v) = self.pending_recv.remove(&local_recv_id) {
             return Some((v.remote, v.remote_send_id));
@@ -409,6 +461,7 @@ impl Behaviour {
         };
         None
     }
+
     /// Called when remote cancelled its receiving.
     /// Once called, it is guaranteed that no more bytes will be sent to remote.
     fn remove_send_record(&mut self, local_send_id: u64) -> Option<PeerId> {
@@ -420,6 +473,8 @@ impl Behaviour {
         }
         None
     }
+
+    /// Called when a peer disconnected.
     fn on_disconnect(&mut self, info: &ConnectionClosed) {
         if info.remaining_established < 1 {
             self.connected_peers.remove(&info.peer_id);
@@ -430,6 +485,7 @@ impl Behaviour {
             self.ongoing_recv.retain(|_, v| v.remote != info.peer_id);
         }
     }
+
     fn next_recv_id(&mut self) -> u64 {
         let id = self.recv_counter;
         self.recv_counter += 1;
@@ -452,47 +508,7 @@ impl NetworkBehaviour for Behaviour {
             RecvProgressed {
                 remote_send_id,
                 contents,
-            } => {
-                let mut ongoing_recv = if let Some(v) = self.ongoing_recv.remove(&remote_send_id) {
-                    v
-                } else {
-                    return;
-                };
-                if contents.len() == 0 {
-                    self.out_events.push_back(OutEvent::RecvProgressed {
-                        local_recv_id: ongoing_recv.local_recv_id,
-                        bytes_received: ongoing_recv.bytes_total,
-                        bytes_total: ongoing_recv.bytes_total,
-                    });
-                    if let Err(e) = ongoing_recv.file_handle.flush() {
-                        tracing::error!("Unsuccessful file flushing: {:?}", e)
-                    };
-                    return;
-                }
-                match ongoing_recv.file_handle.write(&contents) {
-                    Ok(len) => {
-                        if len != contents.len() {
-                            tracing::error!("Partially written file!")
-                        }
-                    }
-                    Err(e) => {
-                        let ev = OutEvent::OngoingRecvError {
-                            local_recv_id: ongoing_recv.local_recv_id,
-                            error: format!("{:?}", e),
-                        };
-                        self.out_events.push_back(ev);
-                    }
-                };
-                ongoing_recv.bytes_received += contents.len() as u64;
-                if ongoing_recv.bytes_received % 1 << 15 == 0 {
-                    // TODO: Better error handling
-                    // Flush after 16 chunks
-                    if let Err(e) = ongoing_recv.file_handle.flush() {
-                        tracing::error!("Unsuccessful file flushing: {:?}", e)
-                    };
-                }
-                self.ongoing_recv.insert(remote_send_id, ongoing_recv);
-            }
+            } => self.progress_ongoing_recv(remote_send_id, contents),
             IncomingFile {
                 file_name,
                 remote_send_id,
@@ -598,6 +614,16 @@ impl NetworkBehaviour for Behaviour {
     }
 }
 
+#[derive(Debug, Clone)]
+struct PendingRecv {
+    local_recv_id: u64,
+    remote_send_id: u64,
+    bytes_total: u64,
+    file_name: String,
+    remote: PeerId,
+    span: tracing::Span,
+}
+#[derive(Debug)]
 struct OngoingFileRecv {
     remote_send_id: u64,
     local_recv_id: u64,
@@ -606,8 +632,19 @@ struct OngoingFileRecv {
     bytes_total: u64,
     file_handle: std::fs::File,
     span: tracing::Span,
+    file_path: PathBuf,
 }
 
+#[derive(Debug)]
+struct PendingSend {
+    local_send_id: u64,
+    remote: PeerId,
+    file_path: PathBuf,
+    bytes_total: u64,
+    file: File,
+    span: tracing::Span,
+}
+#[derive(Debug)]
 struct OngoingFileSend {
     local_send_id: u64,
     remote: PeerId,
