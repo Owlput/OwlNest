@@ -8,6 +8,7 @@ use libp2p::PeerId;
 use owlnest_macro::generate_handler_method;
 use tokio::sync::{mpsc, oneshot::*};
 
+#[derive(Debug)]
 pub(crate) enum InEvent {
     ListDiscoveredNodes(Sender<Vec<PeerId>>),
     HasNode(PeerId, Sender<bool>),

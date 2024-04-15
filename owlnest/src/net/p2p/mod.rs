@@ -60,19 +60,8 @@ mod handler_prelude {
     pub use std::task::Poll;
 }
 
-// async fn with_timeout<T>(mut future: impl Future<Output = T> + Unpin, timeout: u64) -> Result<T,()> {
-//     let mut timer = futures_timer::Delay::new(std::time::Duration::from_secs(timeout));
-//     tokio::select! {
-//         _ = &mut timer =>{
-//             Err(())
-//         }
-//         v = &mut future => {
-//             return Ok(v);
-//         }
-//     }
-// }
-
 pub mod test_suit{
+
     use super::*;
     pub fn setup_default() -> (Manager, Arc<Notify>) {
         let rt = tokio::runtime::Builder::new_multi_thread()
@@ -115,7 +104,7 @@ pub mod test_suit{
         use tracing_subscriber::layer::SubscriberExt;
         use tracing_subscriber::Layer;
         let filter = tracing_subscriber::filter::Targets::new()
-            .with_target("owlnest", Level::DEBUG)
+            .with_target("owlnest", Level::TRACE)
             .with_target("rustyline", LevelFilter::ERROR)
             .with_target("libp2p_noise", Level::WARN)
             .with_target("libp2p_mdns", Level::DEBUG)

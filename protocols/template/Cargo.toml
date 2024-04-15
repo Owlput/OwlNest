@@ -1,0 +1,12 @@
+[package]
+name = "template"
+version = "0.1.0"
+edition = "2021"
+publish = false
+description = "A template for NetworkBehaviour"
+
+[dependencies]
+owlnest-macro = { path = "../../owlnest-macro" }
+owlnest-prelude = { path = "../../owlnest-prelude", features = [
+    "universal-protocol",
+] }

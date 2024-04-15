@@ -13,7 +13,7 @@ use std::{
     time::Duration,
 };
 use tokio::sync::{mpsc, oneshot};
-use tracing::warn;
+use tracing::{trace, warn};
 #[derive(Debug, Clone)]
 #[allow(dead_code)]
 pub struct Handle {
@@ -38,7 +38,7 @@ impl Handle {
         &self,
         to: PeerId,
         path: impl AsRef<Path>,
-    ) -> Result<(u64, Duration), error::FileSendError> {
+    ) -> Result<u64, error::FileSendError> {
         if path.as_ref().is_dir() {
             // Reject sending directory
             return Err(error::FileSendError::IsDirectory);
@@ -57,12 +57,6 @@ impl Handle {
         let local_send_id = self.next_id();
         let ev = InEvent::SendFile {
             file,
-            file_name: path
-                .as_ref()
-                .file_name()
-                .unwrap()
-                .to_string_lossy()
-                .to_string(),
             file_path: path.as_ref().to_owned(),
             to,
             local_send_id,
@@ -70,7 +64,7 @@ impl Handle {
         };
         self.sender.send(ev).await.expect("send to succeed");
         match with_timeout!(rx, 10) {
-            Ok(v) => v.expect("callback to succeed").map(|v| (local_send_id, v)),
+            Ok(v) => v.expect("callback to succeed").map(|_| local_send_id),
             Err(_) => {
                 warn!("timeout reached for a timed future");
                 Err(error::FileSendError::Timeout)
@@ -86,6 +80,7 @@ impl Handle {
         recv_id: u64,
         path_to_write: impl AsRef<Path>,
     ) -> Result<Duration, error::FileRecvError> {
+        trace!("Accepting recv id {}", recv_id);
         let path_to_write = path_to_write.as_ref();
         let file = match fs::OpenOptions::new()
             .create_new(true)
@@ -114,19 +109,47 @@ impl Handle {
             }
         }
     }
+    /// Cancel a send operation on local node.
+    /// Remote will be notified.
+    /// Return an error if the send operation is not found.
+    /// If `Ok(())` is returned, it is guaranteed that no more bytes will be sent to remote.
+    pub async fn cancel_send(&self, local_send_id: u64) -> Result<(), ()> {
+        let (tx, rx) = oneshot::channel();
+        let ev = InEvent::CancelSend {
+            local_send_id,
+            callback: tx,
+        };
+        self.sender.send(ev).await.expect("Send to succeed");
+        match with_timeout!(rx, 10) {
+            Ok(result) => result.expect("callback to succeed"),
+            Err(_) => {
+                warn!("timeout reached for a timed future");
+                Err(())
+            }
+        }
+    }
+    /// Cancel a recv operation on local node.
+    /// Remote will be notified.
+    /// Return an error if the recv operation is not found.
+    /// If `Ok(())` is returned, it is guaranteed that no more bytes will be written to the file.
+    pub async fn cancel_recv(&self, local_recv_id: u64) -> Result<(), ()> {
+        let (tx, rx) = oneshot::channel();
+        let ev = InEvent::CancelRecv {
+            local_recv_id,
+            callback: tx,
+        };
+        self.sender.send(ev).await.expect("Send to succeed");
+        match with_timeout!(rx, 10) {
+            Ok(result) => result.expect("callback to succeed"),
+            Err(_) => {
+                warn!("timeout reached for a timed future");
+                Err(())
+            }
+        }
+    }
     generate_handler_method!(
         ListPendingRecv:list_pending_recv()->Vec<RecvInfo>;
         ListPendingSend:list_pending_send()->Vec<SendInfo>;
-        /// Cancel a send operation on local node.
-        /// Remote will be notified.
-        /// Return an error if the send operation is not found.
-        /// If `Ok(())` is returned, it is guaranteed that no more bytes will be sent to remote.
-        CancelSend:cancel_send(local_send_id:u64)->Result<(),()>;
-        /// Cancel a recv operation on local node.
-        /// Remote will be notified.
-        /// Return an error if the recv operation is not found.
-        /// If `Ok(())` is returned, it is guaranteed that no more bytes will be written to the file.
-        CancelRecv:cancel_recv(local_recv_id:u64)->Result<(),()>;
     );
     fn next_id(&self) -> u64 {
         self.send_counter.fetch_add(1, Ordering::SeqCst)
@@ -138,7 +161,7 @@ mod test {
     use super::*;
     use crate::net::p2p::swarm::{behaviour::BehaviourEvent, Manager, SwarmEvent};
     #[allow(unused)]
-    use crate::net::p2p::test_suit::{setup_default, setup_logging};
+    use crate::net::p2p::test_suit::setup_default;
     use libp2p::Multiaddr;
     use serial_test::serial;
     use std::{io::Read, str::FromStr, thread};
@@ -148,7 +171,9 @@ mod test {
     #[test]
     #[serial]
     fn single_send_recv() {
+        setup_logging();
         let (peer1_m, peer2_m) = setup_peer();
+        println!("all peers set up");
         send_recv(&peer1_m, &peer2_m)
     }
     #[test]
@@ -295,20 +320,27 @@ mod test {
             .executor()
             .block_on(manager.blob().send_file(to, file))
             .unwrap();
+        println!("request sent");
         thread::sleep(Duration::from_millis(200));
     }
 
     fn wait_recv(manager: &Manager, recv_id: u64, file: &str) {
         let manager_clone = manager.clone();
         let handle = manager.executor().spawn(async move {
+            println!("waiting to recieve progress");
             let mut listener = manager_clone.event_subscriber().subscribe();
             while let Ok(ev) = listener.recv().await {
                 if let SwarmEvent::Behaviour(BehaviourEvent::Blob(OutEvent::RecvProgressed {
-                    finished,
+                    bytes_received,
+                    bytes_total,
                     ..
                 })) = ev.as_ref()
                 {
-                    if *finished {
+                    println!(
+                        "recv progressed, bytes received {}, bytes total {}",
+                        bytes_received, bytes_total
+                    );
+                    if bytes_received == bytes_total {
                         return;
                     }
                 }
@@ -318,11 +350,13 @@ mod test {
             .executor()
             .block_on(manager.blob().recv_file(recv_id, file))
             .unwrap();
+        println!("Accepting file");
         manager.executor().block_on(handle).unwrap();
     }
 
     fn send_recv(peer1: &Manager, peer2: &Manager) {
         send(&peer1, peer2.identity().get_peer_id(), SOURCE_FILE);
+        println!("sending");
         assert_eq!(
             peer1
                 .executor()
@@ -330,6 +364,8 @@ mod test {
                 .len(),
             1
         );
+        thread::sleep(Duration::from_millis(100));
+        println!("waiting recv");
         wait_recv(
             &peer2,
             peer2.executor().block_on(peer2.blob().list_pending_recv())[0].local_recv_id,
@@ -361,5 +397,23 @@ mod test {
         let right_file_hash = xxhash_rust::xxh3::xxh3_128(&right_file_buf);
         drop(right_file_buf);
         left_file_hash == right_file_hash
+    }
+    fn setup_logging() {
+        use std::sync::Mutex;
+        use tracing::Level;
+        use tracing_log::LogTracer;
+        use tracing_subscriber::layer::SubscriberExt;
+        use tracing_subscriber::Layer;
+        let filter = tracing_subscriber::filter::Targets::new()
+            .with_target("owlnest_blob", Level::TRACE)
+            .with_target("owlnest", Level::TRACE)
+            .with_target("", Level::ERROR);
+        let layer = tracing_subscriber::fmt::Layer::default()
+            .with_ansi(false)
+            .with_writer(Mutex::new(std::io::stdout()))
+            .with_filter(filter);
+        let reg = tracing_subscriber::registry().with(layer);
+        tracing::subscriber::set_global_default(reg).expect("you can only set global default once");
+        LogTracer::init().unwrap()
     }
 }

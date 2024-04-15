@@ -8,11 +8,12 @@ owlnest-prelude = { path = "../../owlnest-prelude" }
 tracing = { workspace = true }
 serde = { workspace = true, features = ["derive"] }
 futures = { workspace = true }
-tokio = { workdspace = true }
+tokio = { workspace = true }
 owlnest-macro = { path = "../../owlnest-macro" }
 xxhash-rust = { version = "*", features = ["xxh3"] }
 futures-timer = { workspace = true }
 serde_json = "1"
+serde_bytes = "*"
 
 
 [dev-dependencies]

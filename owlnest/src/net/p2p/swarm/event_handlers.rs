@@ -99,6 +99,7 @@ pub fn handle_incoming_event(ev: Rx, swarm: &mut Swarm) {
     #[allow(unused)]
     use crate::net::p2p::protocols::*;
     use Rx::*;
+    trace!("Receive incoming event {:?}", ev);
     match ev {
         Swarm(ev) => swarm_op_exec(swarm, ev),
         #[cfg(feature = "owlnest-protocols")]
