@@ -16,7 +16,9 @@ impl std::fmt::Display for Error {
             IO(msg) => f.write_str(msg),
             Channel => f.write_str("Callback channel closed unexpectedly"),
             SendIdNotFound(id) => write!(f, "Send ID {} not found", id),
-            UnexpectedEOF(recv_id) => write!(f,"The file of recv ID {} meets an unexpected EOF", recv_id),
+            UnexpectedEOF(recv_id) => {
+                write!(f, "The file of recv ID {} meets an unexpected EOF", recv_id)
+            }
         }
     }
 }

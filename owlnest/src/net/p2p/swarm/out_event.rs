@@ -1,6 +1,5 @@
-use std::num::NonZeroU32;
-
 use super::*;
+use std::num::NonZeroU32;
 use tokio::sync::mpsc;
 
 #[derive(Debug, Clone)]
@@ -148,9 +147,9 @@ impl SwarmEvent {
             } => Self::ConnectionEstablished {
                 peer_id: *peer_id,
                 endpoint: endpoint.clone(),
-                num_established: num_established.clone(),
+                num_established: *num_established,
                 concurrent_dial_errors: format!("{:?}", concurrent_dial_errors),
-                established_in: established_in.clone(),
+                established_in: *established_in,
                 connection_id: *connection_id,
             },
             libp2p::swarm::SwarmEvent::ConnectionClosed {

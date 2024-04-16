@@ -1,6 +1,6 @@
 use super::{protocol, Error, PeerId};
-use owlnest_prelude::handler_prelude::*;
 use futures_timer::Delay;
+use owlnest_prelude::handler_prelude::*;
 use serde::{Deserialize, Serialize};
 use std::{collections::VecDeque, time::Duration};
 use tracing::trace;
@@ -18,10 +18,24 @@ pub enum ToBehaviour {
     IncomingAdvertiseReq(bool),
     Error(Error),
 }
+impl From<Packet> for ToBehaviour {
+    fn from(value: Packet) -> Self {
+        match value {
+            Packet::AdvertiseSelf(bool, _) => ToBehaviour::IncomingAdvertiseReq(bool),
+            Packet::QueryAdvertisedPeer => ToBehaviour::IncomingQuery,
+            Packet::AnswerAdvertisedPeer(result) => ToBehaviour::QueryAnswered(result),
+        }
+    }
+}
 
 pub enum State {
     Inactive { reported: bool },
     Active,
+}
+impl Default for State {
+    fn default() -> Self {
+        Self::Active
+    }
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -36,15 +50,6 @@ impl Packet {
         serde_json::to_vec(self).unwrap()
     }
 }
-impl Into<ToBehaviour> for Packet {
-    fn into(self) -> ToBehaviour {
-        match self {
-            Packet::AdvertiseSelf(bool, _) => ToBehaviour::IncomingAdvertiseReq(bool),
-            Packet::QueryAdvertisedPeer => ToBehaviour::IncomingQuery,
-            Packet::AnswerAdvertisedPeer(result) => ToBehaviour::QueryAnswered(result),
-        }
-    }
-}
 
 pub struct Handler {
     state: State,
@@ -54,17 +59,22 @@ pub struct Handler {
     inbound: Option<PendingVerf>,
     outbound: Option<OutboundState>,
 }
+impl Default for Handler{
+    fn default() -> Self {
+        Self{
+            timeout: Duration::from_secs(20),
+            pending_in_events:Default::default(),
+            pending_out_events:Default::default(),
+            state:Default::default(),
+            inbound:Default::default(),
+            outbound:Default::default()
+        }
+    }
+}
 
 impl Handler {
     pub fn new() -> Self {
-        Self {
-            state: State::Active,
-            pending_in_events: VecDeque::new(),
-            pending_out_events: VecDeque::new(),
-            timeout: Duration::from_secs(20),
-            inbound: None,
-            outbound: None,
-        }
+        Default::default()
     }
     #[inline]
     fn on_dial_upgrade_error(
@@ -97,9 +107,7 @@ impl ConnectionHandler for Handler {
     type OutboundProtocol = ReadyUpgrade<&'static str>;
     type InboundOpenInfo = ();
     type OutboundOpenInfo = ();
-    fn listen_protocol(
-        &self,
-    ) -> SubstreamProtocol<Self::InboundProtocol, Self::InboundOpenInfo> {
+    fn listen_protocol(&self) -> SubstreamProtocol<Self::InboundProtocol, Self::InboundOpenInfo> {
         SubstreamProtocol::new(ReadyUpgrade::new(protocol::PROTOCOL_NAME), ())
     }
     fn on_behaviour_event(&mut self, event: Self::FromBehaviour) {
@@ -112,11 +120,7 @@ impl ConnectionHandler for Handler {
         &mut self,
         cx: &mut std::task::Context<'_>,
     ) -> std::task::Poll<
-        ConnectionHandlerEvent<
-            Self::OutboundProtocol,
-            Self::OutboundOpenInfo,
-            Self::ToBehaviour,
-        >,
+        ConnectionHandlerEvent<Self::OutboundProtocol, Self::OutboundOpenInfo, Self::ToBehaviour>,
     > {
         match self.state {
             State::Inactive { reported: true } => return Poll::Pending,

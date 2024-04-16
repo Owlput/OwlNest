@@ -1,8 +1,5 @@
 mod utils;
 
-use std::io::stdout;
-use std::sync::Arc;
-
 use crate::net::p2p::protocols::*;
 use crate::net::p2p::swarm::manager::Manager;
 use crate::net::p2p::{identity::IdentityUnion, swarm};
@@ -10,6 +7,8 @@ use crossterm::style::Stylize;
 use crossterm::terminal::{Clear, ClearType};
 use crossterm::ExecutableCommand;
 use rustyline::{error::ReadlineError, DefaultEditor};
+use std::io::stdout;
+use std::sync::Arc;
 use tokio::sync::Notify;
 
 use self::utils::handle_utils;
@@ -64,20 +63,20 @@ fn handle_command(
                 println!("Error: Missing required argument <address>, syntax: `dial <address>`");
                 return;
             }
-            swarm::cli::handle_swarm_dial(&manager.swarm(), command[1])
+            swarm::cli::handle_swarm_dial(manager.swarm(), command[1])
         }
         "listen" => {
             if command.len() < 2 {
                 println!("Error: Missing required argument <address>, syntax: `listen <address>`");
                 return;
             }
-            swarm::cli::handle_swarm_listen(&manager.swarm(), command[1])
+            swarm::cli::handle_swarm_listen(manager.swarm(), command[1])
         }
         "shutdown" => {
             println!("Shutting down...");
             shutdown_notifier.notify_one()
         }
-        "swarm" => swarm::cli::handle_swarm(&manager.swarm(), command),
+        "swarm" => swarm::cli::handle_swarm(manager.swarm(), command),
         #[cfg(feature = "owlnest-protocols")]
         "messaging" => messaging::cli::handle_messaging(manager, ident, command),
         #[cfg(feature = "libp2p-protocols")]

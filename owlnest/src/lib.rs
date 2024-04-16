@@ -5,7 +5,6 @@
 #![feature(hash_extract_if)]
 #![feature(extract_if)]
 
-
 pub mod cli;
 pub mod net;
 pub mod utils;

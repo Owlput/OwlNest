@@ -17,7 +17,7 @@ impl Message {
                 .as_millis(),
             from,
             to,
-            msg:msg.to_string(),
+            msg: msg.to_string(),
         }
     }
     #[inline]

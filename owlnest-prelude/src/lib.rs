@@ -49,10 +49,10 @@ pub mod utils {
                 stream.write_all(&len.to_be_bytes()).await?;
                 stream.flush().await?;
                 let mut cursor = 0;
-                loop{
+                loop {
                     let bytes_written = stream.write(&msg_bytes[cursor..]).await?;
                     cursor += bytes_written;
-                    if cursor >= len{
+                    if cursor >= len {
                         break;
                     }
                 }
@@ -87,8 +87,7 @@ pub mod utils {
                 loop {
                     let mut buf = [0u8; 2048];
                     let bytes_read = stream.read(&mut buf).await?;
-                    io::Write::write(&mut msg_buf, &mut buf[0..bytes_read])
-                        .expect("Write to vec");
+                    io::Write::write(&mut msg_buf, &buf[0..bytes_read]).expect("Write to vec");
                     cursor += bytes_read;
                     if cursor >= bytes_to_read {
                         break;

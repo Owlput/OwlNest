@@ -25,6 +25,11 @@ impl Behaviour {
     pub fn push_event(&mut self, msg: InEvent) {
         self.in_events.push_back(msg)
     }
+    pub fn on_disconnect(&mut self, info: &ConnectionClosed) {
+        if info.remaining_established < 1 {
+            self.connected_peers.remove(&info.peer_id);
+        }
+    }
 }
 
 impl NetworkBehaviour for Behaviour {
@@ -114,13 +119,8 @@ impl NetworkBehaviour for Behaviour {
     }
 
     fn on_swarm_event(&mut self, event: FromSwarm) {
-        match &event {
-            FromSwarm::ConnectionClosed(info) => {
-                if info.remaining_established < 1 {
-                    self.connected_peers.remove(&info.peer_id);
-                }
-            }
-            _ => {}
+        if let FromSwarm::ConnectionClosed(info) = event {
+            self.on_disconnect(&info)
         }
     }
 

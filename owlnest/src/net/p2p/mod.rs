@@ -60,7 +60,7 @@ mod handler_prelude {
     pub use std::task::Poll;
 }
 
-pub mod test_suit{
+pub mod test_suit {
 
     use super::*;
     pub fn setup_default() -> (Manager, Arc<Notify>) {
@@ -88,12 +88,11 @@ pub mod test_suit{
         let shutdown_notifier = std::sync::Arc::new(Notify::const_new());
         let notifier_clone = shutdown_notifier.clone();
         std::thread::spawn(move || {
-            let rt = rt;
-            let _ = rt.block_on(notifier_clone.notified());
+            rt.block_on(notifier_clone.notified());
         });
         (mgr, shutdown_notifier)
     }
-    
+
     #[allow(unused)]
     // tests only
     pub fn setup_logging() {

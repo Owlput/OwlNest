@@ -65,8 +65,8 @@ impl IdentityUnion {
         folder_path: &str,
         file_name: &str,
     ) -> Result<(), std::io::Error> {
-        let folder_path = if folder_path.ends_with("/") {
-            folder_path.rsplit_once("/").unwrap().0
+        let folder_path = if folder_path.ends_with('/') {
+            folder_path.rsplit_once('/').unwrap().0
         } else {
             folder_path
         };

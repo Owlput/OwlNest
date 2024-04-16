@@ -3,15 +3,10 @@ use libp2p::PeerId;
 pub use owlnest_blob::{error, Behaviour, InEvent, OutEvent};
 use owlnest_blob::{RecvInfo, SendInfo};
 use owlnest_macro::{generate_handler_method, with_timeout};
-use std::{
-    fs,
-    path::Path,
-    sync::{
-        atomic::{AtomicU64, Ordering},
-        Arc,
-    },
-    time::Duration,
-};
+use std::path::Path;
+use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::Arc;
+use std::time::Duration;
 use tokio::sync::{mpsc, oneshot};
 use tracing::{trace, warn};
 #[derive(Debug, Clone)]
@@ -82,7 +77,7 @@ impl Handle {
     ) -> Result<Duration, error::FileRecvError> {
         trace!("Accepting recv id {}", recv_id);
         let path_to_write = path_to_write.as_ref();
-        let file = match fs::OpenOptions::new()
+        let file = match std::fs::OpenOptions::new()
             .create_new(true)
             .read(true)
             .write(true)
@@ -99,7 +94,7 @@ impl Handle {
             file,
             recv_id,
             callback: tx,
-            path: path_to_write.into()
+            path: path_to_write.into(),
         };
         self.sender.send(ev).await.expect("send to succeed");
         match with_timeout!(rx, 10) {
@@ -174,7 +169,6 @@ mod test {
     fn single_send_recv() {
         setup_logging();
         let (peer1_m, peer2_m) = setup_peer();
-        println!("all peers set up");
         send_recv(&peer1_m, &peer2_m)
     }
     #[test]
@@ -189,6 +183,7 @@ mod test {
     }
 
     #[test]
+    #[serial]
     fn cancel_single_send() {
         let (peer1_m, peer2_m) = setup_peer();
         send(&peer1_m, peer2_m.identity().get_peer_id(), SOURCE_FILE);
@@ -210,6 +205,7 @@ mod test {
     }
 
     #[test]
+    #[serial]
     fn cancel_single_send_in_multiple() {
         let (peer1_m, peer2_m) = setup_peer();
         send(&peer1_m, peer2_m.identity().get_peer_id(), SOURCE_FILE);
@@ -242,6 +238,7 @@ mod test {
     }
 
     #[test]
+    #[serial]
     fn cancel_single_recv() {
         let (peer1_m, peer2_m) = setup_peer();
         send(&peer1_m, peer2_m.identity().get_peer_id(), SOURCE_FILE);
@@ -264,6 +261,7 @@ mod test {
     }
 
     #[test]
+    #[serial]
     fn cancel_single_recv_in_multiple() {
         let (peer1_m, peer2_m) = setup_peer();
         send(&peer1_m, peer2_m.identity().get_peer_id(), SOURCE_FILE);
@@ -321,14 +319,12 @@ mod test {
             .executor()
             .block_on(manager.blob().send_file(to, file))
             .unwrap();
-        println!("request sent");
         thread::sleep(Duration::from_millis(200));
     }
 
     fn wait_recv(manager: &Manager, recv_id: u64, file: &str) {
         let manager_clone = manager.clone();
         let handle = manager.executor().spawn(async move {
-            println!("waiting to recieve progress");
             let mut listener = manager_clone.event_subscriber().subscribe();
             while let Ok(ev) = listener.recv().await {
                 if let SwarmEvent::Behaviour(BehaviourEvent::Blob(OutEvent::RecvProgressed {
@@ -337,10 +333,6 @@ mod test {
                     ..
                 })) = ev.as_ref()
                 {
-                    println!(
-                        "recv progressed, bytes received {}, bytes total {}",
-                        bytes_received, bytes_total
-                    );
                     if bytes_received == bytes_total {
                         return;
                     }
@@ -351,13 +343,11 @@ mod test {
             .executor()
             .block_on(manager.blob().recv_file(recv_id, file))
             .unwrap();
-        println!("Accepting file");
         manager.executor().block_on(handle).unwrap();
     }
 
     fn send_recv(peer1: &Manager, peer2: &Manager) {
         send(&peer1, peer2.identity().get_peer_id(), SOURCE_FILE);
-        println!("sending");
         assert_eq!(
             peer1
                 .executor()
@@ -366,7 +356,6 @@ mod test {
             1
         );
         thread::sleep(Duration::from_millis(100));
-        println!("waiting recv");
         wait_recv(
             &peer2,
             peer2.executor().block_on(peer2.blob().list_pending_recv())[0].local_recv_id,
@@ -377,6 +366,7 @@ mod test {
 
     /// Verify and clean up
     fn verify_file(left: &str, right: &str) -> bool {
+        use std::fs;
         let mut left_file_buf = Vec::new();
         fs::OpenOptions::new()
             .read(true)
@@ -406,9 +396,9 @@ mod test {
         use tracing_subscriber::layer::SubscriberExt;
         use tracing_subscriber::Layer;
         let filter = tracing_subscriber::filter::Targets::new()
-            .with_target("owlnest_blob", Level::TRACE)
-            .with_target("owlnest", Level::TRACE)
-            .with_target("", Level::ERROR);
+            .with_target("owlnest", Level::INFO)
+            .with_target("owlnest_blob", Level::INFO)
+            .with_target("", Level::WARN);
         let layer = tracing_subscriber::fmt::Layer::default()
             .with_ansi(false)
             .with_writer(Mutex::new(std::io::stdout()))

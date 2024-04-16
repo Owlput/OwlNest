@@ -1,8 +1,6 @@
 use crate::net::p2p::swarm::{behaviour::BehaviourEvent, EventSender, SwarmEvent};
-use libp2p::{
-    kad::{self, Mode, NoKnownPeers, QueryId, RoutingUpdate},
-    Multiaddr, PeerId,
-};
+use libp2p::kad::{self, Mode, NoKnownPeers, QueryId, RoutingUpdate};
+use libp2p::{Multiaddr, PeerId};
 use owlnest_macro::{handle_callback_sender, listen_event, with_timeout};
 use std::str::FromStr;
 use tokio::sync::{mpsc, oneshot};
@@ -88,12 +86,12 @@ impl Handle {
         let mut listener = self.event_tx.subscribe();
         self.sender_swarm.send(ev).await.expect("send to succeed");
         let fut = listen_event!(listener for Kad, OutEvent::ModeChanged { new_mode }=>{
-            return new_mode.clone();
+            return *new_mode;
         });
         match with_timeout!(fut, 10) {
-            Ok(result) => return Ok(result),
-            Err(_) => return Err(()),
-        };
+            Ok(result) => Ok(result),
+            Err(_) => Err(()),
+        }
     }
 }
 
@@ -155,40 +153,40 @@ pub(crate) mod cli {
             "/dnsaddr/bootstrap.libp2p.io".parse::<Multiaddr>().unwrap(),
         ));
         println!(
-            "{}:{:?}",
-            "QmNnooDu7bfjPFoTZYxMNLWUQJyrVwtbZg5gBMjTezGAJN", result
+            "QmNnooDu7bfjPFoTZYxMNLWUQJyrVwtbZg5gBMjTezGAJN:{:?}",
+            result
         );
         let result = manager.executor().block_on(manager.kad().insert_node(
             PeerId::from_str("QmQCU2EcMqAqQPR2i9bChDtGNJchTbq5TbXJJ16u19uLTa").unwrap(),
             "/dnsaddr/bootstrap.libp2p.io".parse::<Multiaddr>().unwrap(),
         ));
         println!(
-            "{}:{:?}",
-            "QmQCU2EcMqAqQPR2i9bChDtGNJchTbq5TbXJJ16u19uLTa", result
+            "QmQCU2EcMqAqQPR2i9bChDtGNJchTbq5TbXJJ16u19uLTa:{:?}",
+            result
         );
         let result = manager.executor().block_on(manager.kad().insert_node(
             PeerId::from_str("QmbLHAnMoJPWSCR5Zhtx6BHJX9KiKNN6tpvbUcqanj75Nb").unwrap(),
             "/dnsaddr/bootstrap.libp2p.io".parse::<Multiaddr>().unwrap(),
         ));
         println!(
-            "{}:{:?}",
-            "QmbLHAnMoJPWSCR5Zhtx6BHJX9KiKNN6tpvbUcqanj75Nb", result
+            "QmbLHAnMoJPWSCR5Zhtx6BHJX9KiKNN6tpvbUcqanj75Nb:{:?}",
+            result
         );
         let result = manager.executor().block_on(manager.kad().insert_node(
             PeerId::from_str("QmcZf59bWwK5XFi76CZX8cbJ4BhTzzA3gU1ZjYZcYW3dwt").unwrap(),
             "/dnsaddr/bootstrap.libp2p.io".parse::<Multiaddr>().unwrap(),
         ));
         println!(
-            "{}:{:?}",
-            "QmcZf59bWwK5XFi76CZX8cbJ4BhTzzA3gU1ZjYZcYW3dwt", result
+            "QmcZf59bWwK5XFi76CZX8cbJ4BhTzzA3gU1ZjYZcYW3dwt:{:?}",
+            result
         );
         let result = manager.executor().block_on(manager.kad().insert_node(
             PeerId::from_str("QmaCpDMGvV2BGHeYERUEnRQAwe3N8SzbUtfsmvsqQLuvuJ").unwrap(),
             "/ip4/104.131.131.82/tcp/4001".parse::<Multiaddr>().unwrap(),
         ));
         println!(
-            "{}:{:?}",
-            "QmaCpDMGvV2BGHeYERUEnRQAwe3N8SzbUtfsmvsqQLuvuJ", result
+            "QmaCpDMGvV2BGHeYERUEnRQAwe3N8SzbUtfsmvsqQLuvuJ:{:?}",
+            result
         );
     }
 
@@ -211,7 +209,7 @@ pub(crate) mod cli {
 
     fn kad_bootstrap(manager: &Manager) {
         let result = manager.executor().block_on(manager.kad().bootstrap());
-        if let Err(_) = result {
+        if result.is_err() {
             println!("No known peer in the DHT");
             return;
         }
@@ -232,7 +230,11 @@ pub(crate) mod cli {
                 return;
             }
         };
-        if let Err(_) = manager.executor().block_on(manager.kad().set_mode(mode)) {
+        if manager
+            .executor()
+            .block_on(manager.kad().set_mode(mode))
+            .is_err()
+        {
             println!("Timeout reached for setting kad mode");
             return;
         }

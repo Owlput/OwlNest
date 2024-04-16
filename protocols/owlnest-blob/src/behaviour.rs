@@ -126,7 +126,7 @@ impl Behaviour {
                     .push_back(ToSwarm::NotifyHandler {
                         peer_id: to,
                         handler: NotifyHandler::Any,
-                        event: handler::FromBehaviourEvent::NewFileSend {
+                        event: FromBehaviourEvent::NewFileSend {
                             file_name: file_path.file_name().unwrap().to_string_lossy().to_string(),
                             local_send_id,
                             callback,
@@ -161,11 +161,9 @@ impl Behaviour {
                 handle_callback_sender!(Err(())=>callback);
             }
             ListPendingRecv(callback) => {
-                println!("listing pending recv");
                 handle_callback_sender!(self.pending_recv.values().map(|v|v.into()).collect()=>callback)
             }
             ListPendingSend(callback) => {
-                println!("listing pending send");
                 handle_callback_sender!(self.pending_send.values().map(|v|v.into()).collect()=>callback)
             }
         }
@@ -257,8 +255,8 @@ impl Behaviour {
     /// Called when rmeote accepts a pending send.
     /// If not found in the pending list, will return `Result::Err`.
     fn pending_send_accepted(&mut self, local_send_id: u64) -> Result<u64, ()> {
-        if self.pending_send.get(&local_send_id).is_none()
-            && self.ongoing_send.get(&local_send_id).is_none()
+        if !self.pending_send.contains_key(&local_send_id)
+            && !self.ongoing_send.contains_key(&local_send_id)
         {
             return Err(());
         }
@@ -346,7 +344,7 @@ impl Behaviour {
     /// Call this to progress a send operation.
     fn progress_ongoing_send(&mut self, local_send_id: u64) {
         if self.ongoing_send.get_mut(&local_send_id).is_none() {
-            return;// record not found
+            return; // record not found
         }
         let ongoing_send = self.ongoing_send.get_mut(&local_send_id).unwrap();
         let entered = ongoing_send.span.enter();
@@ -362,7 +360,11 @@ impl Behaviour {
             Ok(bytes_read) => bytes_read,
         };
         ongoing_send.bytes_sent += bytes_read as u64;
-        trace!("Reading {} bytes, total bytes sent {}", bytes_read, ongoing_send.bytes_sent);
+        trace!(
+            "Reading {} bytes, total bytes sent {}",
+            bytes_read,
+            ongoing_send.bytes_sent
+        );
         let mut vec: Vec<u8> = buf.into();
         if bytes_read < FILE_CHUNK_SIZE {
             vec.truncate(bytes_read)
@@ -376,7 +378,6 @@ impl Behaviour {
                     local_send_id: ongoing_send.local_send_id,
                 },
             });
-        println!("Reading {} bytes", bytes_read);
         if bytes_read == 0 {
             trace!(
                 "Finished, {} bytes total, {} bytes sent",
@@ -436,7 +437,10 @@ impl Behaviour {
                         local_recv_id: ongoing_recv.local_recv_id,
                         error: format!("{:?}", e),
                     };
-                    trace!("Failed to write data to file {:?}, terminating.", ongoing_recv.file_path);
+                    trace!(
+                        "Failed to write data to file {:?}, terminating.",
+                        ongoing_recv.file_path
+                    );
                     self.out_events.push_back(ev);
                     return; // Failed to write to file
                 }
@@ -572,7 +576,7 @@ impl NetworkBehaviour for Behaviour {
     fn poll(
         &mut self,
         _cx: &mut std::task::Context<'_>,
-    ) -> Poll<ToSwarm<super::OutEvent, handler::FromBehaviourEvent>> {
+    ) -> Poll<ToSwarm<super::OutEvent, FromBehaviourEvent>> {
         trace!(name:"Poll","Polling owlnest_blob::Behaviour");
         if let Some(ev) = self.out_events.pop_front() {
             return Poll::Ready(ToSwarm::GenerateEvent(ev));
@@ -585,9 +589,8 @@ impl NetworkBehaviour for Behaviour {
     }
 
     fn on_swarm_event(&mut self, event: FromSwarm) {
-        match &event {
-            FromSwarm::ConnectionClosed(info) => self.on_disconnect(info),
-            _ => {}
+        if let FromSwarm::ConnectionClosed(info) = event {
+            self.on_disconnect(&info)
         }
     }
 

@@ -1,5 +1,4 @@
 use std::sync::Mutex;
-
 use owlnest::{
     net::p2p::{identity::IdentityUnion, protocols, swarm::manager::Manager},
     *,
@@ -19,7 +18,7 @@ fn main() {
     let mgr = setup_peer(ident.clone(), rt.handle().clone());
     let shutdown_notifier = std::sync::Arc::new(Notify::const_new());
     cli::setup_interactive_shell(ident.clone(), mgr, shutdown_notifier.clone());
-    let _ = rt.block_on(shutdown_notifier.notified());
+    rt.block_on(shutdown_notifier.notified());
 }
 
 pub fn setup_peer(ident: IdentityUnion, executor: tokio::runtime::Handle) -> Manager {

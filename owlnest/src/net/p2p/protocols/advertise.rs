@@ -1,9 +1,8 @@
+use crate::net::p2p::swarm::{behaviour::BehaviourEvent, EventSender, SwarmEvent};
 use libp2p::PeerId;
 pub use owlnest_advertise::*;
-use std::sync::{atomic::AtomicU64, Arc};
-
-use crate::net::p2p::swarm::{behaviour::BehaviourEvent, EventSender, SwarmEvent};
 use owlnest_macro::{listen_event, with_timeout};
+use std::sync::{atomic::AtomicU64, Arc};
 use tokio::sync::mpsc;
 
 #[derive(Debug, Clone)]
@@ -250,8 +249,8 @@ Available subcommands:
 
 #[cfg(test)]
 mod test {
-    use libp2p::Multiaddr;
     use crate::net::p2p::test_suit::setup_default;
+    use libp2p::Multiaddr;
     use std::{thread, time::Duration};
 
     #[test]

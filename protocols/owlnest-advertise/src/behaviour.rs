@@ -1,9 +1,9 @@
 use super::*;
 use owlnest_prelude::behaviour_prelude::*;
-use std::collections::HashSet;
-use std::collections::VecDeque;
+use std::collections::{HashSet, VecDeque};
 use tracing::debug;
 
+#[derive(Debug, Default)]
 pub struct Behaviour {
     /// Pending events to emit to `Swarm`
     pending_out_events: VecDeque<OutEvent>,
@@ -43,19 +43,6 @@ impl Behaviour {
     }
 }
 
-impl Default for Behaviour {
-    fn default() -> Self {
-        Self {
-            pending_out_events: VecDeque::new(),
-            in_events: VecDeque::new(),
-            advertised_peers: HashSet::new(),
-            pending_query_answer: VecDeque::new(),
-            connected_peers: HashSet::new(),
-            is_providing: false,
-        }
-    }
-}
-
 impl NetworkBehaviour for Behaviour {
     type ConnectionHandler = handler::Handler;
     type ToSwarm = OutEvent;
@@ -76,10 +63,8 @@ impl NetworkBehaviour for Behaviour {
                     if self.advertised_peers.insert(peer_id) {
                         debug!("Now advertising peer {}", peer_id);
                     }
-                } else {
-                    if self.advertised_peers.remove(&peer_id) {
-                        debug!("Stopped advertising peer {}", peer_id);
-                    }
+                } else if self.advertised_peers.remove(&peer_id) {
+                    debug!("Stopped advertising peer {}", peer_id);
                 };
             }
             QueryAnswered(result) => self.pending_out_events.push_back(OutEvent::QueryAnswered {
