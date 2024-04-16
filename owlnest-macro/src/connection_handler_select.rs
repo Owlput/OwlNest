@@ -1,7 +1,7 @@
 #[macro_export]
 macro_rules! connection_handler_select {
     {$(use $path:path;)*$($name:ident=>$behaviour:ident:$handler:ty,)*} => {
-        
+
         pub mod handler{
             use libp2p::swarm::ConnectionHandler;
             use super::*;
@@ -40,7 +40,7 @@ macro_rules! connection_handler_select {
                 >,
             ) {
                 match error {
-                    $(inbound_upgrade_select::UpgradeErrorSelect::$behaviour(error)=> 
+                    $(inbound_upgrade_select::UpgradeErrorSelect::$behaviour(error)=>
                         self.$name.on_connection_event(
                             ::libp2p::swarm::handler::ConnectionEvent::ListenUpgradeError(
                                 ::libp2p::swarm::handler::ListenUpgradeError{
@@ -298,7 +298,7 @@ macro_rules! generate_future_select {
         ::owlnest_macro::generate_select_enum!(FutureSelect{$($behaviour:$future,)*});
 
         impl FutureSelect{
-            pub fn as_pin_mut(self: ::std::pin::Pin<&mut Self>)-> PinSelect{ 
+            pub fn as_pin_mut(self: ::std::pin::Pin<&mut Self>)-> PinSelect{
                 unsafe{
                     match *::std::pin::Pin::get_unchecked_mut(self){
                         $(

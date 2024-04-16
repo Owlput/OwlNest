@@ -9,14 +9,6 @@ pub fn generate_behaviour_select(_attr: TokenStream, item: TokenStream) -> Token
         syn::Data::Struct(data) => data,
         _ => panic!("Not applicable for types outside struct"),
     };
-    let struct_fields = selective_struct.fields.iter().map(|field| {
-        let ident = field.ident.as_ref().expect("Only for named field");
-        let path = syn::parse::<Path>(ident.to_token_stream().into()).unwrap();
-        let vis = &field.vis;
-        quote! {
-            #vis #ident: #path::Behaviour,
-        }
-    });
     let macro_fields = selective_struct.fields.iter().map(|field| {
         let ident = field.ident.as_ref().expect("Only for named field");
         let variant = syn::parse::<syn::Variant>(field.ty.to_token_stream().into()).unwrap();
@@ -25,9 +17,6 @@ pub fn generate_behaviour_select(_attr: TokenStream, item: TokenStream) -> Token
         }
     });
     quote! {
-        pub struct Behaviour {
-            #(#struct_fields)*
-        }
         behaviour_select!{
             #(#macro_fields)*
         }
@@ -44,7 +33,7 @@ pub fn with_field(attr: TokenStream, item: TokenStream) -> TokenStream {
     };
     let attributes = &ast.attrs;
     let struct_name = &ast.ident;
-    let fields_to_append = syn::parse::<syn::FieldsNamed>(attr.into()).unwrap();
+    let fields_to_append = syn::parse::<syn::FieldsNamed>(attr).unwrap();
     let fields_to_append_iter = fields_to_append.named.iter();
     let struct_fields = selective_struct.fields.iter();
     let vis = &ast.vis;
@@ -73,9 +62,10 @@ pub fn generate_manager(_attr: TokenStream, item: TokenStream) -> TokenStream {
     let paths2 = paths.clone();
     let paths3 = paths.clone();
     let paths4 = paths.clone();
-    let idents = selective_struct.fields.iter().map(|field| {
-        field.ident.clone().expect("Only for named field")
-    });
+    let idents = selective_struct
+        .fields
+        .iter()
+        .map(|field| field.ident.clone().expect("Only for named field"));
     let idents1 = idents.clone();
     let idents2 = idents.clone();
     let idents3 = idents.clone();
@@ -87,7 +77,9 @@ pub fn generate_manager(_attr: TokenStream, item: TokenStream) -> TokenStream {
     let idents9 = idents.clone();
     let idents10 = idents.clone();
     let variants = selective_struct.fields.iter().map(|field| {
-        syn::parse::<syn::Variant>(field.ty.to_token_stream().into()).unwrap().to_token_stream()
+        syn::parse::<syn::Variant>(field.ty.to_token_stream().into())
+            .unwrap()
+            .to_token_stream()
     });
     let variants1 = variants.clone();
     let variants2 = variants.clone();
@@ -109,7 +101,6 @@ pub fn generate_manager(_attr: TokenStream, item: TokenStream) -> TokenStream {
         }
         impl Future for RxBundle{
             type Output = Rx;
-        
             fn poll(self:Pin<&mut Self>,cx: &mut Context<'_>)->Poll<Self::Output>{
                 let mutable_self = self.get_mut();
                 match mutable_self.swarm.poll_recv(cx){
@@ -129,7 +120,6 @@ pub fn generate_manager(_attr: TokenStream, item: TokenStream) -> TokenStream {
         }
         impl Stream for RxBundle{
             type Item = Rx;
-        
             fn poll_next(self:Pin<&mut Self>,cx: &mut Context<'_>)->Poll<Option<Self::Item>>{
                 let mutable_self = self.get_mut();
                 match mutable_self.swarm.poll_recv(cx){
@@ -150,13 +140,11 @@ pub fn generate_manager(_attr: TokenStream, item: TokenStream) -> TokenStream {
         impl FusedStream for RxBundle{
             fn is_terminated(&self)->bool{false}
         }
-        
         #[derive(Debug)]
         pub(crate) enum Rx{
             #(#variants2(#paths1::InEvent),)*
             Swarm(swarm::InEvent)
         }
-        
         pub(crate) struct HandleBundle{
             swarm:SwarmHandle,
             #(pub #idents3:#paths2::Handle,)*

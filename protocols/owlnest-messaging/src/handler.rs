@@ -1,7 +1,7 @@
 use super::error::SendError;
 use super::{protocol, Config, Error, Message, PROTOCOL_NAME};
-use owlnest_prelude::handler_prelude::*;
 use futures_timer::Delay;
+use owlnest_prelude::handler_prelude::*;
 use std::{collections::VecDeque, time::Duration};
 use tracing::{debug, trace};
 
@@ -77,9 +77,7 @@ impl ConnectionHandler for Handler {
     type OutboundProtocol = ReadyUpgrade<&'static str>;
     type InboundOpenInfo = ();
     type OutboundOpenInfo = ();
-    fn listen_protocol(
-        &self,
-    ) -> SubstreamProtocol<Self::InboundProtocol, Self::InboundOpenInfo> {
+    fn listen_protocol(&self) -> SubstreamProtocol<Self::InboundProtocol, Self::InboundOpenInfo> {
         SubstreamProtocol::new(ReadyUpgrade::new(PROTOCOL_NAME), ())
     }
     fn on_behaviour_event(&mut self, event: Self::FromBehaviour) {
@@ -93,11 +91,7 @@ impl ConnectionHandler for Handler {
         &mut self,
         cx: &mut std::task::Context<'_>,
     ) -> std::task::Poll<
-        ConnectionHandlerEvent<
-            Self::OutboundProtocol,
-            Self::OutboundOpenInfo,
-            Self::ToBehaviour,
-        >,
+        ConnectionHandlerEvent<Self::OutboundProtocol, Self::OutboundOpenInfo, Self::ToBehaviour>,
     > {
         match self.state {
             State::Inactive { reported: true } => return Poll::Pending,

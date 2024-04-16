@@ -25,17 +25,17 @@ impl std::error::Error for Error {
 }
 
 #[derive(Debug, Clone)]
-pub enum SendError{
+pub enum SendError {
     ConnectionClosed,
     VerifierMismatch,
     PeerNotFound(PeerId),
     Timeout,
 }
 
-impl Display for SendError{
+impl Display for SendError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         use SendError::*;
-        match self{
+        match self {
             ConnectionClosed => f.write_str("Connection Closed"),
             VerifierMismatch => f.write_str("Message verifier mismatch"),
             Timeout => f.write_str("Message timed out"),

@@ -1,5 +1,5 @@
-use owlnest_proc::{generate_manager, with_field};
 use super::super::protocols::*;
+use owlnest_proc::{generate_manager, with_field};
 
 #[cfg_attr(feature = "owlnest-protocols",with_field({messaging:Messaging}))]
 #[cfg_attr(feature = "owlnest-protocols",with_field({advertise:Advertise}))]

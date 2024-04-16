@@ -22,6 +22,8 @@ macro_rules! behaviour_select {
         $(use crate::net::p2p::protocols::$name;)*
         use tracing::trace;
 
+        generate_select_struct!(Behaviour{$($name:$name::Behaviour,)*});
+
         generate_event_select!(
             #[derive(Debug)]
             /// A collection of all events from behaviours

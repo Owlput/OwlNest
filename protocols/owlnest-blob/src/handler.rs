@@ -190,7 +190,7 @@ impl Handler {
                 trace!("File stream with length {}", contents.len());
                 ToBehaviourEvent::RecvProgressed {
                     remote_send_id,
-                    contents:contents.to_vec(),
+                    contents: contents.to_vec(),
                 }
             }
             ReceiveCancelled { local_send_id } => ToBehaviourEvent::CancelSend { local_send_id },
@@ -211,7 +211,7 @@ impl Handler {
                 contents.shrink_to_fit();
                 let packet = Packet::File {
                     remote_send_id: local_send_id,
-                    contents:ByteBuf::from(contents),
+                    contents: ByteBuf::from(contents),
                 };
                 self.outbound = Some(OutboundState::Busy(
                     protocol::send(stream, packet.as_bytes()).boxed(),
@@ -314,7 +314,9 @@ impl ConnectionHandler for Handler {
         if let Some(fut) = self.inbound.as_mut() {
             trace!("Polling inbound");
             match fut.poll_unpin(cx) {
-                Poll::Pending => {trace!("Inbound pending")}
+                Poll::Pending => {
+                    trace!("Inbound pending")
+                }
                 Poll::Ready(Err(e)) => {
                     let error = Error::IO(format!("IO Error: {:?}", e));
                     self.pending_out_events

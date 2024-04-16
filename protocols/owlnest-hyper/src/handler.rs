@@ -1,14 +1,13 @@
 use super::{protocol, Config, Error, PROTOCOL_NAME};
-use owlnest_prelude::handler_prelude::*;
 use futures::Future;
 use hyper::body::Incoming;
 use hyper::client::conn::http1::SendRequest;
 use hyper::server::conn::http1;
 use hyper::service::service_fn;
 use hyper::{Request, Response};
+use owlnest_prelude::handler_prelude::*;
 use std::collections::VecDeque;
-use tokio::sync::mpsc;
-use tokio::sync::oneshot;
+use tokio::sync::{mpsc, oneshot};
 use tokio::task::JoinHandle;
 use tokio_util::bytes::Bytes;
 use tokio_util::compat::FuturesAsyncReadCompatExt;
@@ -43,10 +42,7 @@ pub struct Handler {
     server_event_tap: Option<mpsc::Receiver<String>>,
     client_event_tap: Option<mpsc::Receiver<String>>,
     client: Option<ClientState>,
-    ongoing_request: Option<(
-        std::pin::Pin<Box<dyn Future<Output = Result<Response<Incoming>, hyper::Error>> + Send>>,
-        oneshot::Sender<Response<Bytes>>,
-    )>,
+    ongoing_request: Option<OngoingSend>,
     pending_requests: VecDeque<(Request<String>, oneshot::Sender<Response<Bytes>>)>,
 }
 
@@ -98,9 +94,7 @@ impl ConnectionHandler for Handler {
     type OutboundProtocol = ReadyUpgrade<&'static str>;
     type InboundOpenInfo = ();
     type OutboundOpenInfo = ();
-    fn listen_protocol(
-        &self,
-    ) -> SubstreamProtocol<Self::InboundProtocol, Self::InboundOpenInfo> {
+    fn listen_protocol(&self) -> SubstreamProtocol<Self::InboundProtocol, Self::InboundOpenInfo> {
         SubstreamProtocol::new(ReadyUpgrade::new(PROTOCOL_NAME), ())
     }
     fn on_behaviour_event(&mut self, event: Self::FromBehaviour) {
@@ -114,11 +108,7 @@ impl ConnectionHandler for Handler {
         &mut self,
         cx: &mut std::task::Context<'_>,
     ) -> std::task::Poll<
-        ConnectionHandlerEvent<
-            Self::OutboundProtocol,
-            Self::OutboundOpenInfo,
-            Self::ToBehaviour,
-        >,
+        ConnectionHandlerEvent<Self::OutboundProtocol, Self::OutboundOpenInfo, Self::ToBehaviour>,
     > {
         match self.state {
             State::Inactive { reported: true } => return Poll::Pending,
@@ -337,3 +327,8 @@ mod services {
         Ok(Response::new("Hello, World!".into()))
     }
 }
+
+type OngoingSend = (
+    std::pin::Pin<Box<dyn Future<Output = Result<Response<Incoming>, hyper::Error>> + Send>>,
+    oneshot::Sender<Response<Bytes>>,
+);

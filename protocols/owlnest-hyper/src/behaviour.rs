@@ -100,9 +100,8 @@ impl NetworkBehaviour for Behaviour {
     }
 
     fn on_swarm_event(&mut self, event: FromSwarm) {
-        match &event {
-            FromSwarm::ConnectionClosed(info) => self.on_disconnect(info),
-            _ => {}
+        if let FromSwarm::ConnectionClosed(info) = event {
+            self.on_disconnect(&info);
         }
     }
 
