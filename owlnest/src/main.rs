@@ -1,12 +1,13 @@
-use std::sync::Mutex;
+use libp2p::StreamProtocol;
 use owlnest::{
     net::p2p::{identity::IdentityUnion, protocols, swarm::manager::Manager},
     *,
 };
+use std::sync::Mutex;
 use tokio::sync::Notify;
 use tracing::Level;
 use tracing_log::LogTracer;
-use tracing_subscriber::{filter::LevelFilter, prelude::__tracing_subscriber_SubscriberExt, Layer};
+use tracing_subscriber::{prelude::__tracing_subscriber_SubscriberExt, Layer};
 
 fn main() {
     let rt = tokio::runtime::Builder::new_multi_thread()
@@ -26,7 +27,7 @@ pub fn setup_peer(ident: IdentityUnion, executor: tokio::runtime::Handle) -> Man
     let swarm_config = net::p2p::SwarmConfig {
         local_ident: ident.clone(),
         #[cfg(feature = "libp2p-protocols")]
-        kad: protocols::kad::Config::default(),
+        kad: protocols::kad::Config::new(StreamProtocol::new("/ipfs/kad/1.0.0")),
         #[cfg(feature = "libp2p-protocols")]
         identify: protocols::identify::Config::new("/owlnest/0.0.1".into(), ident.get_pubkey()),
         #[cfg(feature = "libp2p-protocols")]
@@ -52,13 +53,7 @@ pub(crate) fn setup_logging() {
             }
         }
     };
-    let filter = tracing_subscriber::filter::Targets::new()
-        .with_target("owlnest", Level::DEBUG)
-        .with_target("rustyline", LevelFilter::ERROR)
-        .with_target("libp2p_noise", Level::WARN)
-        .with_target("libp2p_mdns", Level::DEBUG)
-        .with_target("hickory_proto", Level::WARN)
-        .with_target("", Level::TRACE);
+    let filter = tracing_subscriber::filter::Targets::new().with_target("", Level::INFO);
     let layer = tracing_subscriber::fmt::Layer::default()
         .with_ansi(false)
         .with_writer(Mutex::new(log_file_handle))

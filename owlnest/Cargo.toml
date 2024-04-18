@@ -8,9 +8,8 @@ crate-type = ["lib"]
 
 [dependencies]
 tokio = { workspace = true, features = ["full"] }
-libp2p = { workspace = true, features = ["full"] }
+libp2p = { workspace = true, default-features = false}
 libp2p-swarm = { workspace = true }
-libp2p-tls = { workspace = true }
 libp2p-noise = { workspace = true }
 libp2p-yamux = { workspace = true }
 tracing = { workspace = true }

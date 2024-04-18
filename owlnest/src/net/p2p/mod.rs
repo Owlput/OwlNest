@@ -62,6 +62,8 @@ mod handler_prelude {
 
 pub mod test_suit {
 
+    use libp2p::StreamProtocol;
+
     use super::*;
     pub fn setup_default() -> (Manager, Arc<Notify>) {
         let rt = tokio::runtime::Builder::new_multi_thread()
@@ -73,7 +75,7 @@ pub mod test_suit {
         let swarm_config = SwarmConfig {
             local_ident: ident.clone(),
             #[cfg(feature = "libp2p-protocols")]
-            kad: protocols::kad::Config::default(),
+            kad: protocols::kad::Config::new(StreamProtocol::new("/ipfs/kad/1.0.0")),
             #[cfg(feature = "libp2p-protocols")]
             identify: protocols::identify::Config::new("/owlnest/0.0.1".into(), ident.get_pubkey()),
             #[cfg(feature = "libp2p-protocols")]
