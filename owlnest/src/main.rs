@@ -1,12 +1,12 @@
-use std::sync::Mutex;
 use owlnest::{
     net::p2p::{identity::IdentityUnion, protocols, swarm::manager::Manager},
     *,
 };
+use std::sync::Mutex;
 use tokio::sync::Notify;
 use tracing::Level;
 use tracing_log::LogTracer;
-use tracing_subscriber::{filter::LevelFilter, prelude::__tracing_subscriber_SubscriberExt, Layer};
+use tracing_subscriber::{prelude::__tracing_subscriber_SubscriberExt, Layer};
 
 fn main() {
     let rt = tokio::runtime::Builder::new_multi_thread()
@@ -25,15 +25,15 @@ pub fn setup_peer(ident: IdentityUnion, executor: tokio::runtime::Handle) -> Man
     let _guard = executor.enter();
     let swarm_config = net::p2p::SwarmConfig {
         local_ident: ident.clone(),
-        #[cfg(feature = "libp2p-protocols")]
+        #[cfg(any(feature = "libp2p-protocols", feature = "libp2p-kad"))]
         kad: protocols::kad::Config::default(),
-        #[cfg(feature = "libp2p-protocols")]
+        #[cfg(any(feature = "libp2p-protocols", feature = "libp2p-identify"))]
         identify: protocols::identify::Config::new("/owlnest/0.0.1".into(), ident.get_pubkey()),
-        #[cfg(feature = "libp2p-protocols")]
+        #[cfg(any(feature = "libp2p-protocols", feature = "libp2p-mdns"))]
         mdns: protocols::mdns::Config::default(),
-        #[cfg(feature = "owlnest-protocols")]
+        #[cfg(any(feature = "owlnest-protocols", feature = "owlnest-messaging"))]
         messaging: protocols::messaging::Config::default(),
-        #[cfg(feature = "libp2p-protocols")]
+        #[cfg(any(feature = "libp2p-protocols", feature = "libp2p-relay-server"))]
         relay_server: protocols::relay_server::Config::default(),
     };
     net::p2p::swarm::Builder::new(swarm_config).build(8, executor)
@@ -52,13 +52,7 @@ pub(crate) fn setup_logging() {
             }
         }
     };
-    let filter = tracing_subscriber::filter::Targets::new()
-        .with_target("owlnest", Level::DEBUG)
-        .with_target("rustyline", LevelFilter::ERROR)
-        .with_target("libp2p_noise", Level::WARN)
-        .with_target("libp2p_mdns", Level::DEBUG)
-        .with_target("hickory_proto", Level::WARN)
-        .with_target("", Level::TRACE);
+    let filter = tracing_subscriber::filter::Targets::new().with_target("", Level::WARN);
     let layer = tracing_subscriber::fmt::Layer::default()
         .with_ansi(false)
         .with_writer(Mutex::new(log_file_handle))

@@ -12,11 +12,21 @@ resolver = "2"
 
 [workspace.dependencies]
 tokio = { version = "1", features = ["full"] }
-libp2p = { path = "../rust-libp2p/libp2p", features = ["full"] }
-libp2p-swarm = { path = "../rust-libp2p/swarm" }
-libp2p-tls = { path = "../rust-libp2p/transports/tls" }
-libp2p-noise = { path = "../rust-libp2p/transports/noise" }
-libp2p-yamux = { path = "../rust-libp2p/muxers/yamux" }
+libp2p = { path = "../../Owlput/rust-libp2p/libp2p", features = ["full"] }
+libp2p-swarm = { path = "../../Owlput/rust-libp2p/swarm" }
+libp2p-tls = { path = "../../Owlput/rust-libp2p/transports/tls" }
+libp2p-noise = { path = "../../Owlput/rust-libp2p/transports/noise" }
+libp2p-yamux = { path = "../../Owlput/rust-libp2p/muxers/yamux" }
+# libp2p = { path = "../../rust-libp2p/libp2p", features = ["full"] }
+# libp2p-swarm = { path = "../../rust-libp2p/swarm" }
+# libp2p-tls = { path = "../../rust-libp2p/transports/tls" }
+# libp2p-noise = { path = "../../rust-libp2p/transports/noise" }
+# libp2p-yamux = { path = "../../rust-libp2p/muxers/yamux" }
+# libp2p = { version = "*", features = ["full"] }
+# libp2p-swarm = "*"
+# libp2p-tls = "*"
+# libp2p-noise = "*"
+# libp2p-yamux = "*"
 futures = "0.3"
 futures-timer = "3"
 tracing = "0.1"

@@ -340,9 +340,9 @@ impl TryFrom<super::SwarmEvent> for SwarmEvent {
                 peer_id,
                 connection_id,
             },
-            libp2p::swarm::SwarmEvent::NewExternalAddrOfPeer { peer_id, address } => {
-                Self::NewExternalAddrOfPeer { peer_id, address }
-            }
+            // libp2p::swarm::SwarmEvent::NewExternalAddrOfPeer { peer_id, address } => {
+            //     Self::NewExternalAddrOfPeer { peer_id, address }
+            // }
             uncovered => unimplemented!("New branch {:?} not covered", uncovered),
         };
         Ok(ev)
@@ -351,10 +351,10 @@ impl TryFrom<super::SwarmEvent> for SwarmEvent {
 
 use crate::net::p2p::protocols::*;
 pub struct OutEventBundle {
-    #[cfg(feature = "owlnest-protocols")]
+    #[cfg(any(feature = "owlnest-protocols", feature = "owlnest-messaging"))]
     pub messaging_rx: mpsc::Receiver<messaging::OutEvent>,
-    #[cfg(feature = "libp2p-protocols")]
+    #[cfg(any(feature = "libp2p-protocols", feature = "libp2p-relay-client"))]
     pub relay_client_rx: mpsc::Receiver<relay_client::OutEvent>,
-    #[cfg(feature = "libp2p-protocols")]
+    #[cfg(any(feature = "libp2p-protocols", feature = "libp2p-relay-server"))]
     pub relay_server_rx: mpsc::Receiver<relay_server::OutEvent>,
 }

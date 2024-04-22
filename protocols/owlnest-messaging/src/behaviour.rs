@@ -45,10 +45,13 @@ impl NetworkBehaviour for Behaviour {
         use handler::ToBehaviourEvent::*;
         match event {
             IncomingMessage(bytes) => match serde_json::from_slice::<Message>(&bytes) {
-                Ok(msg) => self.out_events.push_back(OutEvent::IncomingMessage {
-                    from: msg.from,
-                    msg,
-                }),
+                Ok(msg) => {
+                    trace!("Incoming message from {}: {}", peer_id, msg.msg);
+                    self.out_events.push_back(OutEvent::IncomingMessage {
+                        from: msg.from,
+                        msg,
+                    })
+                }
                 Err(e) => {
                     self.out_events
                         .push_back(OutEvent::Error(super::Error::UnrecognizedMessage(format!(

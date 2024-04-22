@@ -59,15 +59,15 @@ pub struct Handler {
     inbound: Option<PendingVerf>,
     outbound: Option<OutboundState>,
 }
-impl Default for Handler{
+impl Default for Handler {
     fn default() -> Self {
-        Self{
+        Self {
             timeout: Duration::from_secs(20),
-            pending_in_events:Default::default(),
-            pending_out_events:Default::default(),
-            state:Default::default(),
-            inbound:Default::default(),
-            outbound:Default::default()
+            pending_in_events: Default::default(),
+            pending_out_events: Default::default(),
+            state: Default::default(),
+            inbound: Default::default(),
+            outbound: Default::default(),
         }
     }
 }
