@@ -26,9 +26,9 @@ pub fn setup_peer(ident: IdentityUnion, executor: tokio::runtime::Handle) -> Man
     let _guard = executor.enter();
     let swarm_config = net::p2p::SwarmConfig {
         local_ident: ident.clone(),
-        #[cfg(feature = "libp2p-protocols")]
+        #[cfg(any(feature = "libp2p-protocols", feature = "libp2p-kad"))]
         kad: protocols::kad::Config::new(StreamProtocol::new("/ipfs/kad/1.0.0")),
-        #[cfg(feature = "libp2p-protocols")]
+        #[cfg(any(feature = "libp2p-protocols", feature = "libp2p-identify"))]
         identify: protocols::identify::Config::new("/owlnest/0.0.1".into(), ident.get_pubkey()),
         #[cfg(any(feature = "libp2p-protocols", feature = "libp2p-mdns"))]
         mdns: protocols::mdns::Config::default(),
