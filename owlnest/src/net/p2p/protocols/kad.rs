@@ -294,6 +294,9 @@ Available Subcommands:
     query <peer ID>        
         Initiate a query for the given peer.
         This will notify peers in the network to lookup the peer.
+    
+    lookup <peer ID>
+        Perform lookup on local address book.
 
     bootstrap
         Start traversing the DHT network to get latest information
