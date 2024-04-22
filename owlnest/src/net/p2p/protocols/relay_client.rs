@@ -102,33 +102,43 @@ pub(crate) mod cli {
 
 #[cfg(test)]
 mod test {
-    use crate::net::p2p::test_suit::setup_default;
+    use crate::net::p2p::{swarm::Manager, test_suit::setup_default};
     use libp2p::{multiaddr::Protocol, Multiaddr};
-    use std::{thread, time::Duration};
+    use owlnest_macro::listen_event;
+    use std::{
+        io::stdout,
+        sync::{atomic::AtomicU8, Arc},
+        thread,
+        time::Duration,
+    };
 
     #[test]
     fn test() {
+        setup_logging();
         let (peer1_m, _) = setup_default();
         let (peer2_m, _) = setup_default();
         let (peer3_m, _) = setup_default();
+        println!("server:{}", peer1_m.identity().get_peer_id());
+        println!("listener:{}", peer2_m.identity().get_peer_id());
+        println!("dialer:{}", peer3_m.identity().get_peer_id());
         assert!(peer1_m
             .swarm()
             .listen_blocking(&"/ip4/127.0.0.1/tcp/0".parse::<Multiaddr>().unwrap()) // Pick a random port that is available
             .is_ok());
         thread::sleep(Duration::from_millis(100));
+        let mut server_address = peer1_m.swarm().list_listeners_blocking();
+        server_address.retain(|addr| addr.to_string().contains("127.0.0.1"));
+        let server_address = server_address.first().cloned().unwrap();
         peer1_m
             .swarm()
-            .add_external_address_blocking(peer1_m.swarm().list_listeners_blocking()[0].clone()); // The address is on local network
-        thread::sleep(Duration::from_millis(100));
-        assert!(peer2_m
-            .swarm()
-            .dial_blocking(&peer1_m.swarm().list_listeners_blocking()[0])
-            .is_ok());
+            .add_external_address_blocking(server_address.clone()); // The address is on local network
+        thread::sleep(Duration::from_millis(20000));
+        assert!(peer2_m.swarm().dial_blocking(&server_address).is_ok());
         thread::sleep(Duration::from_millis(200));
         assert!(peer2_m
             .swarm()
             .listen_blocking(
-                &peer1_m.swarm().list_listeners_blocking()[0]
+                &server_address
                     .clone()
                     .with(Protocol::P2p(peer1_m.identity().get_peer_id()))
                     .with(Protocol::P2pCircuit)
@@ -139,16 +149,122 @@ mod test {
         assert!(peer3_m
             .swarm()
             .dial_blocking(
-                &peer1_m.swarm().list_listeners_blocking()[0]
+                &server_address
                     .clone()
                     .with(Protocol::P2p(peer1_m.identity().get_peer_id()))
                     .with(Protocol::P2pCircuit)
                     .with(Protocol::P2p(peer2_m.identity().get_peer_id()))
             )
             .is_ok());
-        thread::sleep(Duration::from_millis(200));
+        thread::sleep(Duration::from_millis(1000));
         assert!(peer3_m
             .swarm()
             .is_connected_blocking(peer2_m.identity().get_peer_id()));
+        #[cfg(any(feature = "owlnest-protocols", feature = "owlnest-messaging"))]
+        with_messaging(&peer1_m, &peer2_m, &peer3_m);
+    }
+
+    #[cfg(any(feature = "owlnest-protocols", feature = "owlnest-messaging"))]
+    fn with_messaging(peer1_m: &Manager, peer2_m: &Manager, peer3_m: &Manager) {
+        use owlnest_messaging::Message;
+        use std::sync::atomic::Ordering;
+        println!("testing with messaging");
+        let counter = Arc::new(AtomicU8::new(0));
+        listen_message(peer1_m, counter.clone());
+        listen_message(peer2_m, counter.clone());
+        listen_message(peer3_m, counter.clone());
+        let _ = peer2_m
+            .executor()
+            .block_on(peer2_m.messaging().send_message(
+                peer1_m.identity().get_peer_id(),
+                Message::new(
+                    peer2_m.identity().get_peer_id(),
+                    peer1_m.identity().get_peer_id(),
+                    "Hi",
+                ),
+            ));
+        let _ = peer2_m
+            .executor()
+            .block_on(peer2_m.messaging().send_message(
+                peer3_m.identity().get_peer_id(),
+                Message::new(
+                    peer2_m.identity().get_peer_id(),
+                    peer3_m.identity().get_peer_id(),
+                    "Hi",
+                ),
+            ));
+        let _ = peer1_m
+            .executor()
+            .block_on(peer1_m.messaging().send_message(
+                peer3_m.identity().get_peer_id(),
+                Message::new(
+                    peer1_m.identity().get_peer_id(),
+                    peer3_m.identity().get_peer_id(),
+                    "Hi",
+                ),
+            ));
+        let _ = peer3_m
+            .executor()
+            .block_on(peer3_m.messaging().send_message(
+                peer1_m.identity().get_peer_id(),
+                Message::new(
+                    peer3_m.identity().get_peer_id(),
+                    peer1_m.identity().get_peer_id(),
+                    "Hi",
+                ),
+            ));
+        let _ = peer3_m
+            .executor()
+            .block_on(peer3_m.messaging().send_message(
+                peer2_m.identity().get_peer_id(),
+                Message::new(
+                    peer3_m.identity().get_peer_id(),
+                    peer2_m.identity().get_peer_id(),
+                    "Hi",
+                ),
+            ));
+        thread::sleep(Duration::from_millis(1000));
+        assert_eq!(counter.fetch_add(0, Ordering::Relaxed), 5)
+    }
+
+    fn setup_logging() {
+        use std::sync::Mutex;
+        use tracing::Level;
+        use tracing_log::LogTracer;
+        use tracing_subscriber::layer::SubscriberExt;
+        use tracing_subscriber::Layer;
+        let filter = tracing_subscriber::filter::Targets::new()
+            .with_target("owlnest", Level::DEBUG)
+            .with_target("owlnest::net::p2p::protocols::kad", Level::WARN)
+            .with_target("libp2p_core::transport::choice", Level::WARN)
+            .with_target("yamux", Level::WARN)
+            .with_target("hickory_proto", Level::WARN)
+            .with_target("libp2p_mdns", Level::WARN)
+            .with_target("libp2p_noise", Level::WARN)
+            .with_target("libp2p_kad", Level::WARN)
+            .with_target("libp2p_relay", Level::TRACE)
+            .with_target("libp2p_identify", Level::WARN)
+            .with_target("libp2p", Level::TRACE)
+            .with_target("multistream_select", Level::INFO)
+            .with_target("owlnest_messaging", Level::TRACE)
+            .with_target("", Level::TRACE);
+        let layer = tracing_subscriber::fmt::Layer::default()
+            .with_ansi(false)
+            .with_writer(Mutex::new(stdout()))
+            .with_filter(filter);
+        let reg = tracing_subscriber::registry().with(layer);
+        tracing::subscriber::set_global_default(reg).expect("you can only set global default once");
+        LogTracer::init().unwrap()
+    }
+
+    fn listen_message(mgr: &Manager, counter: Arc<AtomicU8>) {
+        use owlnest_messaging::OutEvent;
+        use std::sync::atomic::Ordering;
+        let mut listener = mgr.event_subscriber().subscribe();
+        mgr.executor().spawn(
+            listen_event!( listener for Messaging, OutEvent::IncomingMessage { .. }=>{
+                counter.fetch_add(1, Ordering::Relaxed);
+            } ),
+        );
     }
 }

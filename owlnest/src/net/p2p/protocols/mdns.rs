@@ -52,6 +52,7 @@ pub(crate) fn map_in_event(ev: InEvent, behav: &mut Behaviour) {
 }
 
 pub fn ev_dispatch(ev: &OutEvent, swarm: &mut Swarm) {
+    #[cfg(any(feature = "libp2p-protocols", feature = "libp2p-kad"))]
     match ev.clone() {
         libp2p::mdns::Event::Discovered(list) => {
             list.into_iter()

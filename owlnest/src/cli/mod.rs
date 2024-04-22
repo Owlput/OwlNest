@@ -22,7 +22,7 @@ pub fn setup_interactive_shell(
     std::thread::spawn(move || {
         stdout().execute(Clear(ClearType::All)).unwrap();
         println!("OwlNest is now running in interactive mode, type \"help\" for more information.");
-        #[cfg(feature = "owlnest-protocols")]
+        #[cfg(any(feature = "owlnest-protocols", feature = "owlnest-messaging"))]
         messaging::cli::setup(&manager);
         let mut rl = DefaultEditor::new().unwrap();
         let mut retry_times = 0u32;
@@ -77,15 +77,15 @@ fn handle_command(
             shutdown_notifier.notify_one()
         }
         "swarm" => swarm::cli::handle_swarm(manager.swarm(), command),
-        #[cfg(feature = "owlnest-protocols")]
+        #[cfg(any(feature = "owlnest-protocols", feature = "owlnest-messaging"))]
         "messaging" => messaging::cli::handle_messaging(manager, ident, command),
-        #[cfg(feature = "libp2p-protocols")]
+        #[cfg(any(feature = "libp2p-protocols", feature = "libp2p-kad"))]
         "kad" => kad::cli::handle_kad(manager, command),
-        #[cfg(feature = "libp2p-protocols")]
+        #[cfg(any(feature = "libp2p-protocols", feature = "libp2p-mdns"))]
         "mdns" => mdns::cli::handle_mdns(manager, command),
-        #[cfg(feature = "libp2p-protocols")]
+        #[cfg(any(feature = "libp2p-protocols", feature = "libp2p-relay-client"))]
         "relay-client" => relay_client::cli::handle_relayclient(manager, command),
-        #[cfg(feature = "owlnest-protocols")]
+        #[cfg(any(feature = "owlnest-protocols", feature = "owlnest-advertise"))]
         "advertise" => advertise::cli::handle_advertise(manager, command),
         "utils" => handle_utils(command),
         "" => {}

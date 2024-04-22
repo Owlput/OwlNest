@@ -43,6 +43,6 @@ pub(crate) fn ev_dispatch(ev: &OutEvent) {
             "Circuit from {} to {} closed, error?: {:?}",
             src_peer_id, dst_peer_id, error
         ),
-        _ => {}
+        ev => info!("{:?}", ev),
     }
 }
