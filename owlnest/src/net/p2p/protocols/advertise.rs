@@ -1,4 +1,4 @@
-use crate::net::p2p::swarm::{behaviour::BehaviourEvent, EventSender, SwarmEvent};
+use crate::net::p2p::swarm::EventSender;
 use libp2p::PeerId;
 pub use owlnest_advertise::*;
 use owlnest_macro::{listen_event, with_timeout};

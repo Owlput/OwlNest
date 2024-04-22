@@ -87,6 +87,7 @@ pub mod utils {
     macro_rules! listen_event {
         ($listener:ident for $behaviour:ident,$pattern:pat=>{$($ops:tt)+}) => {
             async move{
+                use crate::net::p2p::swarm::{SwarmEvent, BehaviourEvent};
                 while let Ok(ev) = $listener.recv().await{
                     if let SwarmEvent::Behaviour(BehaviourEvent::$behaviour($pattern)) = ev.as_ref() {
                         $($ops)+

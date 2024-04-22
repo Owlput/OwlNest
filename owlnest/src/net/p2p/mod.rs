@@ -15,30 +15,30 @@ pub use libp2p::PeerId;
 
 pub struct SwarmConfig {
     pub local_ident: IdentityUnion,
-    #[cfg(feature = "libp2p-protocols")]
+    #[cfg(any(feature = "libp2p-protocols", feature = "libp2p-kad"))]
     pub kad: kad::Config,
-    #[cfg(feature = "libp2p-protocols")]
+    #[cfg(any(feature = "libp2p-protocols", feature = "libp2p-identify"))]
     pub identify: identify::Config,
-    #[cfg(feature = "libp2p-protocols")]
+    #[cfg(any(feature = "libp2p-protocols", feature = "libp2p-mdns"))]
     pub mdns: mdns::Config,
-    #[cfg(feature = "owlnest-protocols")]
+    #[cfg(any(feature = "owlnest-protocols", feature = "owlnest-messaging"))]
     pub messaging: messaging::Config,
-    #[cfg(feature = "libp2p-protocols")]
+    #[cfg(any(feature = "libp2p-protocols", feature = "libp2p-relay-server"))]
     pub relay_server: libp2p::relay::Config,
 }
 impl SwarmConfig {
     pub fn default_with_ident(ident: &IdentityUnion) -> Self {
         Self {
             local_ident: ident.clone(),
-            #[cfg(feature = "libp2p-protocols")]
+            #[cfg(any(feature = "libp2p-protocols", feature = "libp2p-kad"))]
             kad: Default::default(),
-            #[cfg(feature = "libp2p-protocols")]
+            #[cfg(any(feature = "libp2p-protocols", feature = "libp2p-identify"))]
             identify: identify::Config::new("/owlnest/0.0.1".into(), ident.get_pubkey()),
-            #[cfg(feature = "libp2p-protocols")]
+            #[cfg(any(feature = "libp2p-protocols", feature = "libp2p-mdns"))]
             mdns: Default::default(),
-            #[cfg(feature = "owlnest-protocols")]
+            #[cfg(any(feature = "owlnest-protocols", feature = "owlnest-messaging"))]
             messaging: Default::default(),
-            #[cfg(feature = "libp2p-protocols")]
+            #[cfg(any(feature = "libp2p-protocols", feature = "libp2p-relay-server"))]
             relay_server: Default::default(),
         }
     }
@@ -78,11 +78,11 @@ pub mod test_suit {
             kad: protocols::kad::Config::new(StreamProtocol::new("/ipfs/kad/1.0.0")),
             #[cfg(feature = "libp2p-protocols")]
             identify: protocols::identify::Config::new("/owlnest/0.0.1".into(), ident.get_pubkey()),
-            #[cfg(feature = "libp2p-protocols")]
+            #[cfg(any(feature = "libp2p-protocols", feature = "libp2p-mdns"))]
             mdns: protocols::mdns::Config::default(),
-            #[cfg(feature = "owlnest-protocols")]
+            #[cfg(any(feature = "owlnest-protocols", feature = "owlnest-messaging"))]
             messaging: protocols::messaging::Config::default(),
-            #[cfg(feature = "libp2p-protocols")]
+            #[cfg(any(feature = "libp2p-protocols", feature = "libp2p-relay-server"))]
             relay_server: protocols::relay_server::Config::default(),
         };
         let mgr = swarm::Builder::new(swarm_config).build(8, rt.handle().clone());

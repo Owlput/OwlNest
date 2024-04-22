@@ -30,11 +30,11 @@ pub fn setup_peer(ident: IdentityUnion, executor: tokio::runtime::Handle) -> Man
         kad: protocols::kad::Config::new(StreamProtocol::new("/ipfs/kad/1.0.0")),
         #[cfg(feature = "libp2p-protocols")]
         identify: protocols::identify::Config::new("/owlnest/0.0.1".into(), ident.get_pubkey()),
-        #[cfg(feature = "libp2p-protocols")]
+        #[cfg(any(feature = "libp2p-protocols", feature = "libp2p-mdns"))]
         mdns: protocols::mdns::Config::default(),
-        #[cfg(feature = "owlnest-protocols")]
+        #[cfg(any(feature = "owlnest-protocols", feature = "owlnest-messaging"))]
         messaging: protocols::messaging::Config::default(),
-        #[cfg(feature = "libp2p-protocols")]
+        #[cfg(any(feature = "libp2p-protocols", feature = "libp2p-relay-server"))]
         relay_server: protocols::relay_server::Config::default(),
     };
     net::p2p::swarm::Builder::new(swarm_config).build(8, executor)
@@ -53,7 +53,7 @@ pub(crate) fn setup_logging() {
             }
         }
     };
-    let filter = tracing_subscriber::filter::Targets::new().with_target("", Level::INFO);
+    let filter = tracing_subscriber::filter::Targets::new().with_target("", Level::WARN);
     let layer = tracing_subscriber::fmt::Layer::default()
         .with_ansi(false)
         .with_writer(Mutex::new(log_file_handle))

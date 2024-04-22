@@ -1,7 +1,7 @@
 use crate::net::p2p::swarm::manager::HandleBundle;
 use futures::StreamExt;
 use libp2p::PeerId;
-use std::{fmt::Debug, sync::Arc};
+use std::{fmt::Debug, sync::Arc, time::Duration};
 use tokio::select;
 use tracing::{trace, trace_span, warn};
 
@@ -18,7 +18,7 @@ pub use manager::Manager;
 pub type EventSender = tokio::sync::broadcast::Sender<Arc<SwarmEvent>>;
 
 use super::SwarmConfig;
-use behaviour::BehaviourEvent;
+pub use behaviour::BehaviourEvent;
 use event_handlers::*;
 
 pub type Swarm = libp2p::Swarm<behaviour::Behaviour>;
@@ -38,9 +38,9 @@ impl Builder {
         let guard = executor.enter();
         let ident = self.config.local_ident.clone();
         use crate::net::p2p::protocols::*;
-        #[cfg(feature = "libp2p-protocols")]
+        #[cfg(any(feature = "libp2p-protocols", feature = "libp2p-kad"))]
         let kad_store = libp2p::kad::store::MemoryStore::new(ident.get_peer_id());
-        let (swarm_event_out, _) = tokio::sync::broadcast::channel(16);
+        let (swarm_event_out, _) = tokio::sync::broadcast::channel(256);
         let (handle_bundle, mut rx_bundle) = HandleBundle::new(buffer_size, &swarm_event_out);
         let manager = manager::Manager::new(
             Arc::new(handle_bundle),
@@ -70,35 +70,36 @@ impl Builder {
                 .with_relay_client(libp2p_noise::Config::new, libp2p_yamux::Config::default)
                 .expect("transport upgrade to succeed")
                 .with_behaviour(|_key, #[allow(unused)] relay| behaviour::Behaviour {
-                    #[cfg(feature = "owlnest-protocols")]
+                    #[cfg(any(feature = "owlnest-protocols", feature = "owlnest-blob"))]
                     blob: blob::Behaviour::new(Default::default()),
-                    #[cfg(feature = "owlnest-protocols")]
+                    #[cfg(any(feature = "owlnest-protocols", feature = "owlnest-advertise"))]
                     advertise: advertise::Behaviour::new(),
-                    #[cfg(feature = "owlnest-protocols")]
+                    #[cfg(any(feature = "owlnest-protocols", feature = "owlnest-messaging"))]
                     messaging: messaging::Behaviour::new(self.config.messaging),
-                    #[cfg(feature = "libp2p-protocols")]
+                    #[cfg(any(feature = "libp2p-protocols", feature = "libp2p-kad"))]
                     kad: kad::Behaviour::new(ident.get_peer_id(), kad_store),
-                    #[cfg(feature = "libp2p-protocols")]
+                    #[cfg(any(feature = "libp2p-protocols", feature = "libp2p-mdns"))]
                     mdns: mdns::Behaviour::new(self.config.mdns, ident.get_peer_id()).unwrap(),
-                    #[cfg(feature = "libp2p-protocols")]
+                    #[cfg(any(feature = "libp2p-protocols", feature = "libp2p-identify"))]
                     identify: identify::Behaviour::new(self.config.identify),
-                    #[cfg(feature = "libp2p-protocols")]
+                    #[cfg(any(feature = "libp2p-protocols", feature = "libp2p-relay-server"))]
                     relay_server: libp2p::relay::Behaviour::new(
                         self.config.local_ident.get_peer_id(),
                         libp2p::relay::Config {
-                            max_circuit_bytes: u64::MAX,
+                            max_circuit_bytes: 1 << 20,
+                            max_circuit_duration: Duration::from_secs(86400),
                             ..Default::default()
                         },
                     ),
-                    #[cfg(feature = "libp2p-protocols")]
+                    #[cfg(any(feature = "libp2p-protocols", feature = "libp2p-relay-client"))]
                     relay_client: relay,
-                    #[cfg(feature = "libp2p-protocols")]
+                    #[cfg(any(feature = "libp2p-protocols", feature = "libp2p-dcutr"))]
                     dcutr: dcutr::Behaviour::new(ident.get_peer_id()),
-                    #[cfg(feature = "libp2p-protocols")]
+                    #[cfg(any(feature = "libp2p-protocols", feature = "libp2p-autonat"))]
                     autonat: autonat::Behaviour::new(ident.get_peer_id(), Default::default()),
-                    #[cfg(feature = "libp2p-protocols")]
+                    #[cfg(any(feature = "libp2p-protocols", feature = "libp2p-upnp"))]
                     upnp: upnp::Behaviour::default(),
-                    #[cfg(feature = "libp2p-protocols")]
+                    #[cfg(any(feature = "libp2p-protocols", feature = "libp2p-ping"))]
                     ping: ping::Behaviour::new(Default::default()),
                     // hyper:hyper::Behaviour::new(Default::default())
                 })
@@ -115,7 +116,7 @@ impl Builder {
                         trace!("Received incoming event {:?}",ev);
                         handle_incoming_event(ev, &mut swarm)
                     },
-                    out_event = swarm.select_next_some(), if event_out.len() < 12 => {
+                    out_event = swarm.select_next_some(), if event_out.len() < 250 => {
                         trace!("Swarm generated an event {:?}",out_event);
                         handle_swarm_event(&out_event,&mut swarm).await;
                         let _ = event_out.send(Arc::new(out_event));

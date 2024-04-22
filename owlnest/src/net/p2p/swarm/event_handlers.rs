@@ -6,7 +6,7 @@ use tracing::{debug, info, trace};
 
 #[inline]
 pub async fn handle_swarm_event(ev: &super::SwarmEvent, swarm: &mut Swarm) {
-    #[cfg(feature = "libp2p-protocols")]
+    #[cfg(any(feature = "libp2p-protocols", feature = "libp2p-kad"))]
     use crate::net::p2p::kad::swarm_hooks::*;
     use libp2p::swarm::SwarmEvent::*;
     #[allow(unused)]
@@ -15,14 +15,14 @@ pub async fn handle_swarm_event(ev: &super::SwarmEvent, swarm: &mut Swarm) {
         ConnectionEstablished {
             peer_id, endpoint, ..
         } => {
-            #[cfg(feature = "libp2p-protocols")]
+            #[cfg(any(feature = "libp2p-protocols", feature = "libp2p-kad"))]
             kad_add(swarm, *peer_id, endpoint.clone());
         }
         ConnectionClosed {
             peer_id, endpoint, ..
         } =>
         {
-            #[cfg(feature = "libp2p-protocols")]
+            #[cfg(any(feature = "libp2p-protocols", feature = "libp2p-kad"))]
             kad_remove(swarm, *peer_id, endpoint.clone())
         }
         IncomingConnection {
@@ -50,7 +50,7 @@ pub async fn handle_swarm_event(ev: &super::SwarmEvent, swarm: &mut Swarm) {
                         TransportError::MultiaddrNotSupported(addr) => {
                             (addr.clone(), "MultiaddrNotSupported".to_string())
                         }
-                        TransportError::Other(e) => (err.0.clone(), e.kind().to_string()),
+                        TransportError::Other(e) => (err.0.clone(), e.to_string()),
                     };
                 let info = transport_err
                     .iter()
@@ -102,17 +102,17 @@ pub fn handle_incoming_event(ev: Rx, swarm: &mut Swarm) {
     trace!("Receive incoming event {:?}", ev);
     match ev {
         Swarm(ev) => swarm_op_exec(swarm, ev),
-        #[cfg(feature = "owlnest-protocols")]
+        #[cfg(any(feature = "owlnest-protocols", feature = "owlnest-advertise"))]
         Advertise(ev) => swarm.behaviour_mut().advertise.push_event(ev),
-        #[cfg(feature = "owlnest-protocols")]
+        #[cfg(any(feature = "owlnest-protocols", feature = "owlnest-blob"))]
         Blob(ev) => swarm.behaviour_mut().blob.push_event(ev),
-        #[cfg(feature = "owlnest-protocols")]
+        #[cfg(any(feature = "owlnest-protocols", feature = "owlnest-messaging"))]
         Messaging(ev) => swarm.behaviour_mut().messaging.push_event(ev),
-        #[cfg(feature = "libp2p-protocols")]
+        #[cfg(any(feature = "libp2p-protocols", feature = "libp2p-kad"))]
         Kad(ev) => kad::map_in_event(ev, &mut swarm.behaviour_mut().kad),
-        #[cfg(feature = "libp2p-protocols")]
+        #[cfg(any(feature = "libp2p-protocols", feature = "libp2p-mdns"))]
         Mdns(ev) => mdns::map_in_event(ev, &mut swarm.behaviour_mut().mdns),
-        #[cfg(feature = "libp2p-protocols")]
+        #[cfg(any(feature = "libp2p-protocols", feature = "libp2p-autonat"))]
         AutoNat(ev) => autonat::map_in_event(&mut swarm.behaviour_mut().autonat, ev),
     }
 }
@@ -160,21 +160,21 @@ fn handle_behaviour_event(swarm: &mut Swarm, ev: &BehaviourEvent) {
     use super::behaviour::BehaviourEvent::*;
     use protocols::*;
     match ev {
-        #[cfg(feature = "libp2p-protocols")]
+        #[cfg(any(feature = "libp2p-protocols", feature = "libp2p-kad"))]
         Kad(ev) => kad::ev_dispatch(ev),
-        #[cfg(feature = "libp2p-protocols")]
+        #[cfg(any(feature = "libp2p-protocols", feature = "libp2p-identify"))]
         Identify(ev) => identify::ev_dispatch(ev),
-        #[cfg(feature = "libp2p-protocols")]
+        #[cfg(any(feature = "libp2p-protocols", feature = "libp2p-mdns"))]
         Mdns(ev) => mdns::ev_dispatch(ev, swarm),
-        #[cfg(feature = "libp2p-protocols")]
+        #[cfg(any(feature = "libp2p-protocols", feature = "libp2p-relay-server"))]
         RelayServer(ev) => relay_server::ev_dispatch(ev),
-        #[cfg(feature = "libp2p-protocols")]
+        #[cfg(any(feature = "libp2p-protocols", feature = "libp2p-dcutr"))]
         Dcutr(ev) => dcutr::ev_dispatch(ev),
-        #[cfg(feature = "libp2p-protocols")]
+        #[cfg(any(feature = "libp2p-protocols", feature = "libp2p-autonat"))]
         AutoNat(ev) => autonat::ev_dispatch(ev),
-        #[cfg(feature = "libp2p-protocols")]
+        #[cfg(any(feature = "libp2p-protocols", feature = "libp2p-upnp"))]
         Upnp(ev) => upnp::ev_dispatch(ev),
-        #[cfg(feature = "libp2p-protocols")]
+        #[cfg(any(feature = "libp2p-protocols", feature = "libp2p-ping"))]
         Ping(ev) => ping::ev_dispatch(ev),
         _ => {}
     }
