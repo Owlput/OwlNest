@@ -1,11 +1,11 @@
 use super::{behaviour::BehaviourEvent, manager::Rx, InEvent, Swarm};
 use crate::net::p2p::protocols;
-use libp2p::Multiaddr;
+use libp2p::{Multiaddr, PeerId};
 use owlnest_macro::handle_callback_sender;
 use tracing::{debug, info, trace};
 
 #[inline]
-pub async fn handle_swarm_event(ev: &super::SwarmEvent, swarm: &mut Swarm) {
+pub async fn handle_swarm_event(ev: &super::SwarmEvent, swarm: &mut Swarm, self_peer_id:&PeerId) {
     #[cfg(feature = "libp2p-protocols")]
     use crate::net::p2p::kad::swarm_hooks::*;
     use libp2p::swarm::SwarmEvent::*;
@@ -56,12 +56,12 @@ pub async fn handle_swarm_event(ev: &super::SwarmEvent, swarm: &mut Swarm) {
                     .iter()
                     .map(closure)
                     .collect::<Vec<(Multiaddr, String)>>();
-                info!("Outgoing connection error: {:?}", info);
+                info!("Outgoing connection error: {:?},self:{}", info, self_peer_id);
                 return;
             }
             info!(
-                "Outgoing connection error to peer {:?}: {:?}",
-                peer_id, error
+                "Outgoing connection error to peer {:?}: {:?}, self:{}",
+                peer_id, error, self_peer_id
             );
         }
         NewListenAddr { address, .. } => info!("Listening on {:?}", address),

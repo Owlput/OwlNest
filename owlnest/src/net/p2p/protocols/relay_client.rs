@@ -108,9 +108,13 @@ mod test {
 
     #[test]
     fn test() {
+        setup_logging();
         let (peer1_m, _) = setup_default();
+        println!("server {} setup",peer1_m.identity().get_peer_id());
         let (peer2_m, _) = setup_default();
+        println!("listener {} setup",peer2_m.identity().get_peer_id());
         let (peer3_m, _) = setup_default();
+        println!("dialer {} setup",peer3_m.identity().get_peer_id());
         assert!(peer1_m
             .swarm()
             .listen_blocking(&"/ip4/127.0.0.1/tcp/0".parse::<Multiaddr>().unwrap()) // Pick a random port that is available
@@ -150,5 +154,31 @@ mod test {
         assert!(peer3_m
             .swarm()
             .is_connected_blocking(peer2_m.identity().get_peer_id()));
+    }
+
+    fn setup_logging(){
+        use std::sync::Mutex;
+        use tracing::level_filters::LevelFilter;
+        use tracing::Level;
+        use tracing_log::LogTracer;
+        use tracing_subscriber::layer::SubscriberExt;
+        use tracing_subscriber::Layer;
+        let filter = tracing_subscriber::filter::Targets::new()
+            .with_target("owlnest", Level::DEBUG)
+            .with_target("rustyline", LevelFilter::ERROR)
+            .with_target("libp2p_noise", Level::WARN)
+            .with_target("libp2p_mdns", Level::WARN)
+            .with_target("hickory_proto", Level::WARN)
+            .with_target("multistream_select", Level::WARN)
+            .with_target("libp2p_core::transport", Level::WARN)
+            .with_target("yamux", Level::WARN)
+            .with_target("", Level::DEBUG);
+        let layer = tracing_subscriber::fmt::Layer::default()
+            .with_ansi(false)
+            .with_writer(Mutex::new(std::io::stdout()))
+            .with_filter(filter);
+        let reg = tracing_subscriber::registry().with(layer);
+        tracing::subscriber::set_global_default(reg).expect("you can only set global default once");
+        LogTracer::init().unwrap()
     }
 }

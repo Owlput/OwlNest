@@ -18,7 +18,7 @@ pub use manager::Manager;
 pub type EventSender = tokio::sync::broadcast::Sender<Arc<SwarmEvent>>;
 
 use super::SwarmConfig;
-use behaviour::BehaviourEvent;
+pub use behaviour::BehaviourEvent;
 use event_handlers::*;
 
 pub type Swarm = libp2p::Swarm<behaviour::Behaviour>;
@@ -55,7 +55,6 @@ impl Builder {
             let entered = span.enter();
             trace!("Swarm task spawned");
             let event_out = swarm_event_out;
-            let _manager = manager_clone;
             let mut swarm = libp2p::SwarmBuilder::with_existing_identity(ident.get_keypair())
                 .with_tokio()
                 .with_tcp(
@@ -117,7 +116,7 @@ impl Builder {
                     },
                     out_event = swarm.select_next_some(), if event_out.len() < 12 => {
                         trace!("Swarm generated an event {:?}",out_event);
-                        handle_swarm_event(&out_event,&mut swarm).await;
+                        handle_swarm_event(&out_event,&mut swarm,&manager_clone.identity().get_peer_id()).await;
                         let _ = event_out.send(Arc::new(out_event));
                     }
                     _ = timer =>{
