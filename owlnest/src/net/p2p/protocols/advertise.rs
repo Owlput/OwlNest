@@ -1,7 +1,7 @@
 use crate::net::p2p::swarm::EventSender;
 use libp2p::PeerId;
 pub use owlnest_advertise::*;
-use owlnest_macro::{listen_event, with_timeout};
+use owlnest_macro::{generate_handler_method, listen_event, with_timeout};
 use std::sync::{atomic::AtomicU64, Arc};
 use tokio::sync::mpsc;
 
@@ -64,15 +64,6 @@ impl Handle {
         self.sender.send(ev).await.expect("send to succeed");
         with_timeout!(fut, 10).expect("future to finish in 10s")
     }
-    pub async fn set_remote_advertisement(&self, remote: PeerId, state: bool) {
-        let op_id = self.next_id();
-        let ev = InEvent::SetAdvertisingSelf {
-            remote,
-            state,
-            id: op_id,
-        };
-        self.sender.send(ev).await.expect("Send to succeed");
-    }
     pub async fn remove_advertised(&self, peer_id: &PeerId) -> bool {
         let ev = InEvent::RemoveAdvertised(*peer_id);
         let mut listener = self.event_tx.subscribe();
@@ -84,10 +75,15 @@ impl Handle {
         self.sender.send(ev).await.expect("Send to succeed");
         with_timeout!(fut, 10).expect("Future to finish in 10s")
     }
-    pub async fn clear_advertised(&self) {
-        let ev = InEvent::ClearAdvertised;
-        self.sender.send(ev).await.expect("Send to succeed")
-    }
+    generate_handler_method!(
+        ListConnected:list_connected()->Vec<PeerId>;
+    );
+    generate_handler_method!(
+        ClearAdvertised:clear_advertised();
+    );
+    generate_handler_method!(
+        SetRemoteAdvertisement:set_remote_advertisement({remote:PeerId, state:bool});
+    );
     fn next_id(&self) -> u64 {
         use std::sync::atomic::Ordering;
         self.counter.fetch_add(1, Ordering::SeqCst)

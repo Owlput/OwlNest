@@ -1,6 +1,7 @@
 use owlnest_prelude::lib_prelude::*;
 use serde::{Deserialize, Serialize};
 use std::time::Duration;
+use tokio::sync::oneshot;
 use tracing::trace;
 
 mod behaviour;
@@ -19,6 +20,7 @@ pub use protocol::PROTOCOL_NAME;
 #[derive(Debug)]
 pub enum InEvent {
     SendMessage(PeerId, Message, u64),
+    ListConnected(oneshot::Sender<Vec<PeerId>>),
 }
 
 #[derive(Debug)]

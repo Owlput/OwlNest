@@ -160,6 +160,9 @@ impl Behaviour {
                 }
                 handle_callback_sender!(Err(())=>callback);
             }
+            ListConnected(callback) => {
+                handle_callback_sender!(self.connected_peers.iter().copied().collect() => callback)
+            }
             ListPendingRecv(callback) => {
                 handle_callback_sender!(self.pending_recv.values().map(|v|v.into()).collect()=>callback)
             }

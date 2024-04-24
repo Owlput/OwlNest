@@ -1,7 +1,7 @@
 use crate::net::p2p::swarm::{behaviour::BehaviourEvent, EventSender, SwarmEvent};
 use libp2p::kad::{self, Addresses, Mode, NoKnownPeers, QueryId, RoutingUpdate};
 use libp2p::{Multiaddr, PeerId};
-use owlnest_macro::{handle_callback_sender, listen_event, with_timeout};
+use owlnest_macro::{generate_handler_method, handle_callback_sender, listen_event, with_timeout};
 use std::collections::BTreeMap;
 use std::str::FromStr;
 use std::sync::{Arc, RwLock};
@@ -23,7 +23,7 @@ pub(crate) enum InEvent {
 
 #[derive(Debug, Clone)]
 pub struct Handle {
-    sender_swarm: mpsc::Sender<InEvent>,
+    sender: mpsc::Sender<InEvent>,
     event_tx: EventSender,
     tree_map: Arc<RwLock<BTreeMap<PeerId, Addresses>>>,
 }
@@ -50,33 +50,22 @@ impl Handle {
         });
         (
             Self {
-                sender_swarm: tx,
+                sender: tx,
                 event_tx: event_tx.clone(),
                 tree_map: tree_map_clone,
             },
             rx,
         )
     }
-    pub async fn bootstrap(&self) -> Result<(), NoKnownPeers> {
-        let (tx, rx) = oneshot::channel();
-        let ev = InEvent::BootStrap(tx);
-        self.sender_swarm
-            .send(ev)
-            .await
-            .expect("sending event to succeed");
-        rx.await.expect("callback to succeed").map(|_| ())
-    }
-    pub async fn insert_node(&self, peer_id: PeerId, address: Multiaddr) -> RoutingUpdate {
-        let (tx, rx) = oneshot::channel();
-        let ev = InEvent::InsertNode(peer_id, address, tx);
-        self.sender_swarm.send(ev).await.expect("send to succeed");
-        rx.await.expect("callback to succeed")
-    }
+    generate_handler_method!(
+        InsertNode:insert_node(peer_id:PeerId, address:Multiaddr)->RoutingUpdate;
+        BootStrap:bootstrap()->Result<QueryId,NoKnownPeers>;
+    );
     pub async fn query(&self, peer_id: PeerId) -> Vec<kad::QueryResult> {
         let mut listener = self.event_tx.subscribe();
         let (callback_tx, callback_rx) = oneshot::channel();
 
-        self.sender_swarm
+        self.sender
             .send(InEvent::PeerLookup(peer_id, callback_tx))
             .await
             .expect("sending event to succeed");
@@ -103,16 +92,20 @@ impl Handle {
         ));
         handle.await.unwrap()
     }
-    pub async fn lookup(&self, peer_id: &PeerId)->Option<Addresses>{
-        self.tree_map.read().expect("Lock not poisoned.").get(peer_id).cloned()
+    pub async fn lookup(&self, peer_id: &PeerId) -> Option<Addresses> {
+        self.tree_map
+            .read()
+            .expect("Lock not poisoned.")
+            .get(peer_id)
+            .cloned()
     }
-    pub async fn all_records(&self)->BTreeMap<PeerId,Addresses>{
+    pub async fn all_records(&self) -> BTreeMap<PeerId, Addresses> {
         self.tree_map.read().expect("Lock not poisoned.").clone()
     }
     pub async fn set_mode(&self, mode: Option<Mode>) -> Result<Mode, ()> {
         let ev = InEvent::SetMode(mode);
         let mut listener = self.event_tx.subscribe();
-        self.sender_swarm.send(ev).await.expect("send to succeed");
+        self.sender.send(ev).await.expect("send to succeed");
         let fut = listen_event!(listener for Kad, OutEvent::ModeChanged { new_mode }=>{
             return *new_mode;
         });
@@ -167,7 +160,7 @@ pub(crate) mod cli {
         }
         match command[1] {
             "query" => kad_query(manager, command),
-            "lookup" => kad_lookup(manager,command),
+            "lookup" => kad_lookup(manager, command),
             "bootstrap" => kad_bootstrap(manager),
             "set-mode" => kad_setmode(manager, command),
             "help" => println!("{}", TOP_HELP_MESSAGE),

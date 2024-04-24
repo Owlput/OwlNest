@@ -48,6 +48,7 @@ pub enum InEvent {
         path: PathBuf,
         callback: oneshot::Sender<Result<Duration, error::FileRecvError>>,
     },
+    ListConnected(oneshot::Sender<Vec<PeerId>>),
     ListPendingRecv(oneshot::Sender<Vec<RecvInfo>>),
     ListPendingSend(oneshot::Sender<Vec<SendInfo>>),
     CancelRecv {

@@ -1,6 +1,6 @@
 use crate::net::p2p::swarm::EventSender;
 use libp2p::PeerId;
-use owlnest_macro::{listen_event, with_timeout};
+use owlnest_macro::{generate_handler_method, listen_event, with_timeout};
 pub use owlnest_messaging::*;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
@@ -49,6 +49,7 @@ impl Handle {
             }
         }
     }
+    generate_handler_method!(ListConnected:list_connected()->Vec<PeerId>;);
     fn next_id(&self) -> u64 {
         self.counter.fetch_add(1, Ordering::Relaxed)
     }

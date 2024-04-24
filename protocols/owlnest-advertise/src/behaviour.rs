@@ -1,4 +1,5 @@
 use super::*;
+use owlnest_macro::handle_callback_sender;
 use owlnest_prelude::behaviour_prelude::*;
 use std::collections::{HashSet, VecDeque};
 use tracing::debug;
@@ -110,7 +111,7 @@ impl NetworkBehaviour for Behaviour {
                         id,
                     )))
                 }
-                SetAdvertisingSelf { remote, state, id } => {
+                SetRemoteAdvertisement { remote, state, id } => {
                     return Poll::Ready(ToSwarm::NotifyHandler {
                         peer_id: remote,
                         handler: NotifyHandler::Any,
@@ -129,7 +130,10 @@ impl NetworkBehaviour for Behaviour {
                         peer_id, result,
                     )));
                 }
-                ClearAdvertised => self.advertised_peers.clear(),
+                ClearAdvertised() => self.advertised_peers.clear(),
+                ListConnected(callback) => {
+                    handle_callback_sender!(self.connected_peers.iter().copied().collect() => callback);
+                }
             }
         }
         if let Some(ev) = self.pending_out_events.pop_front() {

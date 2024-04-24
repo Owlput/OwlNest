@@ -39,9 +39,9 @@ impl Handle {
         )
     }
     generate_handler_method!(
-        AddServer:add_server(peer:PeerId,address:Option<Multiaddr>,)->();
-        RemoveServer:remove_server(peer:PeerId)->();
-        Probe:probe(candidate:Multiaddr)->();
+        AddServer:add_server(peer:PeerId,address:Option<Multiaddr>,);
+        RemoveServer:remove_server(peer:PeerId);
+        Probe:probe(candidate:Multiaddr);
     );
     generate_handler_method!(GetNatStatus:get_nat_status()->(NatStatus,usize););
 }
