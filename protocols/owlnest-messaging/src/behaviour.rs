@@ -80,6 +80,7 @@ impl NetworkBehaviour for Behaviour {
             OutboundNegotiated => {
                 self.out_events
                     .push_back(OutEvent::OutboundNegotiated(peer_id));
+                self.connected_peers.insert(peer_id);
                 trace!(
                     "Successfully negotiated outbound connection from peer {}",
                     peer_id
@@ -134,22 +135,20 @@ impl NetworkBehaviour for Behaviour {
     fn handle_established_inbound_connection(
         &mut self,
         _connection_id: ConnectionId,
-        peer: PeerId,
+        _peer: PeerId,
         _local_addr: &Multiaddr,
         _remote_addr: &Multiaddr,
     ) -> Result<Self::ConnectionHandler, ConnectionDenied> {
-        self.connected_peers.insert(peer);
         Ok(handler::Handler::new(self.config.clone()))
     }
 
     fn handle_established_outbound_connection(
         &mut self,
         _connection_id: ConnectionId,
-        peer: PeerId,
+        _peer: PeerId,
         _addr: &Multiaddr,
         _role_override: Endpoint,
     ) -> Result<Self::ConnectionHandler, ConnectionDenied> {
-        self.connected_peers.insert(peer);
         Ok(handler::Handler::new(self.config.clone()))
     }
 }

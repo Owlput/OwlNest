@@ -1,4 +1,5 @@
 #![allow(unused)]
+#![allow(clippy::all)]
 use owlnest_prelude::lib_prelude::*;
 use std::time::Duration;
 
