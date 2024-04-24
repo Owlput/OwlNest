@@ -75,7 +75,7 @@ pub mod test_suit {
         let swarm_config = SwarmConfig {
             local_ident: ident.clone(),
             #[cfg(any(feature = "libp2p-protocols", feature = "libp2p-kad"))]
-             kad: protocols::kad::Config::new(StreamProtocol::new("/ipfs/kad/1.0.0")),
+            kad: protocols::kad::Config::new(StreamProtocol::new("/ipfs/kad/1.0.0")),
             #[cfg(any(feature = "libp2p-protocols", feature = "libp2p-identify"))]
             identify: protocols::identify::Config::new("/owlnest/0.0.1".into(), ident.get_pubkey()),
             #[cfg(any(feature = "libp2p-protocols", feature = "libp2p-mdns"))]

@@ -1,4 +1,5 @@
 use super::*;
+use owlnest_macro::handle_callback_sender;
 use owlnest_prelude::behaviour_prelude::*;
 use std::collections::{HashSet, VecDeque};
 use tracing::info;
@@ -93,6 +94,9 @@ impl NetworkBehaviour for Behaviour {
                         handler: NotifyHandler::Any,
                         event: handler::FromBehaviourEvent::Request { request, callback },
                     })
+                }
+                ListConnected(callback) => {
+                    handle_callback_sender!(self.connected_peers.iter().copied().collect() => callback);
                 }
             }
         }

@@ -146,6 +146,7 @@ impl Handle {
     generate_handler_method!(
         ListPendingRecv:list_pending_recv()->Vec<RecvInfo>;
         ListPendingSend:list_pending_send()->Vec<SendInfo>;
+        ListConnected:list_connected()->Vec<PeerId>;
     );
     fn next_id(&self) -> u64 {
         self.send_counter.fetch_add(1, Ordering::SeqCst)

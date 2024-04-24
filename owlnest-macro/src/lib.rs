@@ -47,7 +47,7 @@ pub mod utils {
     /// Method with callback and without callback need to be generated separately.
     #[macro_export]
     macro_rules! generate_handler_method {
-    {$($(#[$metas:meta])*$variant:ident:$name:ident($($params:ident:$param_type:ty$(,)?)*)->();)+} => {
+    {$($(#[$metas:meta])*$variant:ident:$name:ident($($params:ident:$param_type:ty$(,)?)*);)+} => {
         $(
             $(#[$metas])*
             pub async fn $name(&self,$($params:$param_type,)*){
@@ -63,6 +63,18 @@ pub mod utils {
                 use tokio::sync::oneshot::*;
                 let (tx,rx) = channel();
                 let ev = InEvent::$variant($($params,)*tx);
+                self.sender.send(ev).await.unwrap();
+                rx.await.unwrap()
+            }
+        )*
+    };
+    {$($(#[$metas:meta])*$variant:ident:$name:ident({$($params:ident:$param_type:ty$(,)?)*});)+} => {
+        $(
+            $(#[$metas])*
+            pub async fn $name(&self,$($params:$param_type,)*){
+                use tokio::sync::oneshot::*;
+                let (tx,rx) = channel();
+                let ev = InEvent::$variant{$($params,)*id:self.next_id()};
                 self.sender.send(ev).await.unwrap();
                 rx.await.unwrap()
             }

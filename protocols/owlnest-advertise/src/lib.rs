@@ -3,9 +3,9 @@ use serde::{Deserialize, Serialize};
 
 pub mod behaviour;
 mod handler;
-pub mod in_event;
 
 pub use behaviour::Behaviour;
+use tokio::sync::oneshot;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum OutEvent {
@@ -69,7 +69,7 @@ pub enum InEvent {
     /// Send a query to a remote peer for advertised peers.
     QueryAdvertisedPeer(PeerId),
     /// Set remote provider state to advertise or stop advertising local peer.
-    SetAdvertisingSelf {
+    SetRemoteAdvertisement {
         remote: PeerId,
         state: bool,
         id: u64,
@@ -77,5 +77,6 @@ pub enum InEvent {
     /// Remove a advertised peer from local provider.
     RemoveAdvertised(PeerId),
     /// Remove all advertised peers from local provider.
-    ClearAdvertised,
+    ClearAdvertised(),
+    ListConnected(oneshot::Sender<Vec<PeerId>>),
 }
