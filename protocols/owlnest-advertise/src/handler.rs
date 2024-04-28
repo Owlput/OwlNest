@@ -258,14 +258,16 @@ impl ConnectionHandler for Handler {
                 info: (),
             }) => {
                 self.inbound = Some(super::protocol::recv(stream).boxed());
-                self.pending_out_events.push_back(ToBehaviour::InboundNegotiated);
+                self.pending_out_events
+                    .push_back(ToBehaviour::InboundNegotiated);
             }
             ConnectionEvent::FullyNegotiatedOutbound(FullyNegotiatedOutbound {
                 protocol: stream,
                 ..
             }) => {
                 self.outbound = Some(OutboundState::Idle(stream));
-                self.pending_out_events.push_back(ToBehaviour::OutboundNegotiated)
+                self.pending_out_events
+                    .push_back(ToBehaviour::OutboundNegotiated)
             }
             ConnectionEvent::DialUpgradeError(e) => {
                 self.on_dial_upgrade_error(e);

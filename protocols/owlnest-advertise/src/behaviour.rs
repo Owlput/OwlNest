@@ -73,8 +73,10 @@ impl NetworkBehaviour for Behaviour {
                 list: result,
             }),
             Error(e) => self.pending_out_events.push_back(OutEvent::Error(e)),
-            InboundNegotiated =>{}
-            OutboundNegotiated => {self.connected_peers.insert(peer_id);}
+            InboundNegotiated => {}
+            OutboundNegotiated => {
+                self.connected_peers.insert(peer_id);
+            }
         }
     }
     fn poll(

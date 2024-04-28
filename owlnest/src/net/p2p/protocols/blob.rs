@@ -162,8 +162,8 @@ mod test {
     use libp2p::Multiaddr;
     use serial_test::serial;
     use std::{io::Read, str::FromStr, thread};
+    use temp_dir::TempDir;
     const SOURCE_FILE: &str = "../Cargo.lock";
-    const DEST_FILE: &str = "../test_lock_file";
 
     #[test]
     #[serial]
@@ -323,7 +323,7 @@ mod test {
         thread::sleep(Duration::from_millis(200));
     }
 
-    fn wait_recv(manager: &Manager, recv_id: u64, file: &str) {
+    fn wait_recv(manager: &Manager, recv_id: u64, dir: &TempDir) {
         let manager_clone = manager.clone();
         let handle = manager.executor().spawn(async move {
             let mut listener = manager_clone.event_subscriber().subscribe();
@@ -342,12 +342,17 @@ mod test {
         });
         manager
             .executor()
-            .block_on(manager.blob().recv_file(recv_id, file))
+            .block_on(
+                manager
+                    .blob()
+                    .recv_file(recv_id, dir.path().join("test_locker_file")),
+            )
             .unwrap();
         manager.executor().block_on(handle).unwrap();
     }
 
     fn send_recv(peer1: &Manager, peer2: &Manager) {
+        let dest = TempDir::new().unwrap();
         send(&peer1, peer2.identity().get_peer_id(), SOURCE_FILE);
         assert_eq!(
             peer1
@@ -360,13 +365,16 @@ mod test {
         wait_recv(
             &peer2,
             peer2.executor().block_on(peer2.blob().list_pending_recv())[0].local_recv_id,
-            DEST_FILE,
+            &dest,
         );
-        assert!(verify_file(SOURCE_FILE, DEST_FILE));
+        assert!(verify_file(
+            SOURCE_FILE,
+            dest.path().join("test_locker_file")
+        ));
     }
 
     /// Verify and clean up
-    fn verify_file(left: &str, right: &str) -> bool {
+    fn verify_file(left: impl AsRef<Path>, right: impl AsRef<Path>) -> bool {
         use std::fs;
         let mut left_file_buf = Vec::new();
         fs::OpenOptions::new()
@@ -385,7 +393,6 @@ mod test {
             .unwrap()
             .read_to_end(&mut right_file_buf)
             .unwrap();
-        fs::remove_file(DEST_FILE).unwrap();
         let right_file_hash = xxhash_rust::xxh3::xxh3_128(&right_file_buf);
         drop(right_file_buf);
         left_file_hash == right_file_hash
