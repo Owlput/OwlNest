@@ -40,7 +40,7 @@ impl Default for State {
     }
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 enum Packet {
     AdvertiseSelf(bool, u64),
     QueryAdvertisedPeer,
@@ -113,6 +113,7 @@ impl ConnectionHandler for Handler {
         SubstreamProtocol::new(ReadyUpgrade::new(protocol::PROTOCOL_NAME), ())
     }
     fn on_behaviour_event(&mut self, event: Self::FromBehaviour) {
+        trace!("Got an event {:?} from behaviour", event);
         self.pending_in_events.push_back(event)
     }
     fn connection_keep_alive(&self) -> bool {
@@ -142,7 +143,14 @@ impl ConnectionHandler for Handler {
                 Poll::Ready(Ok((stream, bytes))) => {
                     self.inbound = Some(super::protocol::recv(stream).boxed());
                     match serde_json::from_slice::<Packet>(&bytes) {
-                        Ok(packet) => self.pending_out_events.push_back(packet.into()),
+                        Ok(packet) => {
+                            trace!(
+                                "reading packet {:?} and convert to {:?}",
+                                packet,
+                                <Packet as Into<ToBehaviour>>::into(packet.clone())
+                            );
+                            self.pending_out_events.push_back(packet.into());
+                        }
                         Err(e) => self.pending_out_events.push_back(ToBehaviour::Error(
                             Error::UnrecognizedMessage(format!(
                                 "Unrecognized message: {}, raw data: {}",
@@ -151,8 +159,6 @@ impl ConnectionHandler for Handler {
                             )),
                         )),
                     }
-                    let event = ConnectionHandlerEvent::NotifyBehaviour(ToBehaviour::IncomingQuery);
-                    return Poll::Ready(event);
                 }
             }
         }
@@ -190,6 +196,7 @@ impl ConnectionHandler for Handler {
                 // Outbound is free, get the next message sent
                 Some(OutboundState::Idle(stream)) => {
                     if let Some(ev) = self.pending_in_events.pop_front() {
+                        trace!("Taking out event {:?} from behaviour", ev);
                         use FromBehaviour::*;
                         match ev {
                             QueryAdvertisedPeer => {
@@ -258,14 +265,16 @@ impl ConnectionHandler for Handler {
                 info: (),
             }) => {
                 self.inbound = Some(super::protocol::recv(stream).boxed());
-                self.pending_out_events.push_back(ToBehaviour::InboundNegotiated);
+                self.pending_out_events
+                    .push_back(ToBehaviour::InboundNegotiated);
             }
             ConnectionEvent::FullyNegotiatedOutbound(FullyNegotiatedOutbound {
                 protocol: stream,
                 ..
             }) => {
                 self.outbound = Some(OutboundState::Idle(stream));
-                self.pending_out_events.push_back(ToBehaviour::OutboundNegotiated)
+                self.pending_out_events
+                    .push_back(ToBehaviour::OutboundNegotiated)
             }
             ConnectionEvent::DialUpgradeError(e) => {
                 self.on_dial_upgrade_error(e);
