@@ -201,7 +201,7 @@ impl Handler {
                 .map(Into::into)
                 .unwrap_or_else(err_def),
             _ => ToBehaviourEvent::Error(Error::UnrecognizedMessage(format!(
-                "Unrecognized IncomingFile: {:20}",
+                "Unrecognized message: {:20}",
                 String::from_utf8_lossy(&bytes)
             ))),
         };
