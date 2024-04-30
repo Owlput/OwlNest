@@ -74,7 +74,7 @@ pub mod utils {
             pub async fn $name(&self,$($params:$param_type,)*){
                 use tokio::sync::oneshot::*;
                 let (tx,rx) = channel();
-                let ev = InEvent::$variant{$($params,)*id:self.next_id()};
+                let ev = InEvent::$variant{$($params,)*callback:tx};
                 self.sender.send(ev).await.unwrap();
                 rx.await.unwrap()
             }
@@ -95,15 +95,18 @@ pub mod utils {
             }
         };
     }
+    /// Short-hand for listening event on swarm.
+    /// If `ops` does not contain explicit exit condition, it will listen on it forever.
+    /// Best suited for one-shot event.
     #[macro_export]
     macro_rules! listen_event {
-        ($listener:ident for $behaviour:ident,$pattern:pat=>{$($ops:tt)+}) => {
+        ($listener:ident for $behaviour:ident,$($pattern:pat=>{$($ops:tt)+})+) => {
             async move{
                 use crate::net::p2p::swarm::{SwarmEvent, BehaviourEvent};
                 while let Ok(ev) = $listener.recv().await{
-                    if let SwarmEvent::Behaviour(BehaviourEvent::$behaviour($pattern)) = ev.as_ref() {
+                    $(if let SwarmEvent::Behaviour(BehaviourEvent::$behaviour($pattern)) = ev.as_ref() {
                         $($ops)+
-                    }
+                    })+
                 }
                 unreachable!()
             }

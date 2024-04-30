@@ -2,7 +2,7 @@ use super::*;
 use owlnest_macro::handle_callback_sender;
 use owlnest_prelude::behaviour_prelude::*;
 use std::collections::{HashSet, VecDeque};
-use tracing::debug;
+use tracing::{debug, trace};
 
 #[derive(Debug, Default)]
 pub struct Behaviour {
@@ -22,6 +22,7 @@ impl Behaviour {
         Default::default()
     }
     pub fn push_event(&mut self, ev: InEvent) {
+        trace!("receive event {:?}",ev);
         self.in_events.push_back(ev)
     }
     pub fn is_advertising(&self, peer: &PeerId) -> bool {
@@ -42,6 +43,9 @@ impl Behaviour {
     pub fn clear_advertised(&mut self) {
         self.advertised_peers.clear()
     }
+    pub fn new_pending_query(&mut self, peer: &PeerId){
+        self.pending_query_answer.push_back(*peer)
+    }
 }
 
 impl NetworkBehaviour for Behaviour {
@@ -51,12 +55,13 @@ impl NetworkBehaviour for Behaviour {
     fn on_connection_handler_event(
         &mut self,
         peer_id: PeerId,
-        _connection_id: ConnectionId,
+        connection_id: ConnectionId,
         event: <Self::ConnectionHandler as ConnectionHandler>::ToBehaviour,
     ) {
         use handler::ToBehaviour::*;
         match event {
             IncomingQuery => {
+                trace!("incoming query from {} on connection {}", peer_id, connection_id);
                 self.pending_query_answer.push_back(peer_id);
             }
             IncomingAdvertiseReq(bool) => {
@@ -84,6 +89,7 @@ impl NetworkBehaviour for Behaviour {
         _cx: &mut std::task::Context<'_>,
     ) -> Poll<ToSwarm<super::OutEvent, handler::FromBehaviour>> {
         if let Some(peer_id) = self.pending_query_answer.pop_front() {
+            debug!("Answering query from {}, remaining {}",peer_id, self.pending_query_answer.len());
             if self.is_providing {
                 return Poll::Ready(ToSwarm::NotifyHandler {
                     peer_id,
@@ -99,15 +105,23 @@ impl NetworkBehaviour for Behaviour {
                 event: handler::FromBehaviour::AnswerAdvertisedPeer(Vec::new()),
             });
         }
-        if let Some(ev) = self.in_events.pop_front() {
+        if let Some(ev) = self.pending_out_events.pop_front() {
+            return Poll::Ready(ToSwarm::GenerateEvent(ev));
+        }
+        while let Some(ev) = self.in_events.pop_front() {
+            trace!("got command {:?}",ev);
             use InEvent::*;
             match ev {
                 QueryAdvertisedPeer(relay) => {
-                    return Poll::Ready(ToSwarm::NotifyHandler {
-                        peer_id: relay,
-                        handler: NotifyHandler::Any,
-                        event: handler::FromBehaviour::QueryAdvertisedPeer,
-                    })
+                    if self.connected_peers.contains(&relay) {
+                        return Poll::Ready(ToSwarm::NotifyHandler {
+                            peer_id: relay,
+                            handler: NotifyHandler::Any,
+                            event: handler::FromBehaviour::QueryAdvertisedPeer,
+                        });
+                    }
+                    self.pending_out_events
+                        .push_back(OutEvent::Error(Error::NotProviding(relay)))
                 }
                 GetProviderState(id) => {
                     return Poll::Ready(ToSwarm::GenerateEvent(OutEvent::ProviderState(
@@ -134,14 +148,14 @@ impl NetworkBehaviour for Behaviour {
                         peer_id, result,
                     )));
                 }
+                ListAdvertised(callback) => {
+                    handle_callback_sender!(self.advertised_peers.iter().cloned().collect()=>callback);
+                }
                 ClearAdvertised() => self.advertised_peers.clear(),
                 ListConnected(callback) => {
                     handle_callback_sender!(self.connected_peers.iter().copied().collect() => callback);
                 }
             }
-        }
-        if let Some(ev) = self.pending_out_events.pop_front() {
-            return Poll::Ready(ToSwarm::GenerateEvent(ev));
         }
         Poll::Pending
     }

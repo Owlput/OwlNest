@@ -1,5 +1,4 @@
 #![feature(byte_slice_trim_ascii)]
-#![feature(io_error_downcast)]
 #![feature(io_error_more)]
 #![feature(map_try_insert)]
 #![feature(hash_extract_if)]

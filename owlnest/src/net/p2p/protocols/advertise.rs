@@ -25,64 +25,85 @@ impl Handle {
     }
     pub async fn query_advertised_peer(&self, relay: PeerId) -> Result<Vec<PeerId>, Error> {
         let mut listener = self.event_tx.subscribe();
-        let fut = listen_event!(listener for Advertise, OutEvent::QueryAnswered { from, list }=> {
-            if *from == relay {
-                return list.clone();
+        let fut = listen_event!(listener for Advertise,
+            OutEvent::QueryAnswered { from, list } => {
+                if *from == relay {
+                    return Ok(list.clone());
+                }
             }
-        });
+            OutEvent::Error(Error::NotProviding(peer)) => {
+                if *peer == relay{
+                    return Err(Error::NotProviding(*peer))
+                }
+            }
+        );
 
         let ev = InEvent::QueryAdvertisedPeer(relay);
         self.sender.send(ev).await.unwrap();
         match with_timeout!(fut, 10) {
-            Ok(v) => Ok(v),
+            Ok(v) => v,
             Err(_) => Err(Error::Timeout),
         }
     }
+    pub async fn set_remote_advertisement(&self, remote: PeerId, state: bool) {
+        let ev = InEvent::SetRemoteAdvertisement {
+            remote,
+            state,
+            id: self.next_id(),
+        };
+        self.sender.send(ev).await.unwrap();
+    }
+    /// Set provider state of local peer.
     pub async fn set_provider_state(&self, state: bool) -> bool {
         let op_id = self.next_id();
         let mut listener = self.event_tx.subscribe();
-        let fut = listen_event!(listener for Advertise, OutEvent::ProviderState(state, id)=> {
-            if *id != op_id {
-                continue;
+        let fut = listen_event!(
+            listener for Advertise,
+            OutEvent::ProviderState(state, id)=> {
+                if *id == op_id {
+                    return *state;
+                }
             }
-            return *state;
-        });
+        );
         let ev = InEvent::SetProviderState(state, op_id);
         self.sender.send(ev).await.expect("send to succeed");
         with_timeout!(fut, 10).expect("future to finish in 10s")
     }
+    /// Get provider state of local peer.
     pub async fn provider_state(&self) -> bool {
         let op_id = self.next_id();
         let mut listener = self.event_tx.subscribe();
         let fut = listen_event!(listener for Advertise, OutEvent::ProviderState(state, id)=> {
-            if *id != op_id {
-                continue;
+            if *id == op_id {
+                return *state;
             }
-            return *state;
         });
         let ev = InEvent::GetProviderState(op_id);
         self.sender.send(ev).await.expect("send to succeed");
         with_timeout!(fut, 10).expect("future to finish in 10s")
     }
+    /// Remove advertisement on local peer.
     pub async fn remove_advertised(&self, peer_id: &PeerId) -> bool {
         let ev = InEvent::RemoveAdvertised(*peer_id);
         let mut listener = self.event_tx.subscribe();
-        let fut = listen_event!(listener for Advertise, OutEvent::AdvertisedPeerChanged(target,state)=>{
-            if *target == *peer_id{
-                return *state
-            }
+        let fut = listen_event!(listener for Advertise,
+            OutEvent::AdvertisedPeerChanged(target,state)=>{
+                if *target == *peer_id{
+                    return *state
+                }
         });
         self.sender.send(ev).await.expect("Send to succeed");
         with_timeout!(fut, 10).expect("Future to finish in 10s")
     }
     generate_handler_method!(
+        /// List all peers that supports and connected to this peer.
         ListConnected:list_connected()->Vec<PeerId>;
+        /// List all advertisement on local peer.
+        ListAdvertised:list_advertised()->Vec<PeerId>;
     );
     generate_handler_method!(
+        /// Clear all advertisements on local peer.
         ClearAdvertised:clear_advertised();
-    );
-    generate_handler_method!(
-        SetRemoteAdvertisement:set_remote_advertisement({remote:PeerId, state:bool});
     );
     fn next_id(&self) -> u64 {
         use std::sync::atomic::Ordering;
@@ -248,15 +269,18 @@ mod test {
     use crate::net::p2p::test_suit::setup_default;
     use libp2p::Multiaddr;
     use std::{thread, time::Duration};
+    use tracing_log::log::trace;
 
     #[test]
     fn test() {
+        setup_logging();
         let (peer1_m, _) = setup_default();
         let (peer2_m, _) = setup_default();
         peer1_m
             .swarm()
             .listen_blocking(&"/ip4/127.0.0.1/tcp/0".parse::<Multiaddr>().unwrap())
             .unwrap();
+        trace!("peer 1 is listening");
         thread::sleep(Duration::from_millis(100));
         let peer1_id = peer1_m.identity().get_peer_id();
         let peer2_id = peer2_m.identity().get_peer_id();
@@ -264,25 +288,30 @@ mod test {
             .swarm()
             .dial_blocking(&peer1_m.swarm().list_listeners_blocking()[0])
             .unwrap();
+        trace!("peer 1 dialed");
         thread::sleep(Duration::from_millis(200));
         assert!(peer1_m
             .executor()
             .block_on(peer1_m.advertise().set_provider_state(true)));
+        trace!("provider state set");
         thread::sleep(Duration::from_millis(200));
         peer2_m
             .executor()
             .block_on(peer2_m.advertise().set_remote_advertisement(peer1_id, true));
         assert!(peer2_m.swarm().is_connected_blocking(peer1_id));
+        trace!("peer 1 connected and advertisement set");
         thread::sleep(Duration::from_millis(200));
         assert!(peer2_m
             .executor()
             .block_on(peer2_m.advertise().query_advertised_peer(peer1_id))
             .unwrap()
             .contains(&peer2_id));
+        trace!("found advertisement for peer2 on peer1");
         assert!(!peer1_m
             .executor()
             .block_on(peer1_m.advertise().set_provider_state(false)));
         thread::sleep(Duration::from_millis(200));
+        trace!("provider state of peer1 set to false");
         assert!(
             peer2_m
                 .executor()
@@ -291,15 +320,18 @@ mod test {
                 .len()
                 == 0
         );
+        trace!("advertisement no longer available");
         peer2_m.executor().block_on(
             peer2_m
                 .advertise()
                 .set_remote_advertisement(peer1_id, false),
         );
+        trace!("removed advertisement on peer1(testing presistence)");
         assert!(peer1_m
             .executor()
             .block_on(peer1_m.advertise().set_provider_state(true)));
         thread::sleep(Duration::from_millis(200));
+        trace!("turned peer1 provider back on");
         assert!(
             peer2_m
                 .executor()
@@ -308,5 +340,25 @@ mod test {
                 .len()
                 == 0
         );
+    }
+
+    fn setup_logging() {
+        use std::sync::Mutex;
+        use tracing::Level;
+        use tracing_log::LogTracer;
+        use tracing_subscriber::layer::SubscriberExt;
+        use tracing_subscriber::Layer;
+        let filter = tracing_subscriber::filter::Targets::new()
+            .with_target("owlnest", Level::INFO)
+            .with_target("owlnest::net::p2p::protocols::advertise", Level::TRACE)
+            .with_target("owlnest_advertise", Level::TRACE)
+            .with_target("", Level::WARN);
+        let layer = tracing_subscriber::fmt::Layer::default()
+            .with_ansi(false)
+            .with_writer(Mutex::new(std::io::stdout()))
+            .with_filter(filter);
+        let reg = tracing_subscriber::registry().with(layer);
+        tracing::subscriber::set_global_default(reg).expect("you can only set global default once");
+        LogTracer::init().unwrap()
     }
 }
