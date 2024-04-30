@@ -29,7 +29,8 @@ pub enum OutEvent {
 pub enum Error {
     ConnectionClosed,
     VerifierMismatch,
-    NotProviding,
+    /// Queried peer is not providing or doesn't support this protocol.
+    NotProviding(PeerId),
     Timeout,
     UnrecognizedMessage(String), // Serialzied not available on the original type
     IO(String),                  // Serialize not available on the original type
@@ -42,16 +43,11 @@ impl std::fmt::Display for Error {
             ConnectionClosed => f.write_str("Connection Closed"),
             VerifierMismatch => f.write_str("Message verifier mismatch"),
             Timeout => f.write_str("Message timed out"),
-            NotProviding => f.write_str("Relay is not providing"),
+            NotProviding(peer) => write!(f, "Peer {} is not providing", peer),
             UnrecognizedMessage(msg) => f.write_str(msg),
             IO(msg) => f.write_str(msg),
             Channel => f.write_str("Callback channel closed unexpectedly"),
         }
-    }
-}
-impl std::error::Error for Error {
-    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
-        None
     }
 }
 
@@ -72,11 +68,13 @@ pub enum InEvent {
     SetRemoteAdvertisement {
         remote: PeerId,
         state: bool,
+        /// Unique identifier of this operation.
         id: u64,
     },
     /// Remove a advertised peer from local provider.
     RemoveAdvertised(PeerId),
     /// Remove all advertised peers from local provider.
     ClearAdvertised(),
+    ListAdvertised(oneshot::Sender<Vec<PeerId>>),
     ListConnected(oneshot::Sender<Vec<PeerId>>),
 }
