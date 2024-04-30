@@ -22,7 +22,6 @@ impl Behaviour {
         Default::default()
     }
     pub fn push_event(&mut self, ev: InEvent) {
-        trace!("receive event {:?}", ev);
         self.in_events.push_back(ev)
     }
     pub fn is_advertising(&self, peer: &PeerId) -> bool {
@@ -55,17 +54,13 @@ impl NetworkBehaviour for Behaviour {
     fn on_connection_handler_event(
         &mut self,
         peer_id: PeerId,
-        connection_id: ConnectionId,
+        _connection_id: ConnectionId,
         event: <Self::ConnectionHandler as ConnectionHandler>::ToBehaviour,
     ) {
         use handler::ToBehaviour::*;
         match event {
             IncomingQuery => {
-                trace!(
-                    "incoming query from {} on connection {}",
-                    peer_id,
-                    connection_id
-                );
+                trace!("incoming query from {}", peer_id);
                 self.pending_query_answer.push_back(peer_id);
             }
             IncomingAdvertiseReq(bool) => {
@@ -113,7 +108,6 @@ impl NetworkBehaviour for Behaviour {
             return Poll::Ready(ToSwarm::GenerateEvent(ev));
         }
         while let Some(ev) = self.in_events.pop_front() {
-            trace!("got command {:?}", ev);
             use InEvent::*;
             match ev {
                 QueryAdvertisedPeer(relay) => {
