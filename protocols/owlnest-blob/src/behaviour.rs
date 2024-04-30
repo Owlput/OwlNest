@@ -6,7 +6,7 @@ use std::collections::{HashMap, HashSet, VecDeque};
 use std::io::{Read, Write};
 use tracing::{info, trace_span, warn};
 
-pub(crate) const FILE_CHUNK_SIZE: usize = 16384; // 120KB
+pub(crate) const FILE_CHUNK_SIZE: usize = 1 << 18;
 
 #[derive(Debug, Default)]
 pub struct Behaviour {
@@ -393,7 +393,7 @@ impl Behaviour {
     }
 
     /// Called when local received a chunk of file.
-    fn progress_ongoing_recv(&mut self, remote_send_id: u64, contents: Vec<u8>) {
+    fn progress_ongoing_recv(&mut self, remote_send_id: u64, content: Vec<u8>) {
         let mut ongoing_recv = if let Some(v) = self.ongoing_recv.remove(&remote_send_id) {
             v
         } else {
@@ -403,7 +403,7 @@ impl Behaviour {
             );
             return; // Record not found
         };
-        let content_len = contents.len();
+        let content_len = content.len();
         let entered = ongoing_recv.span.enter();
         trace!("Received {} bytes", content_len);
         if content_len == 0 && ongoing_recv.bytes_received != ongoing_recv.bytes_total {
@@ -427,7 +427,7 @@ impl Behaviour {
         }
         let mut cursor = 0;
         loop {
-            match ongoing_recv.file_handle.write(&contents) {
+            match ongoing_recv.file_handle.write(&content) {
                 Ok(bytes_written) => {
                     trace!("Writing {} bytes to file", bytes_written);
                     cursor += bytes_written;
@@ -514,8 +514,8 @@ impl NetworkBehaviour for Behaviour {
         match event {
             RecvProgressed {
                 remote_send_id,
-                contents,
-            } => self.progress_ongoing_recv(remote_send_id, contents),
+                content,
+            } => self.progress_ongoing_recv(remote_send_id, content),
             IncomingFile {
                 file_name,
                 remote_send_id,

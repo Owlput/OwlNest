@@ -34,6 +34,7 @@ owlnest-advertise = { path = "../protocols/owlnest-advertise", optional = true }
 [dev-dependencies]
 xxhash-rust = { version = "*", features = ["xxh3"] }
 serial_test = "3"
+temp-dir = "*"
 
 [features]
 full = ["owlnest-protocols","libp2p-protocols"]

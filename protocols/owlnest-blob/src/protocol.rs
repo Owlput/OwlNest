@@ -11,7 +11,7 @@ pub const PROTOCOL_NAME: &str = "/owlnest/blob/0.0.1";
 //      send()-->Outbound------>Inbound-->recv()
 //      recv()<--Inbound<------Outbound<--send()
 //              Peer A          Peer B
-pub async fn send<S>(mut stream: S, msg_bytes: Vec<u8>) -> io::Result<(S, Duration)>
+pub async fn send<S>(mut stream: S, msg_bytes: Vec<u8>, msg_type: u8) -> io::Result<(S, Duration)>
 where
     S: AsyncRead + AsyncWrite + Unpin,
 {
@@ -21,7 +21,9 @@ where
     span.in_scope(|| {
         trace!("{} bytes to write, hash {}", len, verf);
     });
-    stream.write_all(&(len as u64).to_be_bytes()).await?;
+    let mut header = (len as u64).to_be_bytes();
+    header[0] = msg_type;
+    stream.write_all(&header).await?;
     stream.flush().await?;
     span.in_scope(|| {
         trace!("stream length written and flushed");
@@ -60,14 +62,16 @@ where
     ))
 }
 
-pub async fn recv<S>(mut stream: S) -> io::Result<(S, Vec<u8>)>
+pub async fn recv<S>(mut stream: S) -> io::Result<(S, Vec<u8>, u8)>
 where
     S: AsyncRead + AsyncWrite + Unpin,
 {
     let span = trace_span!("protocol::recv");
-    let mut buf = [0u8; 8];
-    stream.read_exact(&mut buf).await?;
-    let bytes_to_read = u64::from_be_bytes(buf);
+    let mut header = [0u8; 8];
+    stream.read_exact(&mut header).await?;
+    let msg_type = header[0];
+    header[0] = 0u8;
+    let bytes_to_read = u64::from_be_bytes(header);
     span.in_scope(|| {
         trace!("reading stream length {}", bytes_to_read);
     });
@@ -77,26 +81,49 @@ where
             "Stream too long. Terminating.",
         ));
     }
-    let mut msg_buf = [0u8; 1 << 17];
-    let mut cursor = 0;
-    loop {
-        let bytes_read = stream.read(&mut msg_buf[cursor..]).await?;
-        cursor += bytes_read;
-        span.in_scope(|| {
-            trace!("cursor at {} byte, {} bytes total", cursor, bytes_to_read);
-        });
-        if cursor as u64 >= bytes_to_read {
-            break;
+    let msg = if msg_type == 2 {
+        let mut msg_buf = [0u8; (1 << 18) + 16];
+        let mut cursor = 0;
+        loop {
+            if cursor as u64 >= bytes_to_read {
+                break;
+            }
+            let bytes_read = stream.read(&mut msg_buf[cursor..]).await?;
+            cursor += bytes_read;
+            span.in_scope(|| {
+                trace!("cursor at {} byte, {} bytes total", cursor, bytes_to_read);
+            });
         }
-    }
-    stream
-        .write_all(&xxh3_128(&msg_buf[..cursor]).to_be_bytes())
-        .await?;
-    stream.flush().await?;
-    span.in_scope(|| {
-        trace!("verifier written and flushed");
-    });
-    let mut msg = Vec::with_capacity(bytes_to_read as usize);
-    msg.extend_from_slice(&msg_buf[..cursor]);
-    Ok((stream, msg))
+        stream
+            .write_all(&xxh3_128(&msg_buf[..cursor]).to_be_bytes())
+            .await?;
+        stream.flush().await?;
+        span.in_scope(|| {
+            trace!("verifier written and flushed");
+        });
+        Vec::from(&msg_buf[..cursor])
+    } else {
+        let mut msg_buf = [0u8; 1 << 8];
+        let mut cursor = 0;
+        loop {
+            if cursor as u64 >= bytes_to_read {
+                break;
+            }
+            let bytes_read = stream.read(&mut msg_buf[cursor..]).await?;
+            cursor += bytes_read;
+            span.in_scope(|| {
+                trace!("cursor at {} byte, {} bytes total", cursor, bytes_to_read);
+            });
+        }
+        stream
+            .write_all(&xxh3_128(&msg_buf[..cursor]).to_be_bytes())
+            .await?;
+        stream.flush().await?;
+        span.in_scope(|| {
+            trace!("verifier written and flushed");
+        });
+        Vec::from(&msg_buf[..cursor])
+    };
+
+    Ok((stream, msg, msg_type))
 }
