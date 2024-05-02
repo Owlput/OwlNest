@@ -104,9 +104,10 @@ pub mod utils {
             async move{
                 use crate::net::p2p::swarm::{SwarmEvent, BehaviourEvent};
                 while let Ok(ev) = $listener.recv().await{
-                    $(if let SwarmEvent::Behaviour(BehaviourEvent::$behaviour($pattern)) = ev.as_ref() {
-                        $($ops)+
-                    })+
+                    match ev.as_ref() {
+                        $(SwarmEvent::Behaviour(BehaviourEvent::$behaviour($pattern)) => {$($ops)+})+
+                        _ => {}
+                    }
                 }
                 unreachable!()
             }

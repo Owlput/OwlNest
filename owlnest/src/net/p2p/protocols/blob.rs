@@ -144,8 +144,13 @@ impl Handle {
         }
     }
     generate_handler_method!(
+        /// List receives that are still in pending phase.
+        /// Ongoing receives should be tracked by the user interface.
         ListPendingRecv:list_pending_recv()->Vec<RecvInfo>;
+        /// List sends that are still in pending phase.
+        /// Ongoing sends should be tracked by the user interface.
         ListPendingSend:list_pending_send()->Vec<SendInfo>;
+        /// List all peers that have successfully negotiated this protocol.
         ListConnected:list_connected()->Vec<PeerId>;
     );
     fn next_id(&self) -> u64 {

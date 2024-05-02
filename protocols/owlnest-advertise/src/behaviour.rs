@@ -87,6 +87,9 @@ impl NetworkBehaviour for Behaviour {
         &mut self,
         _cx: &mut std::task::Context<'_>,
     ) -> Poll<ToSwarm<super::OutEvent, handler::FromBehaviour>> {
+        if let Some(ev) = self.pending_out_events.pop_front() {
+            return Poll::Ready(ToSwarm::GenerateEvent(ev));
+        }
         if let Some(peer_id) = self.pending_query_answer.pop_front() {
             trace!("Answering query from {}", peer_id);
             if self.is_providing {
@@ -104,9 +107,7 @@ impl NetworkBehaviour for Behaviour {
                 event: handler::FromBehaviour::AnswerAdvertisedPeer(Vec::new()),
             });
         }
-        if let Some(ev) = self.pending_out_events.pop_front() {
-            return Poll::Ready(ToSwarm::GenerateEvent(ev));
-        }
+
         while let Some(ev) = self.in_events.pop_front() {
             use InEvent::*;
             match ev {
@@ -165,9 +166,6 @@ impl NetworkBehaviour for Behaviour {
                     self.advertised_peers.remove(&closed.peer_id);
                     self.connected_peers.remove(&closed.peer_id);
                 }
-            }
-            FromSwarm::ConnectionEstablished(established) => {
-                self.connected_peers.insert(established.peer_id);
             }
             _ => {}
         }
