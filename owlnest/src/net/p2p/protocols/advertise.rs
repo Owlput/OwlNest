@@ -12,7 +12,7 @@ pub struct Handle {
     counter: Arc<AtomicU64>,
 }
 impl Handle {
-    pub fn new(buffer: usize, event_tx: &EventSender) -> (Self, mpsc::Receiver<InEvent>) {
+    pub(crate) fn new(buffer: usize, event_tx: &EventSender) -> (Self, mpsc::Receiver<InEvent>) {
         let (tx, rx) = mpsc::channel(buffer);
         (
             Self {
@@ -23,6 +23,8 @@ impl Handle {
             rx,
         )
     }
+    /// Send query to a remote for current advertisements.
+    /// Will return `Err(Error::NotProviding)` for peers who don't support this protocol.
     pub async fn query_advertised_peer(&self, relay: PeerId) -> Result<Vec<PeerId>, Error> {
         let mut listener = self.event_tx.subscribe();
         let fut = listen_event!(listener for Advertise,
@@ -37,7 +39,6 @@ impl Handle {
                 }
             }
         );
-
         let ev = InEvent::QueryAdvertisedPeer(relay);
         self.sender.send(ev).await.unwrap();
         match with_timeout!(fut, 10) {
@@ -45,6 +46,12 @@ impl Handle {
             Err(_) => Err(Error::Timeout),
         }
     }
+    /// Set advertisement on a remote peer.
+    /// ## Silent failure
+    /// This function will return immediately, the effect is not guaranteed:
+    /// - peers that are not connected
+    /// - peers that don't support this protocol
+    /// - peers that are not providing
     pub async fn set_remote_advertisement(&self, remote: PeerId, state: bool) {
         let ev = InEvent::SetRemoteAdvertisement {
             remote,
@@ -54,6 +61,7 @@ impl Handle {
         self.sender.send(ev).await.unwrap();
     }
     /// Set provider state of local peer.
+    /// Will return a recent(not immediate) state change.
     pub async fn set_provider_state(&self, state: bool) -> bool {
         let op_id = self.next_id();
         let mut listener = self.event_tx.subscribe();
@@ -70,6 +78,7 @@ impl Handle {
         with_timeout!(fut, 10).expect("future to finish in 10s")
     }
     /// Get provider state of local peer.
+    /// Will return a immediate state report, e.g. only changes caused by this operation.
     pub async fn provider_state(&self) -> bool {
         let op_id = self.next_id();
         let mut listener = self.event_tx.subscribe();
@@ -83,6 +92,7 @@ impl Handle {
         with_timeout!(fut, 10).expect("future to finish in 10s")
     }
     /// Remove advertisement on local peer.
+    /// Will return a recent(not immediate) state change.
     pub async fn remove_advertised(&self, peer_id: &PeerId) -> bool {
         let ev = InEvent::RemoveAdvertised(*peer_id);
         let mut listener = self.event_tx.subscribe();
@@ -97,12 +107,14 @@ impl Handle {
     }
     generate_handler_method!(
         /// List all peers that supports and connected to this peer.
+        /// This call cannot fail.
         ListConnected:list_connected()->Vec<PeerId>;
         /// List all advertisement on local peer.
         ListAdvertised:list_advertised()->Vec<PeerId>;
     );
     generate_handler_method!(
         /// Clear all advertisements on local peer.
+        /// This call cannot fail.
         ClearAdvertised:clear_advertised();
     );
     fn next_id(&self) -> u64 {
