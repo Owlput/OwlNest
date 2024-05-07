@@ -2,6 +2,7 @@ use owlnest_prelude::lib_prelude::*;
 use serde::{Deserialize, Serialize};
 
 pub mod behaviour;
+pub mod config;
 mod handler;
 
 pub use behaviour::Behaviour;

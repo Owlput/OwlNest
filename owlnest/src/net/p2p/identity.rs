@@ -60,38 +60,19 @@ impl IdentityUnion {
         })
     }
 
-    pub fn export_public_key(
-        &self,
-        folder_path: &str,
-        file_name: &str,
-    ) -> Result<(), std::io::Error> {
-        let folder_path = if folder_path.ends_with('/') {
-            folder_path.rsplit_once('/').unwrap().0
-        } else {
-            folder_path
-        };
+    pub fn export_public_key(&self, path: impl AsRef<Path>) -> Result<(), std::io::Error> {
         let buf = self.get_pubkey().encode_protobuf();
-
-        let path = format!("{}/{}.libp2ppbukey", folder_path, file_name);
         Self::export_to_file(path, &buf)
     }
-    pub fn export_keypair(&self, folder_path: &str, file_name: &str) -> Result<(), std::io::Error> {
-        let folder_path = if folder_path.ends_with('/') {
-            folder_path.rsplit_once('/').unwrap().0
-        } else {
-            folder_path
-        };
-        let path = format!("{}/{}.libp2pkeypair", folder_path, file_name);
+    /// Export the keypair to the given file.
+    pub fn export_keypair(&self, path: impl AsRef<Path>) -> Result<(), std::io::Error> {
         Self::export_to_file(path, &self.keypair.to_protobuf_encoding().unwrap())
     }
     fn export_to_file<P>(path: P, buf: &[u8]) -> Result<(), std::io::Error>
     where
         P: AsRef<Path>,
     {
-        let mut handle = match std::fs::File::create(path) {
-            Ok(handle) => handle,
-            Err(e) => return Err(e),
-        };
+        let mut handle = std::fs::File::create(path)?;
         handle.write_all(buf)
     }
 }

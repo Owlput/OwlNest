@@ -1,3 +1,5 @@
+use self::config::Config;
+
 use super::*;
 use owlnest_macro::handle_callback_sender;
 use owlnest_prelude::behaviour_prelude::*;
@@ -6,6 +8,7 @@ use tracing::{debug, trace};
 
 #[derive(Debug, Default)]
 pub struct Behaviour {
+    config: Config,
     /// Pending events to emit to `Swarm`
     pending_out_events: VecDeque<OutEvent>,
     /// Pending events to be processed by this `Behaviour`.
@@ -18,8 +21,11 @@ pub struct Behaviour {
 }
 
 impl Behaviour {
-    pub fn new() -> Self {
-        Default::default()
+    pub fn new(config: Config) -> Self {
+        Behaviour {
+            config,
+            ..Default::default()
+        }
     }
     pub fn push_event(&mut self, ev: InEvent) {
         self.in_events.push_back(ev)
@@ -65,7 +71,9 @@ impl NetworkBehaviour for Behaviour {
             }
             IncomingAdvertiseReq(bool) => {
                 if bool {
-                    if self.advertised_peers.insert(peer_id) {
+                    if self.advertised_peers.len() <= self.config.max_advertise_capacity
+                        && self.advertised_peers.insert(peer_id)
+                    {
                         debug!("Now advertising peer {}", peer_id);
                     }
                 } else if self.advertised_peers.remove(&peer_id) {

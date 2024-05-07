@@ -1,6 +1,6 @@
 use crate::net::p2p::swarm::EventSender;
 use libp2p::PeerId;
-pub use owlnest_blob::{error, Behaviour, InEvent, OutEvent};
+pub use owlnest_blob::{config, error, Behaviour, InEvent, OutEvent};
 pub use owlnest_blob::{RecvInfo, SendInfo};
 use owlnest_macro::{generate_handler_method, with_timeout};
 use std::path::Path;

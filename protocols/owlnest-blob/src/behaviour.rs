@@ -1,4 +1,6 @@
 use super::*;
+use futures::FutureExt;
+use futures_timer::Delay;
 use handler::FromBehaviourEvent;
 use owlnest_macro::handle_callback_sender;
 use owlnest_prelude::behaviour_prelude::*;
@@ -6,9 +8,19 @@ use std::collections::{HashMap, HashSet, VecDeque};
 use std::io::{Read, Write};
 use tracing::{info, trace_span, warn};
 
-pub(crate) const FILE_CHUNK_SIZE: usize = 1 << 18;
+pub(crate) const FILE_CHUNK_SIZE: usize = 1 << 18; // 256KB
 
-#[derive(Debug, Default)]
+macro_rules! time_now {
+    () => {{
+        use std::time::{SystemTime, UNIX_EPOCH};
+        SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_secs()
+    }};
+}
+
+#[derive(Debug)]
 pub struct Behaviour {
     config: Config,
     /// Pending events to emit to `Swarm`
@@ -25,10 +37,10 @@ pub struct Behaviour {
     /// Ongoing receive indexed by remote send id.
     /// If the record is removed from the list, no more bytes will be written to the file.
     ongoing_recv: HashMap<u64, OngoingFileRecv>,
-    /// Unindexed list of ongoing send.
-    /// The bandwith will be shared evenly between all process.
+    /// List of ongoing send indexed by local send id.
     /// If the record is removed from the list, no more bytes will be send to remote.
     ongoing_send: HashMap<u64, OngoingFileSend>,
+    expiry_check_throttle: Delay,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -37,6 +49,7 @@ pub struct RecvInfo {
     pub bytes_total: u64,
     pub file_name: String,
     pub remote: PeerId,
+    pub timestamp: u64,
 }
 impl From<&PendingRecv> for RecvInfo {
     fn from(value: &PendingRecv) -> Self {
@@ -45,6 +58,7 @@ impl From<&PendingRecv> for RecvInfo {
             remote: value.remote,
             file_name: value.file_name.clone(),
             bytes_total: value.bytes_total,
+            timestamp: value.timestamp,
         }
     }
 }
@@ -69,7 +83,15 @@ impl Behaviour {
     pub fn new(config: Config) -> Self {
         Self {
             config,
-            ..Default::default()
+            out_events: Default::default(),
+            pending_handler_event: Default::default(),
+            connected_peers: Default::default(),
+            recv_counter: Default::default(),
+            pending_recv: Default::default(),
+            pending_send: Default::default(),
+            ongoing_recv: Default::default(),
+            ongoing_send: Default::default(),
+            expiry_check_throttle: Delay::new(Duration::from_secs(5)),
         }
     }
     /// Call this to insert an event.
@@ -109,6 +131,7 @@ impl Behaviour {
                 };
                 trace!("Send request queued.");
                 drop(entered);
+                let timestamp = time_now!();
                 // Queue the send
                 self.pending_send.insert(
                     local_send_id,
@@ -119,6 +142,7 @@ impl Behaviour {
                         span,
                         bytes_total,
                         file,
+                        timestamp,
                     },
                 );
                 // Notify the remote for new send
@@ -185,6 +209,7 @@ impl Behaviour {
         let entered = span.enter();
         drop(entered);
         trace!("New pending recv created");
+        let timestamp = time_now!();
         self.pending_recv.insert(
             local_recv_id,
             PendingRecv {
@@ -194,6 +219,7 @@ impl Behaviour {
                 bytes_total,
                 file_name: file_name.clone(),
                 span,
+                timestamp,
             },
         );
         self.out_events.push_back(OutEvent::IncomingFile {
@@ -242,6 +268,7 @@ impl Behaviour {
                 remote,
                 span,
                 file_path: path,
+                last_active: time_now!(),
             },
         );
         let ev = ToSwarm::NotifyHandler {
@@ -270,7 +297,10 @@ impl Behaviour {
             span,
             bytes_total,
             ..
-        } = self.pending_send.remove(&local_send_id).unwrap();
+        } = self
+            .pending_send
+            .remove(&local_send_id)
+            .expect("Already handled above");
         let entered = span.enter();
         trace!("Send request accepted.");
         drop(entered);
@@ -283,6 +313,7 @@ impl Behaviour {
                 file_handle: file,
                 bytes_sent: 0,
                 span,
+                last_active: time_now!(),
             },
         );
         self.progress_ongoing_send(local_send_id);
@@ -349,7 +380,11 @@ impl Behaviour {
         if self.ongoing_send.get_mut(&local_send_id).is_none() {
             return; // record not found
         }
-        let ongoing_send = self.ongoing_send.get_mut(&local_send_id).unwrap();
+        let ongoing_send = self
+            .ongoing_send
+            .get_mut(&local_send_id)
+            .expect("Already handled above");
+        ongoing_send.last_active = time_now!();
         let entered = ongoing_send.span.enter();
         trace!("Progressing send");
         let mut buf = [0u8; FILE_CHUNK_SIZE];
@@ -403,6 +438,7 @@ impl Behaviour {
             );
             return; // Record not found
         };
+        ongoing_recv.last_active = time_now!();
         let content_len = content.len();
         let entered = ongoing_recv.span.enter();
         trace!("Received {} bytes", content_len);
@@ -455,6 +491,57 @@ impl Behaviour {
         // - All bytes have been successfully written.
         // - EOF not encountered.
         self.ongoing_recv.insert(remote_send_id, ongoing_recv); // Back in queue
+    }
+
+    fn check_expiry(&mut self) {
+        let time_now = time_now!();
+        if self.config.pending_send_timeout > 0 {
+            let expired = self
+                .pending_send
+                .iter()
+                .filter(|(_, v)| self.config.pending_send_timeout > time_now - v.timestamp)
+                .map(|(k, _)| k)
+                .copied()
+                .collect::<Vec<u64>>();
+            expired.into_iter().for_each(|k| {
+                self.cancel_send_by_local_send_id(k);
+            });
+        }
+        if self.config.pending_recv_timeout > 0 {
+            let expired = self
+                .pending_recv
+                .iter()
+                .filter(|(_, v)| self.config.pending_recv_timeout > time_now - v.timestamp)
+                .map(|(k, _)| k)
+                .copied()
+                .collect::<Vec<u64>>();
+            expired.into_iter().for_each(|k| {
+                self.cancel_recv_by_local_recv_id(k);
+            });
+        }
+        if self.config.ongoing_send_timeout > 0 {
+            let expired = self
+                .ongoing_send
+                .iter()
+                .filter(|(_, v)| self.config.ongoing_send_timeout > time_now - v.last_active)
+                .map(|(k, _)| k)
+                .copied()
+                .collect::<Vec<u64>>();
+            expired.into_iter().for_each(|k| {
+                self.cancel_send_by_local_send_id(k);
+            });
+        }
+        if self.config.ongoing_recv_timeout > 0 {
+            let expired = self
+                .ongoing_recv
+                .iter()
+                .filter(|(_, v)| self.config.ongoing_recv_timeout > time_now - v.last_active)
+                .map(|(_, v)| v.local_recv_id)
+                .collect::<Vec<u64>>();
+            expired.into_iter().for_each(|k| {
+                self.cancel_recv_by_local_recv_id(k);
+            });
+        }
     }
 
     /// Try to remove a recv record from all record store.
@@ -579,9 +666,12 @@ impl NetworkBehaviour for Behaviour {
     }
     fn poll(
         &mut self,
-        _cx: &mut std::task::Context<'_>,
+        cx: &mut std::task::Context<'_>,
     ) -> Poll<ToSwarm<super::OutEvent, FromBehaviourEvent>> {
         trace!(name:"Poll","Polling owlnest_blob::Behaviour");
+        if let Poll::Ready(_) = self.expiry_check_throttle.poll_unpin(cx) {
+            self.check_expiry()
+        }
         if let Some(ev) = self.out_events.pop_front() {
             return Poll::Ready(ToSwarm::GenerateEvent(ev));
         }
@@ -626,6 +716,7 @@ struct PendingRecv {
     bytes_total: u64,
     file_name: String,
     remote: PeerId,
+    timestamp: u64,
     span: tracing::Span,
 }
 #[derive(Debug)]
@@ -638,6 +729,7 @@ struct OngoingFileRecv {
     file_handle: std::fs::File,
     span: tracing::Span,
     file_path: PathBuf,
+    last_active: u64,
 }
 
 #[derive(Debug)]
@@ -648,6 +740,7 @@ struct PendingSend {
     bytes_total: u64,
     file: File,
     span: tracing::Span,
+    timestamp: u64,
 }
 #[derive(Debug)]
 struct OngoingFileSend {
@@ -657,4 +750,5 @@ struct OngoingFileSend {
     bytes_total: u64,
     file_handle: std::fs::File,
     span: tracing::Span,
+    last_active: u64,
 }

@@ -13,6 +13,7 @@ tokio-util = { version = "0.7", features = ["compat"] }
 tokio = { workspace = true }
 tracing = { workspace = true }
 serde = { workspace = true }
+toml = "*"
 futures = { workspace = true }
 
 [dev-dependencies]

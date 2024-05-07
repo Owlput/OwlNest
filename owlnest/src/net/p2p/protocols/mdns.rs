@@ -1,12 +1,54 @@
+use std::time::Duration;
+
 use crate::net::p2p::swarm::EventSender;
 use crate::net::p2p::swarm::Swarm;
 
 pub use libp2p::mdns::tokio::Behaviour;
-pub use libp2p::mdns::Config;
 pub use libp2p::mdns::Event as OutEvent;
 use libp2p::PeerId;
 use owlnest_macro::generate_handler_method;
+use owlnest_macro::handle_callback_sender;
+use serde::Deserialize;
+use serde::Serialize;
 use tokio::sync::{mpsc, oneshot::*};
+
+/// Configuration for mDNS.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Config {
+    /// TTL to use for mdns records.
+    pub ttl: Duration,
+    /// Interval at which to poll the network for new peers. This isn't
+    /// necessary during normal operation but avoids the case that an
+    /// initial packet was lost and not discovering any peers until a new
+    /// peer joins the network. Receiving an mdns packet resets the timer
+    /// preventing unnecessary traffic.
+    pub query_interval: Duration,
+    /// Use IPv6 instead of IPv4.
+    pub enable_ipv6: bool,
+}
+impl Into<libp2p::mdns::Config> for Config {
+    fn into(self) -> libp2p::mdns::Config {
+        let Config {
+            ttl,
+            query_interval,
+            enable_ipv6,
+        } = self;
+        libp2p::mdns::Config {
+            ttl,
+            query_interval,
+            enable_ipv6,
+        }
+    }
+}
+impl Default for Config {
+    fn default() -> Self {
+        Self {
+            ttl: Duration::from_secs(6 * 60),
+            query_interval: Duration::from_secs(5 * 60),
+            enable_ipv6: false,
+        }
+    }
+}
 
 #[derive(Debug)]
 pub(crate) enum InEvent {
@@ -42,11 +84,11 @@ pub(crate) fn map_in_event(ev: InEvent, behav: &mut Behaviour) {
     match ev {
         ListDiscoveredNodes(callback) => {
             let node_list = behav.discovered_nodes().copied().collect::<Vec<PeerId>>();
-            callback.send(node_list).unwrap();
+            handle_callback_sender!(node_list => callback)
         }
         HasNode(peer_id, callback) => {
             let has_node = behav.discovered_nodes().any(|peer| *peer == peer_id);
-            callback.send(has_node).unwrap();
+            handle_callback_sender!(has_node => callback)
         }
     }
 }
