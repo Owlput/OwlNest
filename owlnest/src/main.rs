@@ -26,7 +26,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     if let Err(e) = setup_logging() {
         println!("Cannot log to file: {}", e);
     };
-    let ident = if config.swarm.identity_path.len() > 0 {
+    let ident = if !config.swarm.identity_path.is_empty() {
         get_ident(&config.swarm.identity_path)?
     } else {
         IdentityUnion::generate()
@@ -80,7 +80,7 @@ fn get_ident(path: &String) -> Result<IdentityUnion, std::io::Error> {
         Err(e) => {
             warn!("Failed to read keypair: {:?}", e);
             let ident = IdentityUnion::generate();
-            ident.export_keypair(&path)?;
+            ident.export_keypair(path)?;
             Ok(ident)
         }
     }
@@ -104,6 +104,7 @@ fn read_config(path: impl AsRef<Path>) -> Result<SwarmConfig, std::io::Error> {
     if let Ok(mut f) = std::fs::OpenOptions::new()
         .write(true)
         .create(true)
+        .truncate(true)
         .open("./owlnest_config.toml.example")
     {
         let default_config = SwarmConfig::default();
