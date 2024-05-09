@@ -496,51 +496,51 @@ impl Behaviour {
     fn check_expiry(&mut self) {
         let time_now = time_now!();
         if self.config.pending_send_timeout > 0 {
-            let expired = self
-                .pending_send
+            self.pending_send
                 .iter()
                 .filter(|(_, v)| self.config.pending_send_timeout > time_now - v.timestamp)
                 .map(|(k, _)| k)
                 .copied()
-                .collect::<Vec<u64>>();
-            expired.into_iter().for_each(|k| {
-                self.cancel_send_by_local_send_id(k);
-            });
+                .collect::<Vec<u64>>()
+                .into_iter()
+                .for_each(|k| {
+                    self.cancel_send_by_local_send_id(k);
+                });
         }
         if self.config.pending_recv_timeout > 0 {
-            let expired = self
-                .pending_recv
+            self.pending_recv
                 .iter()
                 .filter(|(_, v)| self.config.pending_recv_timeout > time_now - v.timestamp)
                 .map(|(k, _)| k)
                 .copied()
-                .collect::<Vec<u64>>();
-            expired.into_iter().for_each(|k| {
-                self.cancel_recv_by_local_recv_id(k);
-            });
+                .collect::<Vec<u64>>()
+                .into_iter()
+                .for_each(|k| {
+                    self.cancel_recv_by_local_recv_id(k);
+                });
         }
         if self.config.ongoing_send_timeout > 0 {
-            let expired = self
-                .ongoing_send
+            self.ongoing_send
                 .iter()
                 .filter(|(_, v)| self.config.ongoing_send_timeout > time_now - v.last_active)
                 .map(|(k, _)| k)
                 .copied()
-                .collect::<Vec<u64>>();
-            expired.into_iter().for_each(|k| {
-                self.cancel_send_by_local_send_id(k);
-            });
+                .collect::<Vec<u64>>()
+                .into_iter()
+                .for_each(|k| {
+                    self.cancel_send_by_local_send_id(k);
+                });
         }
         if self.config.ongoing_recv_timeout > 0 {
-            let expired = self
-                .ongoing_recv
+            self.ongoing_recv
                 .iter()
                 .filter(|(_, v)| self.config.ongoing_recv_timeout > time_now - v.last_active)
                 .map(|(_, v)| v.local_recv_id)
-                .collect::<Vec<u64>>();
-            expired.into_iter().for_each(|k| {
-                self.cancel_recv_by_local_recv_id(k);
-            });
+                .collect::<Vec<u64>>()
+                .into_iter()
+                .for_each(|k| {
+                    self.cancel_recv_by_local_recv_id(k);
+                });
         }
     }
 

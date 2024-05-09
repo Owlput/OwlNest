@@ -97,6 +97,7 @@ impl ConnectionHandler for Handler {
             State::Inactive { reported: true } => return Poll::Pending,
             State::Inactive { reported: false } => {
                 self.state = State::Inactive { reported: true };
+                trace!("Reporting inactivity");
                 return Poll::Ready(ConnectionHandlerEvent::NotifyBehaviour(
                     ToBehaviourEvent::Unsupported,
                 ));
@@ -104,93 +105,79 @@ impl ConnectionHandler for Handler {
             State::Active => {}
         };
         if let Some(fut) = self.inbound.as_mut() {
-            match fut.poll_unpin(cx) {
-                Poll::Pending => {}
-                Poll::Ready(Err(e)) => {
-                    let error = Error::IO(format!("IO Error: {:?}", e));
-                    self.pending_out_events
-                        .push_back(ToBehaviourEvent::Error(error));
-                    self.inbound = None;
-                }
-                Poll::Ready(Ok((stream, bytes))) => {
-                    self.inbound = Some(super::protocol::recv(stream).boxed());
-                    let event = ConnectionHandlerEvent::NotifyBehaviour(
-                        ToBehaviourEvent::IncomingMessage(bytes),
-                    );
-                    return Poll::Ready(event);
-                }
+            let poll_result = fut.poll_unpin(cx);
+            if let Poll::Ready(Ok((stream, bytes))) = poll_result {
+                self.inbound = Some(super::protocol::recv(stream).boxed());
+                let event = ConnectionHandlerEvent::NotifyBehaviour(
+                    ToBehaviourEvent::IncomingMessage(bytes),
+                );
+                return Poll::Ready(event);
+            }
+            if let Poll::Ready(Err(e)) = poll_result {
+                let error = Error::IO(format!("IO Error: {:?}", e));
+                self.pending_out_events
+                    .push_back(ToBehaviourEvent::Error(error));
+                self.inbound = None;
             }
         }
         loop {
-            match self.outbound.take() {
-                Some(OutboundState::Busy(mut task, id, mut timer)) => {
-                    match task.poll_unpin(cx) {
-                        Poll::Pending => {
-                            if timer.poll_unpin(cx).is_ready() {
-                                self.pending_out_events
-                                    .push_back(ToBehaviourEvent::SendResult(
-                                        Err(SendError::Timeout),
-                                        id,
-                                    ))
-                            } else {
-                                // Put the future back
-                                self.outbound = Some(OutboundState::Busy(task, id, timer));
-                                // End the loop because the outbound is busy
-                                break;
-                            }
-                        }
-                        // Ready
-                        Poll::Ready(Ok((stream, rtt))) => {
-                            self.pending_out_events
-                                .push_back(ToBehaviourEvent::SendResult(Ok(rtt), id));
-                            // Free the outbound
-                            self.outbound = Some(OutboundState::Idle(stream));
-                            if let Some(ev) = self.pending_out_events.pop_front() {
-                                return Poll::Ready(ConnectionHandlerEvent::NotifyBehaviour(ev));
-                            }
-                        }
-                        // Ready but resolved to an error
-                        Poll::Ready(Err(e)) => {
-                            self.pending_out_events
-                                .push_back(ToBehaviourEvent::Error(Error::IO(e.to_string())));
-                        }
+            if let Some(OutboundState::Busy(task, id, timer)) = self.outbound.as_mut() {
+                let poll_result = task.poll_unpin(cx);
+                if let Poll::Pending = poll_result {
+                    trace!("outbound pending");
+                    if timer.poll_unpin(cx).is_ready() {
+                        return Poll::Ready(ConnectionHandlerEvent::NotifyBehaviour(
+                            ToBehaviourEvent::SendResult(Err(SendError::Timeout), *id),
+                        )); // exit and drop the task(with negotiated stream)
                     }
+                    break; // exit loop because of pending future, checking pending out events
                 }
-                // Outbound is free, get the next message sent
-                Some(OutboundState::Idle(stream)) => {
-                    if let Some(ev) = self.pending_in_events.pop_front() {
-                        match ev {
-                            FromBehaviourEvent::PostMessage(msg, id) => {
-                                // Put Outbound into send state
-                                self.outbound = Some(OutboundState::Busy(
-                                    protocol::send(stream, msg.as_bytes()).boxed(),
-                                    id,
-                                    Delay::new(self.timeout),
-                                ))
-                            }
-                        }
-                    } else {
-                        self.outbound = Some(OutboundState::Idle(stream));
-                        break;
-                    }
+                if let Poll::Ready(Err(e)) = poll_result {
+                    return Poll::Ready(ConnectionHandlerEvent::NotifyBehaviour(
+                        ToBehaviourEvent::Error(Error::IO(e.to_string())),
+                    )); // exit because of error
                 }
-                Some(OutboundState::OpenStream) => {
-                    self.outbound = Some(OutboundState::OpenStream);
-                    break;
-                }
-                None => {
-                    self.outbound = Some(OutboundState::OpenStream);
-                    let protocol =
-                        SubstreamProtocol::new(ReadyUpgrade::new(protocol::PROTOCOL_NAME), ());
-                    let event = ConnectionHandlerEvent::OutboundSubstreamRequest { protocol };
-                    return Poll::Ready(event);
+                if let Poll::Ready(Ok((stream, rtt))) = poll_result {
+                    self.pending_out_events
+                        .push_back(ToBehaviourEvent::SendResult(Ok(rtt), *id));
+                    // Free the outbound
+                    self.outbound = Some(OutboundState::Idle(stream));
+                    // continue to see if there is any pending activity
                 }
             }
+            trace!("pending in events: {}", self.pending_in_events.len());
+            if self.pending_in_events.is_empty() {
+                break; // exit because of no pending activity
+            }
+            if let Some(OutboundState::Idle(stream)) = self.outbound.take() {
+                let ev = self.pending_in_events.pop_front().expect("already handled");
+                match ev {
+                    FromBehaviourEvent::PostMessage(msg, id) => {
+                        trace!("sending message: {}", msg.msg);
+                        // Put Outbound into send state
+                        self.outbound = Some(OutboundState::Busy(
+                            protocol::send(stream, msg.as_bytes()).boxed(),
+                            id,
+                            Delay::new(self.timeout),
+                        ))
+                    }
+                }
+            }
+            // come back to poll the newly created future for wake-up
         }
         if let Some(ev) = self.pending_out_events.pop_front() {
             return Poll::Ready(ConnectionHandlerEvent::NotifyBehaviour(ev));
         }
-        Poll::Pending
+        if let Some(OutboundState::OpenStream) = self.outbound {
+            return Poll::Pending;
+        }
+        if let None = self.outbound {
+            self.outbound = Some(OutboundState::OpenStream);
+            let protocol = SubstreamProtocol::new(ReadyUpgrade::new(protocol::PROTOCOL_NAME), ());
+            let event = ConnectionHandlerEvent::OutboundSubstreamRequest { protocol };
+            return Poll::Ready(event);
+        }
+        Poll::Pending // Only reaches here when outbound is pending and no events to be fired
     }
     fn on_connection_event(
         &mut self,

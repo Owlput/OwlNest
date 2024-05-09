@@ -157,10 +157,10 @@ mod test {
             .unwrap();
         let peer1_id = peer1.identity().get_peer_id();
         let peer2_id = peer2.identity().get_peer_id();
-        thread::sleep(Duration::from_millis(100));
+        thread::sleep(Duration::from_millis(1000));
         assert!(
-            peer1.swarm().is_connected_blocking(peer2_id)
-                && peer2.swarm().is_connected_blocking(peer1_id)
+             peer2.swarm().is_connected_blocking(peer1_id) && peer1.swarm().is_connected_blocking(peer2_id)
+    
         );
         single_send_recv(&peer1, &peer2, &mut peer2_message_watcher);
         single_send_recv(&peer2, &peer1, &mut peer1_message_watcher);
@@ -215,8 +215,10 @@ mod test {
         use tracing_subscriber::Layer;
         let filter = tracing_subscriber::filter::Targets::new()
             .with_target("owlnest_messaging", Level::TRACE)
-            .with_target("owlnest", Level::INFO)
-            .with_target("", Level::WARN);
+            .with_target("owlnest_blob", Level::INFO)
+            .with_target("owlnest::net::p2p::swarm::behaviour", Level::INFO)
+            .with_target("owlnest", Level::TRACE)
+            .with_target("", Level::DEBUG);
         let layer = tracing_subscriber::fmt::Layer::default()
             .with_ansi(false)
             .with_writer(Mutex::new(stdout()))

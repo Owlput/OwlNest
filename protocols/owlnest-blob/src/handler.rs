@@ -237,7 +237,7 @@ impl Handler {
                 };
                 self.outbound = Some(OutboundState::Busy(
                     protocol::send(stream, message.encode_to_vec(), 0).boxed(),
-                    SendType::ControlSend(callback, local_send_id),
+                    SendType::ControlSend(Some(callback), local_send_id),
                     Delay::new(self.timeout),
                 ))
             }
@@ -250,7 +250,7 @@ impl Handler {
                 };
                 self.outbound = Some(OutboundState::Busy(
                     protocol::send(stream, message.encode_to_vec(), 1).boxed(),
-                    SendType::ControlRecv(callback),
+                    SendType::ControlRecv(Some(callback)),
                     Delay::new(self.timeout),
                 ))
             }
@@ -316,104 +316,97 @@ impl ConnectionHandler for Handler {
         };
         if let Some(fut) = self.inbound.as_mut() {
             trace!("Polling inbound");
-            match fut.poll_unpin(cx) {
-                Poll::Pending => {
-                    trace!("Inbound pending")
-                }
-                Poll::Ready(Err(e)) => {
-                    let error = Error::IO(format!("IO Error: {:?}", e));
-                    self.pending_out_events
-                        .push_back(ToBehaviourEvent::Error(error));
-                    trace!("Inbound error");
-                    self.inbound = None;
-                }
-                Poll::Ready(Ok((stream, bytes, msg_type))) => {
-                    self.inbound = Some(super::protocol::recv(stream).boxed());
-                    self.on_message(bytes, msg_type);
-                    trace!("Inbound handled");
-                }
+            let poll_result = fut.poll_unpin(cx);
+            if let Poll::Ready(Err(e)) = poll_result {
+                trace!("Inbound error");
+                self.inbound = None;
+                let error = Error::IO(format!("IO Error: {:?}", e));
+                return Poll::Ready(ConnectionHandlerEvent::NotifyBehaviour(
+                    ToBehaviourEvent::Error(error),
+                ));
+            }
+            if let Poll::Ready(Ok((stream, bytes, msg_type))) = poll_result {
+                self.inbound = Some(super::protocol::recv(stream).boxed());
+                self.on_message(bytes, msg_type);
+                trace!("Inbound handled");
             }
         }
         loop {
             trace!("Polling outbound");
-            match self.outbound.take() {
-                Some(OutboundState::Busy(mut task, send_type, mut timer)) => {
-                    match task.poll_unpin(cx) {
-                        Poll::Pending => {
-                            if timer.poll_unpin(cx).is_ready() {
-                                self.pending_out_events
-                                    .push_back(ToBehaviourEvent::Error(Error::IO("Timeout".into())))
-                            } else {
-                                trace!("Outbound busy");
-                                // Put the future back
-                                self.outbound = Some(OutboundState::Busy(task, send_type, timer));
-                                return Poll::Pending;
-                            }
-                        }
-                        // Ready
-                        Poll::Ready(Ok((stream, rtt))) => {
-                            trace!("Outbound ready");
-                            match send_type {
-                                SendType::ControlSend(callback, local_send_id) => {
-                                    self.pending_out_events.push_back(
-                                        ToBehaviourEvent::FileSendPending { local_send_id },
-                                    );
-                                    handle_callback_sender!(Ok(())=>callback);
-                                }
-                                SendType::ControlRecv(callback) => {
-                                    handle_callback_sender!(Ok(rtt)=>callback);
-                                }
-                                SendType::FileSend(id) => {
-                                    self.pending_out_events.push_back(
-                                        ToBehaviourEvent::SendProgressed {
-                                            local_send_id: id,
-                                            rtt,
-                                        },
-                                    );
-                                }
-                                SendType::Cancel => {}
-                            }
-                            self.outbound = Some(OutboundState::Idle(stream));
-                        }
-                        // Ready but resolved to an error
-                        Poll::Ready(Err(e)) => {
-                            trace!("Outbound error");
-                            self.pending_out_events
-                                .push_back(ToBehaviourEvent::Error(Error::IO(e.to_string())));
-                        }
+            if let Some(OutboundState::Busy(task, send_type, timer)) = self.outbound.as_mut() {
+                let poll_result = task.poll_unpin(cx);
+                if let Poll::Pending = poll_result {
+                    trace!("Outbound busy");
+                    if timer.poll_unpin(cx).is_ready() {
+                        self.outbound.take();
+                        return Poll::Ready(ConnectionHandlerEvent::NotifyBehaviour(
+                            ToBehaviourEvent::Error(Error::IO("Timeout".into())),
+                        ));
                     }
-                }
-                // Outbound is free, get the next message sent
-                Some(OutboundState::Idle(stream)) => {
-                    trace!("Outbound idle");
-                    // in favour of control messages
-                    if let Some(ev) = self.pending_in_events.pop_front() {
-                        self.progress_outbound(ev, stream);
-                    } else {
-                        self.outbound = Some(OutboundState::Idle(stream));
-                        break;
-                    };
-                }
-                Some(OutboundState::OpenStream) => {
-                    self.outbound = Some(OutboundState::OpenStream);
                     break;
                 }
-                None => {
-                    trace!("Opening stream");
-                    self.outbound = Some(OutboundState::OpenStream);
-                    let protocol =
-                        SubstreamProtocol::new(ReadyUpgrade::new(protocol::PROTOCOL_NAME), ());
-                    let event = ConnectionHandlerEvent::OutboundSubstreamRequest { protocol };
-                    return Poll::Ready(event);
+                // Ready but resolved to an error
+                if let Poll::Ready(Err(e)) = poll_result {
+                    trace!("Outbound error");
+                    return Poll::Ready(ConnectionHandlerEvent::NotifyBehaviour(
+                        ToBehaviourEvent::Error(Error::IO(e.to_string())),
+                    )); // return with `self.outbound` == None
+                }
+                if let Poll::Ready(Ok((stream, rtt))) = poll_result {
+                    trace!("Outbound ready");
+                    match send_type {
+                        SendType::ControlSend(callback, local_send_id) => {
+                            self.pending_out_events
+                                .push_back(ToBehaviourEvent::FileSendPending {
+                                    local_send_id: *local_send_id,
+                                });
+                            handle_callback_sender!(Ok(())=>callback.take().unwrap());
+                        }
+                        SendType::ControlRecv(callback) => {
+                            handle_callback_sender!(Ok(rtt)=>callback.take().unwrap());
+                        }
+                        SendType::FileSend(id) => {
+                            self.pending_out_events
+                                .push_back(ToBehaviourEvent::SendProgressed {
+                                    local_send_id: *id,
+                                    rtt,
+                                });
+                        }
+                        SendType::Cancel => {}
+                    }
+                    self.outbound = Some(OutboundState::Idle(stream));
                 }
             }
+            if self.pending_in_events.is_empty() {
+                break; // exit because of no pending activity
+            }
+            // Outbound is free, get the next message sent
+            if let Some(OutboundState::Idle(stream)) = self.outbound.take() {
+                trace!("Outbound idle");
+                // in favour of control messages
+                let ev = self.pending_in_events.pop_front().expect("already handled");
+                self.progress_outbound(ev, stream);
+            }
+            // new outbound task needs to be polled for wake-up to be scheduled
         }
         if let Some(ev) = self.pending_out_events.pop_front() {
             trace!("Generate event to behaviour");
             return Poll::Ready(ConnectionHandlerEvent::NotifyBehaviour(ev));
         }
+        if let Some(OutboundState::OpenStream) = &self.outbound {
+            trace!("waiting for stream to be negotiated");
+            return Poll::Pending;
+        }
+        if let None = &self.outbound {
+            trace!("Opening stream");
+            self.outbound = Some(OutboundState::OpenStream);
+            let protocol = SubstreamProtocol::new(ReadyUpgrade::new(protocol::PROTOCOL_NAME), ());
+            let event = ConnectionHandlerEvent::OutboundSubstreamRequest { protocol };
+            return Poll::Ready(event);
+        }
+
         trace!("nothing to do, returning");
-        Poll::Pending
+        Poll::Pending // Only reaches here when outbound is pending and no events to be fired
     }
     fn on_connection_event(
         &mut self,
@@ -461,8 +454,8 @@ enum OutboundState {
     Busy(PendingSend, SendType, Delay),
 }
 enum SendType {
-    ControlSend(oneshot::Sender<Result<(), FileSendError>>, u64),
-    ControlRecv(oneshot::Sender<Result<Duration, FileRecvError>>),
+    ControlSend(Option<oneshot::Sender<Result<(), FileSendError>>>, u64),
+    ControlRecv(Option<oneshot::Sender<Result<Duration, FileRecvError>>>),
     Cancel,
     FileSend(u64),
 }
