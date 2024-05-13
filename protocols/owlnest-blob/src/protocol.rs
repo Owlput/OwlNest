@@ -1,68 +1,43 @@
 use futures::prelude::*;
 use std::io;
+use std::sync::Arc;
 use std::time::{Duration, Instant};
 use tracing::{trace, trace_span};
 use xxhash_rust::xxh3::xxh3_128;
 pub const PROTOCOL_NAME: &str = "/owlnest/blob/0.0.1";
+#[allow(unused)]
+const MAX_PACKET_SIZE: usize = 1 << 18;
 
-/// Universal protocol for sending bytes
-
-// Send and receive operation are performed on different negoticated substreams
-//      send()-->Outbound------>Inbound-->recv()
-//      recv()<--Inbound<------Outbound<--send()
-//              Peer A          Peer B
-pub async fn send<S>(mut stream: S, msg_bytes: Vec<u8>, msg_type: u8) -> io::Result<(S, Duration)>
+/// buf includes header, so len will be the actuall message + 8 bytes of header
+pub async fn send<S>(mut stream: S, buf: Arc<[u8]>, len: usize) -> io::Result<(S, Duration)>
 where
     S: AsyncRead + AsyncWrite + Unpin,
 {
-    let span = trace_span!("protocol::send");
-    let verf = xxh3_128(&msg_bytes);
-    let len = msg_bytes.len();
-    span.in_scope(|| {
-        trace!("{} bytes to write, hash {}", len, verf);
-    });
-    let mut header = (len as u64).to_be_bytes();
-    header[0] = msg_type;
-    stream.write_all(&header).await?;
-    stream.flush().await?;
-    span.in_scope(|| {
-        trace!("stream length written and flushed");
-    });
+    let verf = xxh3_128(&buf[8..len]);
     let mut cursor = 0;
     loop {
-        let bytes_write = stream.write(&msg_bytes[cursor..]).await?;
+        let bytes_write = stream.write(&buf[cursor..len]).await?;
         cursor += bytes_write;
-        let _entered = span.enter();
-        trace!("cursor at {} bytes, {} bytes total", bytes_write, len);
         if cursor >= len {
-            trace!("All bytes written, exiting");
+            trace!("All {} bytes written, exiting", len);
             break;
         }
     }
-    stream.flush().await?;
-    span.in_scope(|| {
-        trace!("all bytes written and flushed");
-    });
-    drop(msg_bytes);
     let now = Instant::now();
+    stream.flush().await?;
     let mut verf_read = [0u8; 16];
-    span.in_scope(|| {
-        trace!("reading hash verifier from rmeote");
-    });
     stream.read_exact(&mut verf_read).await?;
-    let _entered = span.enter();
-    if verf_read == verf.to_be_bytes() {
-        trace!("send finished");
+    trace!("reading verifier");
+    if u128::from_be_bytes(verf_read) == verf {
         return Ok((stream, now.elapsed()));
     }
-    trace!("verifier mismatch");
     Err(std::io::Error::new(
         io::ErrorKind::InvalidData,
         "Verifier mismatch",
     ))
 }
 
-pub async fn recv<S>(mut stream: S) -> io::Result<(S, Vec<u8>, u8)>
+pub async fn recv<S>(mut stream: S) -> io::Result<(S, Arc<[u8]>, usize, u8)>
 where
     S: AsyncRead + AsyncWrite + Unpin,
 {
@@ -81,49 +56,35 @@ where
             "Stream too long. Terminating.",
         ));
     }
-    let msg = if msg_type == 2 {
-        let mut msg_buf = [0u8; (1 << 18) + 16];
-        let mut cursor = 0;
-        loop {
-            if cursor as u64 >= bytes_to_read {
-                break;
-            }
-            let bytes_read = stream.read(&mut msg_buf[cursor..]).await?;
-            cursor += bytes_read;
-            span.in_scope(|| {
-                trace!("cursor at {} byte, {} bytes total", cursor, bytes_to_read);
-            });
-        }
-        stream
-            .write_all(&xxh3_128(&msg_buf[..cursor]).to_be_bytes())
-            .await?;
-        stream.flush().await?;
-        span.in_scope(|| {
-            trace!("verifier written and flushed");
-        });
-        Vec::from(&msg_buf[..cursor])
+    let buf: Arc<[u8]> = if msg_type == 2 {
+        let mut buf = [0u8; (1 << 18) + 16];
+        cursor_read(&mut stream, &mut buf, bytes_to_read as usize).await?;
+        Arc::new(buf)
     } else {
-        let mut msg_buf = [0u8; 1 << 8];
-        let mut cursor = 0;
-        loop {
-            if cursor as u64 >= bytes_to_read {
-                break;
-            }
-            let bytes_read = stream.read(&mut msg_buf[cursor..]).await?;
-            cursor += bytes_read;
-            span.in_scope(|| {
-                trace!("cursor at {} byte, {} bytes total", cursor, bytes_to_read);
-            });
-        }
-        stream
-            .write_all(&xxh3_128(&msg_buf[..cursor]).to_be_bytes())
-            .await?;
-        stream.flush().await?;
-        span.in_scope(|| {
-            trace!("verifier written and flushed");
-        });
-        Vec::from(&msg_buf[..cursor])
+        let mut buf = [0u8; 1 << 6];
+        cursor_read(&mut stream, &mut buf, bytes_to_read as usize).await?;
+        Arc::new(buf)
     };
+    span.in_scope(|| {
+        trace!("All bytes read");
+    });
+    Ok((stream, buf, bytes_to_read as usize, msg_type))
+}
 
-    Ok((stream, msg, msg_type))
+async fn cursor_read<S>(s: &mut S, buf: &mut [u8], len: usize) -> Result<(), std::io::Error>
+where
+    S: AsyncRead + AsyncWrite + std::marker::Unpin,
+{
+    let mut cursor = 0usize;
+    loop {
+        if cursor >= len {
+            break;
+        }
+        let bytes_read = s.read(&mut buf[cursor..]).await?;
+        cursor += bytes_read;
+    }
+    s.write_all(&xxh3_128(&buf[0..cursor]).to_be_bytes())
+        .await?;
+    s.flush().await?;
+    Ok(())
 }

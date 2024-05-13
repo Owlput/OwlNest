@@ -8,12 +8,12 @@ mod handler;
 pub use behaviour::Behaviour;
 use tokio::sync::oneshot;
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone)]
 pub enum OutEvent {
     /// A query sent to a remote peer is answered.
     QueryAnswered {
         from: PeerId,
-        list: Vec<PeerId>,
+        list: Option<Box<[PeerId]>>,
     },
     /// A advertisement result from remote peer arrived.
     RemoteAdvertisementResult {
@@ -76,6 +76,6 @@ pub enum InEvent {
     RemoveAdvertised(PeerId),
     /// Remove all advertised peers from local provider.
     ClearAdvertised(),
-    ListAdvertised(oneshot::Sender<Vec<PeerId>>),
-    ListConnected(oneshot::Sender<Vec<PeerId>>),
+    ListAdvertised(oneshot::Sender<Box<[PeerId]>>),
+    ListConnected(oneshot::Sender<Box<[PeerId]>>),
 }

@@ -38,7 +38,7 @@ impl Display for SendError {
             ConnectionClosed => f.write_str("Connection Closed"),
             VerifierMismatch => f.write_str("Message verifier mismatch"),
             Timeout => f.write_str("Message timed out"),
-            PeerNotFound(peer) => f.write_str(&format!("Peer {} not connected", peer)),
+            PeerNotFound(peer) => write!(f, "Peer {} not connected", peer),
         }
     }
 }

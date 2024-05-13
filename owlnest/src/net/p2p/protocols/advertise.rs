@@ -25,7 +25,10 @@ impl Handle {
     }
     /// Send query to a remote for current advertisements.
     /// Will return `Err(Error::NotProviding)` for peers who don't support this protocol.
-    pub async fn query_advertised_peer(&self, relay: PeerId) -> Result<Vec<PeerId>, Error> {
+    pub async fn query_advertised_peer(
+        &self,
+        relay: PeerId,
+    ) -> Result<Option<Box<[PeerId]>>, Error> {
         let mut listener = self.event_tx.subscribe();
         let fut = listen_event!(listener for Advertise,
             OutEvent::QueryAnswered { from, list } => {
@@ -108,9 +111,9 @@ impl Handle {
     generate_handler_method!(
         /// List all peers that supports and connected to this peer.
         /// This call cannot fail.
-        ListConnected:list_connected()->Vec<PeerId>;
+        ListConnected:list_connected()->Box<[PeerId]>;
         /// List all advertisement on local peer.
-        ListAdvertised:list_advertised()->Vec<PeerId>;
+        ListAdvertised:list_advertised()->Box<[PeerId]>;
     );
     generate_handler_method!(
         /// Clear all advertisements on local peer.
@@ -317,6 +320,7 @@ mod test {
             .executor()
             .block_on(peer2_m.advertise().query_advertised_peer(peer1_id))
             .unwrap()
+            .unwrap()
             .contains(&peer2_id));
         trace!("found advertisement for peer2 on peer1");
         assert!(!peer1_m
@@ -329,8 +333,7 @@ mod test {
                 .executor()
                 .block_on(peer2_m.advertise().query_advertised_peer(peer1_id))
                 .unwrap()
-                .len()
-                == 0
+                == None
         );
         trace!("advertisement no longer available");
         peer2_m.executor().block_on(
@@ -348,6 +351,7 @@ mod test {
             peer2_m
                 .executor()
                 .block_on(peer2_m.advertise().query_advertised_peer(peer1_id))
+                .unwrap()
                 .unwrap()
                 .len()
                 == 0

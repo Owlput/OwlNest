@@ -410,7 +410,7 @@ mod test {
         use tracing_subscriber::Layer;
         let filter = tracing_subscriber::filter::Targets::new()
             .with_target("owlnest", Level::INFO)
-            .with_target("owlnest_blob", Level::INFO)
+            .with_target("owlnest_blob", Level::DEBUG)
             .with_target("", Level::WARN);
         let layer = tracing_subscriber::fmt::Layer::default()
             .with_ansi(false)

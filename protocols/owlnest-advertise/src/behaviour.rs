@@ -95,74 +95,28 @@ impl NetworkBehaviour for Behaviour {
         &mut self,
         _cx: &mut std::task::Context<'_>,
     ) -> Poll<ToSwarm<super::OutEvent, handler::FromBehaviour>> {
-        if let Some(ev) = self.pending_out_events.pop_front() {
-            return Poll::Ready(ToSwarm::GenerateEvent(ev));
-        }
         if let Some(peer_id) = self.pending_query_answer.pop_front() {
             trace!("Answering query from {}", peer_id);
             if self.is_providing {
                 return Poll::Ready(ToSwarm::NotifyHandler {
                     peer_id,
                     handler: NotifyHandler::Any,
-                    event: handler::FromBehaviour::AnswerAdvertisedPeer(
-                        self.advertised_peers.iter().cloned().collect(),
-                    ),
+                    event: handler::FromBehaviour::AnswerAdvertisedPeer(Some(
+                        self.advertised_peers.iter().copied().collect(),
+                    )),
                 });
             }
             return Poll::Ready(ToSwarm::NotifyHandler {
                 peer_id,
                 handler: NotifyHandler::Any,
-                event: handler::FromBehaviour::AnswerAdvertisedPeer(Vec::new()),
+                event: handler::FromBehaviour::AnswerAdvertisedPeer(None),
             });
         }
-
-        while let Some(ev) = self.in_events.pop_front() {
-            use InEvent::*;
-            match ev {
-                QueryAdvertisedPeer(relay) => {
-                    if self.connected_peers.contains(&relay) {
-                        return Poll::Ready(ToSwarm::NotifyHandler {
-                            peer_id: relay,
-                            handler: NotifyHandler::Any,
-                            event: handler::FromBehaviour::QueryAdvertisedPeer,
-                        });
-                    }
-                    self.pending_out_events
-                        .push_back(OutEvent::Error(Error::NotProviding(relay)))
-                }
-                GetProviderState(id) => {
-                    return Poll::Ready(ToSwarm::GenerateEvent(OutEvent::ProviderState(
-                        self.is_providing,
-                        id,
-                    )))
-                }
-                SetRemoteAdvertisement { remote, state, id } => {
-                    return Poll::Ready(ToSwarm::NotifyHandler {
-                        peer_id: remote,
-                        handler: NotifyHandler::Any,
-                        event: handler::FromBehaviour::SetAdvertiseSelf(state, id),
-                    })
-                }
-                SetProviderState(status, id) => {
-                    self.set_provider_status(status);
-                    return Poll::Ready(ToSwarm::GenerateEvent(OutEvent::ProviderState(
-                        status, id,
-                    )));
-                }
-                RemoveAdvertised(peer_id) => {
-                    let result = self.advertised_peers.remove(&peer_id);
-                    return Poll::Ready(ToSwarm::GenerateEvent(OutEvent::AdvertisedPeerChanged(
-                        peer_id, result,
-                    )));
-                }
-                ListAdvertised(callback) => {
-                    handle_callback_sender!(self.advertised_peers.iter().cloned().collect()=>callback);
-                }
-                ClearAdvertised() => self.advertised_peers.clear(),
-                ListConnected(callback) => {
-                    handle_callback_sender!(self.connected_peers.iter().copied().collect() => callback);
-                }
-            }
+        if let Some(ev) = self.handle_in_event() {
+            return Poll::Ready(ev);
+        }
+        if let Some(ev) = self.pending_out_events.pop_front() {
+            return Poll::Ready(ToSwarm::GenerateEvent(ev));
         }
         Poll::Pending
     }
@@ -197,5 +151,57 @@ impl NetworkBehaviour for Behaviour {
         _role_override: Endpoint,
     ) -> Result<Self::ConnectionHandler, ConnectionDenied> {
         Ok(handler::Handler::new())
+    }
+}
+
+impl Behaviour {
+    fn handle_in_event(&mut self) -> Option<ToSwarm<OutEvent, handler::FromBehaviour>> {
+        while let Some(ev) = self.in_events.pop_front() {
+            use InEvent::*;
+            match ev {
+                QueryAdvertisedPeer(relay) => {
+                    if self.connected_peers.contains(&relay) {
+                        return Some(ToSwarm::NotifyHandler {
+                            peer_id: relay,
+                            handler: NotifyHandler::Any,
+                            event: handler::FromBehaviour::QueryAdvertisedPeer,
+                        });
+                    }
+                    self.pending_out_events
+                        .push_back(OutEvent::Error(Error::NotProviding(relay)))
+                }
+                GetProviderState(id) => {
+                    return Some(ToSwarm::GenerateEvent(OutEvent::ProviderState(
+                        self.is_providing,
+                        id,
+                    )))
+                }
+                SetRemoteAdvertisement { remote, state, id } => {
+                    return Some(ToSwarm::NotifyHandler {
+                        peer_id: remote,
+                        handler: NotifyHandler::Any,
+                        event: handler::FromBehaviour::SetAdvertiseSelf(state, id),
+                    })
+                }
+                SetProviderState(status, id) => {
+                    self.set_provider_status(status);
+                    return Some(ToSwarm::GenerateEvent(OutEvent::ProviderState(status, id)));
+                }
+                RemoveAdvertised(peer_id) => {
+                    let result = self.advertised_peers.remove(&peer_id);
+                    return Some(ToSwarm::GenerateEvent(OutEvent::AdvertisedPeerChanged(
+                        peer_id, result,
+                    )));
+                }
+                ListAdvertised(callback) => {
+                    handle_callback_sender!(self.advertised_peers.iter().cloned().collect()=>callback);
+                }
+                ClearAdvertised() => self.advertised_peers.clear(),
+                ListConnected(callback) => {
+                    handle_callback_sender!(self.connected_peers.iter().copied().collect() => callback);
+                }
+            }
+        }
+        None
     }
 }

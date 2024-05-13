@@ -8,13 +8,13 @@ use tracing::trace;
 #[derive(Debug)]
 pub enum FromBehaviour {
     QueryAdvertisedPeer,
-    AnswerAdvertisedPeer(Vec<PeerId>),
+    AnswerAdvertisedPeer(Option<Box<[PeerId]>>),
     SetAdvertiseSelf(bool, u64),
 }
 #[derive(Debug)]
 pub enum ToBehaviour {
     IncomingQuery,
-    QueryAnswered(Vec<PeerId>),
+    QueryAnswered(Option<Box<[PeerId]>>),
     IncomingAdvertiseReq(bool),
     Error(Error),
     InboundNegotiated,
@@ -44,7 +44,7 @@ impl Default for State {
 enum Packet {
     AdvertiseSelf(bool, u64),
     QueryAdvertisedPeer,
-    AnswerAdvertisedPeer(Vec<PeerId>),
+    AnswerAdvertisedPeer(Option<Box<[PeerId]>>),
 }
 impl Packet {
     #[inline]
@@ -78,28 +78,6 @@ impl Handler {
     pub fn new() -> Self {
         Default::default()
     }
-    #[inline]
-    fn on_dial_upgrade_error(
-        &mut self,
-        DialUpgradeError { error, .. }: DialUpgradeError<
-            <Self as ConnectionHandler>::OutboundOpenInfo,
-            <Self as ConnectionHandler>::OutboundProtocol,
-        >,
-    ) {
-        self.outbound = None;
-        match error {
-            StreamUpgradeError::NegotiationFailed => {
-                self.state = State::Inactive { reported: false };
-            }
-            e => {
-                tracing::debug!(
-                    "Error occurred when negotiating protocol {}: {:?}",
-                    protocol::PROTOCOL_NAME,
-                    e
-                )
-            }
-        }
-    }
 }
 
 impl ConnectionHandler for Handler {
@@ -132,118 +110,9 @@ impl ConnectionHandler for Handler {
             }
             State::Active => {}
         };
-        if let Some(fut) = self.inbound.as_mut() {
-            match fut.poll_unpin(cx) {
-                Poll::Pending => {}
-                Poll::Ready(Err(e)) => {
-                    let error = Error::IO(format!("IO Error: {:?}", e));
-                    self.pending_out_events.push_back(ToBehaviour::Error(error));
-                    self.inbound = None;
-                }
-                Poll::Ready(Ok((stream, bytes))) => {
-                    self.inbound = Some(super::protocol::recv(stream).boxed());
-                    match serde_json::from_slice::<Packet>(&bytes) {
-                        Ok(packet) => {
-                            trace!(
-                                "reading packet {:?} and convert to {:?}",
-                                packet,
-                                <Packet as Into<ToBehaviour>>::into(packet.clone())
-                            );
-                            self.pending_out_events.push_back(packet.into());
-                        }
-                        Err(e) => self.pending_out_events.push_back(ToBehaviour::Error(
-                            Error::UnrecognizedMessage(format!(
-                                "Unrecognized message: {}, raw data: {}",
-                                e,
-                                String::from_utf8_lossy(&bytes)
-                            )),
-                        )),
-                    }
-                }
-            }
-        }
-        loop {
-            match self.outbound.take() {
-                Some(OutboundState::Busy(mut task, mut timer)) => {
-                    match task.poll_unpin(cx) {
-                        Poll::Pending => {
-                            if timer.poll_unpin(cx).is_ready() {
-                                self.pending_out_events
-                                    .push_back(ToBehaviour::Error(Error::Timeout))
-                            } else {
-                                // Put the future back
-                                self.outbound = Some(OutboundState::Busy(task, timer));
-                                // End the loop because the outbound is busy
-                                break;
-                            }
-                        }
-                        // Ready
-                        Poll::Ready(Ok((stream, rtt))) => {
-                            trace!("Successful IO send with rtt of {}ms", rtt.as_millis());
-                            // Free the outbound
-                            self.outbound = Some(OutboundState::Idle(stream));
-                        }
-                        // Ready but resolved to an error
-                        Poll::Ready(Err(e)) => {
-                            self.pending_out_events
-                                .push_back(ToBehaviour::Error(Error::IO(format!(
-                                    "IO Error: {:?}",
-                                    e
-                                ))));
-                        }
-                    }
-                }
-                // Outbound is free, get the next message sent
-                Some(OutboundState::Idle(stream)) => {
-                    if let Some(ev) = self.pending_in_events.pop_front() {
-                        trace!("Taking out event {:?} from behaviour", ev);
-                        use FromBehaviour::*;
-                        match ev {
-                            QueryAdvertisedPeer => {
-                                self.outbound = Some(OutboundState::Busy(
-                                    protocol::send(stream, Packet::QueryAdvertisedPeer.as_bytes())
-                                        .boxed(),
-                                    Delay::new(self.timeout),
-                                ))
-                            }
-                            AnswerAdvertisedPeer(result) => {
-                                self.outbound = Some(OutboundState::Busy(
-                                    protocol::send(
-                                        stream,
-                                        Packet::AnswerAdvertisedPeer(result).as_bytes(),
-                                    )
-                                    .boxed(),
-                                    Delay::new(self.timeout),
-                                ))
-                            }
-                            SetAdvertiseSelf(state, id) => {
-                                self.outbound = Some(OutboundState::Busy(
-                                    protocol::send(
-                                        stream,
-                                        Packet::AdvertiseSelf(state, id).as_bytes(),
-                                    )
-                                    .boxed(),
-                                    Delay::new(self.timeout),
-                                ))
-                            }
-                        }
-                    } else {
-                        self.outbound = Some(OutboundState::Idle(stream));
-                        break;
-                    }
-                }
-                Some(OutboundState::OpenStream) => {
-                    self.outbound = Some(OutboundState::OpenStream);
-                    break;
-                }
-                None => {
-                    self.outbound = Some(OutboundState::OpenStream);
-                    let protocol =
-                        SubstreamProtocol::new(ReadyUpgrade::new(protocol::PROTOCOL_NAME), ());
-                    let event = ConnectionHandlerEvent::OutboundSubstreamRequest { protocol };
-                    return Poll::Ready(event);
-                }
-            }
+        self.poll_inbound(cx);
+        if let Some(poll) = self.poll_outbound(cx) {
+            return Poll::Ready(poll);
         }
         if let Some(ev) = self.pending_out_events.pop_front() {
             return Poll::Ready(ConnectionHandlerEvent::NotifyBehaviour(ev));
@@ -294,4 +163,150 @@ enum OutboundState {
     OpenStream,
     Idle(Stream),
     Busy(PendingSend, Delay),
+}
+
+type PollResult = ConnectionHandlerEvent<
+    <Handler as ConnectionHandler>::OutboundProtocol,
+    <Handler as ConnectionHandler>::OutboundOpenInfo,
+    <Handler as ConnectionHandler>::ToBehaviour,
+>;
+
+impl Handler {
+    fn poll_inbound(&mut self, cx: &mut std::task::Context<'_>) {
+        if let Some(fut) = self.inbound.as_mut() {
+            match fut.poll_unpin(cx) {
+                Poll::Pending => {}
+                Poll::Ready(Err(e)) => {
+                    let error = Error::IO(format!("IO Error: {:?}", e));
+                    self.pending_out_events.push_back(ToBehaviour::Error(error));
+                    self.inbound = None;
+                }
+                Poll::Ready(Ok((stream, bytes))) => {
+                    self.inbound = Some(super::protocol::recv(stream).boxed());
+                    match serde_json::from_slice::<Packet>(&bytes) {
+                        Ok(packet) => {
+                            trace!(
+                                "reading packet {:?} and convert to {:?}",
+                                packet,
+                                <Packet as Into<ToBehaviour>>::into(packet.clone())
+                            );
+                            self.pending_out_events.push_back(packet.into());
+                        }
+                        Err(e) => self.pending_out_events.push_back(ToBehaviour::Error(
+                            Error::UnrecognizedMessage(format!(
+                                "Unrecognized message: {}, raw data: {}",
+                                e,
+                                String::from_utf8_lossy(&bytes)
+                            )),
+                        )),
+                    }
+                }
+            }
+        }
+    }
+    fn poll_outbound(&mut self, cx: &mut std::task::Context<'_>) -> Option<PollResult> {
+        loop {
+            match self.outbound.take() {
+                Some(OutboundState::Busy(mut task, mut timer)) => {
+                    match task.poll_unpin(cx) {
+                        Poll::Pending => {
+                            if timer.poll_unpin(cx).is_ready() {
+                                self.pending_out_events
+                                    .push_back(ToBehaviour::Error(Error::Timeout))
+                            } else {
+                                // Put the future back
+                                self.outbound = Some(OutboundState::Busy(task, timer));
+                                // End the loop because the outbound is busy
+                                break;
+                            }
+                        }
+                        // Ready
+                        Poll::Ready(Ok((stream, rtt))) => {
+                            trace!("Successful IO send with rtt of {}ms", rtt.as_millis());
+                            // Free the outbound
+                            self.outbound = Some(OutboundState::Idle(stream));
+                        }
+                        // Ready but resolved to an error
+                        Poll::Ready(Err(e)) => {
+                            self.pending_out_events
+                                .push_back(ToBehaviour::Error(Error::IO(format!(
+                                    "IO Error: {:?}",
+                                    e
+                                ))));
+                        }
+                    }
+                }
+                // Outbound is free, get the next message sent
+                Some(OutboundState::Idle(stream)) => {
+                    if self.pending_in_events.is_empty() {
+                        self.outbound = Some(OutboundState::Idle(stream));
+                        break;
+                    }
+                    let ev = self.pending_in_events.pop_front().expect("already checked");
+                    trace!("Taking out event {:?} from behaviour", ev);
+                    use FromBehaviour::*;
+                    match ev {
+                        QueryAdvertisedPeer => {
+                            self.outbound = Some(OutboundState::Busy(
+                                protocol::send(stream, Packet::QueryAdvertisedPeer.as_bytes())
+                                    .boxed(),
+                                Delay::new(self.timeout),
+                            ))
+                        }
+                        AnswerAdvertisedPeer(result) => {
+                            self.outbound = Some(OutboundState::Busy(
+                                protocol::send(
+                                    stream,
+                                    Packet::AnswerAdvertisedPeer(result).as_bytes(),
+                                )
+                                .boxed(),
+                                Delay::new(self.timeout),
+                            ))
+                        }
+                        SetAdvertiseSelf(state, id) => {
+                            self.outbound = Some(OutboundState::Busy(
+                                protocol::send(stream, Packet::AdvertiseSelf(state, id).as_bytes())
+                                    .boxed(),
+                                Delay::new(self.timeout),
+                            ))
+                        }
+                    }
+                }
+                Some(OutboundState::OpenStream) => {
+                    self.outbound = Some(OutboundState::OpenStream);
+                    break;
+                }
+                None => {
+                    self.outbound = Some(OutboundState::OpenStream);
+                    let protocol =
+                        SubstreamProtocol::new(ReadyUpgrade::new(protocol::PROTOCOL_NAME), ());
+                    let event = ConnectionHandlerEvent::OutboundSubstreamRequest { protocol };
+                    return Some(event);
+                }
+            }
+        }
+        None
+    }
+    #[inline]
+    fn on_dial_upgrade_error(
+        &mut self,
+        DialUpgradeError { error, .. }: DialUpgradeError<
+            <Self as ConnectionHandler>::OutboundOpenInfo,
+            <Self as ConnectionHandler>::OutboundProtocol,
+        >,
+    ) {
+        self.outbound = None;
+        match error {
+            StreamUpgradeError::NegotiationFailed => {
+                self.state = State::Inactive { reported: false };
+            }
+            e => {
+                tracing::debug!(
+                    "Error occurred when negotiating protocol {}: {:?}",
+                    protocol::PROTOCOL_NAME,
+                    e
+                )
+            }
+        }
+    }
 }
