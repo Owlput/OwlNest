@@ -13,6 +13,7 @@ owlnest-macro = { path = "../../owlnest-macro" }
 xxhash-rust = { version = "*", features = ["xxh3"] }
 futures-timer = { workspace = true }
 prost = "0.12"
+toml = "*"
 
 
 [dev-dependencies]

@@ -30,6 +30,7 @@ either = "*"
 owlnest-blob = { path = "../protocols/owlnest-blob", optional = true }
 owlnest-messaging = { path = "../protocols/owlnest-messaging", optional = true }
 owlnest-advertise = { path = "../protocols/owlnest-advertise", optional = true }
+toml = "*"
 
 [dev-dependencies]
 xxhash-rust = { version = "*", features = ["xxh3"] }

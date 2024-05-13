@@ -1,0 +1,98 @@
+[swarm]
+identity_path = ""
+swarm_event_buffer_size = 16
+swarm_event_timeout = 200
+
+[kad]
+max_packet_size = 16384
+record_filtering = "Unfiltered"
+kbucket_inserts = "OnConnected"
+
+[kad.query_config]
+replication_factor = 20
+parallelism = 3
+disjoint_query_paths = false
+
+[kad.query_config.timeout]
+secs = 60
+nanos = 0
+
+[kad.record_ttl]
+secs = 172800
+nanos = 0
+
+[kad.record_replication_interval]
+secs = 3600
+nanos = 0
+
+[kad.record_publication_interval]
+secs = 79200
+nanos = 0
+
+[kad.provider_record_ttl]
+secs = 172800
+nanos = 0
+
+[kad.provider_publication_interval]
+secs = 43200
+nanos = 0
+
+[kad.caching.Enabled]
+max_peers = 1
+
+[kad.periodic_bootstrap_interval]
+secs = 300
+nanos = 0
+
+[kad.automatic_bootstrap_throttle]
+secs = 10
+nanos = 0
+
+[identify]
+protocol_version = "owlnest/0.0.1"
+agent_version = "rust-libp2p/owlnest/0.0.1"
+interval = 300
+push_listen_addr_updates = false
+cache_size = 100
+
+[mdns]
+enable_ipv6 = false
+
+[mdns.ttl]
+secs = 360
+nanos = 0
+
+[mdns.query_interval]
+secs = 300
+nanos = 0
+
+[messaging.timeout]
+secs = 30
+nanos = 0
+
+[blob]
+max_pending_recv = 16
+pending_recv_timeout = 3600
+ongoing_recv_timeout = 60
+pending_send_timeout = 0
+ongoing_send_timeout = 180
+
+[blob.timeout]
+secs = 60
+nanos = 0
+
+[advertise]
+max_advertise_capacity = 32
+
+[advertise.timeout]
+secs = 30
+nanos = 0
+
+[relay_server]
+max_reservations = 128
+max_reservations_per_peer = 4
+reservation_duration = 3600
+max_circuits = 16
+max_circuits_per_peer = 4
+max_circuit_duration = 43200
+max_circuit_bytes = 0

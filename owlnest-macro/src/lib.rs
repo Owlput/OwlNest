@@ -52,7 +52,7 @@ pub mod utils {
             $(#[$metas])*
             pub async fn $name(&self,$($params:$param_type,)*){
                 let ev = InEvent::$variant($($params,)*);
-                self.sender.send(ev).await.unwrap();
+                self.sender.send(ev).await.expect("Sender to swarm to stay alive the entire lifetime of the app");
             }
         )*
     };
@@ -63,7 +63,7 @@ pub mod utils {
                 use tokio::sync::oneshot::*;
                 let (tx,rx) = channel();
                 let ev = InEvent::$variant($($params,)*tx);
-                self.sender.send(ev).await.unwrap();
+                self.sender.send(ev).await.expect("Sender to swarm to stay alive the entire lifetime of the app");
                 rx.await.unwrap()
             }
         )*
@@ -75,7 +75,7 @@ pub mod utils {
                 use tokio::sync::oneshot::*;
                 let (tx,rx) = channel();
                 let ev = InEvent::$variant{$($params,)*callback:tx};
-                self.sender.send(ev).await.unwrap();
+                self.sender.send(ev).await.expect("Sender to swarm to stay alive the entire lifetime of the app");
                 rx.await.unwrap()
             }
         )*
@@ -84,12 +84,12 @@ pub mod utils {
 
     #[macro_export]
     macro_rules! handle_callback_sender {
-        ($message:ident=>$sender:ident) => {
-            if let Err(v) = $sender.send($message) {
-                tracing::warn!("Cannot send a callback message: {:?}", v)
-            }
-        };
-        ($message:expr=>$sender:ident) => {
+        // ($message:ident=>$sender:ident) => {
+        //     if let Err(v) = $sender.send($message) {
+        //         tracing::warn!("Cannot send a callback message: {:?}", v)
+        //     }
+        // };
+        ($message:expr=>$sender:expr) => {
             if let Err(v) = $sender.send($message) {
                 tracing::warn!("Cannot send a callback message: {:?}", v)
             }

@@ -15,3 +15,4 @@ certs
 logs
 *.keypair
 *.libp2pkeypair
+owlnest_config.toml

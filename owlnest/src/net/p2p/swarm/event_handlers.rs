@@ -148,7 +148,9 @@ pub fn swarm_op_exec(swarm: &mut Swarm, ev: InEvent) {
             handle_callback_sender!(listener_list => callback)
         }
         IsConnectedToPeerId(peer_id, callback) => {
-            handle_callback_sender!(swarm.is_connected(&peer_id) => callback)
+            let result = swarm.is_connected(&peer_id);
+            trace!("is conneted to {}: {}", peer_id, result);
+            handle_callback_sender!( result => callback)
         }
     }
 }

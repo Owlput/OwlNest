@@ -1,6 +1,6 @@
 use crate::net::p2p::swarm::EventSender;
 use libp2p::PeerId;
-pub use owlnest_blob::{error, Behaviour, InEvent, OutEvent};
+pub use owlnest_blob::{config, error, Behaviour, InEvent, OutEvent};
 pub use owlnest_blob::{RecvInfo, SendInfo};
 use owlnest_macro::{generate_handler_method, with_timeout};
 use std::path::Path;
@@ -410,7 +410,7 @@ mod test {
         use tracing_subscriber::Layer;
         let filter = tracing_subscriber::filter::Targets::new()
             .with_target("owlnest", Level::INFO)
-            .with_target("owlnest_blob", Level::INFO)
+            .with_target("owlnest_blob", Level::DEBUG)
             .with_target("", Level::WARN);
         let layer = tracing_subscriber::fmt::Layer::default()
             .with_ansi(false)

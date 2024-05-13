@@ -6,9 +6,7 @@ pub struct Config {
 }
 impl Config {
     pub fn new() -> Self {
-        Self {
-            timeout: Duration::from_secs(60),
-        }
+        Self::default()
     }
     pub fn with_timeout(mut self, timeout: Duration) -> Self {
         self.timeout = timeout;
@@ -17,6 +15,8 @@ impl Config {
 }
 impl Default for Config {
     fn default() -> Self {
-        Self::new()
+        Self {
+            timeout: Duration::from_secs(30),
+        }
     }
 }

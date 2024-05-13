@@ -11,6 +11,7 @@ owlnest-macro = { path = "../../owlnest-macro" }
 tracing = { workspace = true }
 serde = { workspace = true }
 serde_json = "*"
+toml = "*"
 tokio = { workspace = true }
 futures-timer = "*"
 

@@ -10,7 +10,7 @@ use tokio::sync::oneshot;
 use tracing::{error, trace};
 
 mod behaviour;
-mod config;
+pub mod config;
 pub mod error;
 mod handler;
 mod op;

@@ -1,31 +1,164 @@
 use crate::net::p2p::swarm::{behaviour::BehaviourEvent, EventSender, SwarmEvent};
-use libp2p::kad::{self, Addresses, Mode, NoKnownPeers, QueryId, RoutingUpdate};
-use libp2p::{Multiaddr, PeerId};
+use libp2p::{Multiaddr, PeerId, StreamProtocol};
 use owlnest_macro::{generate_handler_method, handle_callback_sender, listen_event, with_timeout};
+use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 use std::str::FromStr;
 use std::sync::{Arc, RwLock};
+use std::time::Duration;
 use tokio::sync::{mpsc, oneshot};
 use tracing::{debug, info, trace};
 
-pub use kad::Config;
+pub use libp2p::kad;
 pub type Behaviour = kad::Behaviour<kad::store::MemoryStore>;
 pub type OutEvent = kad::Event;
 pub use libp2p::kad::PROTOCOL_NAME;
 
+#[derive(Debug, Serialize, Deserialize)]
+pub struct Config {
+    max_packet_size: usize,
+    query_config: config::QueryConfig,
+    record_ttl: Option<Duration>,
+    record_replication_interval: Option<Duration>,
+    record_publication_interval: Option<Duration>,
+    record_filtering: kad::StoreInserts,
+    provider_record_ttl: Option<Duration>,
+    provider_publication_interval: Option<Duration>,
+    kbucket_inserts: kad::BucketInserts,
+    caching: kad::Caching,
+    periodic_bootstrap_interval: Option<Duration>,
+    automatic_bootstrap_throttle: Option<Duration>,
+}
+impl Config {
+    pub fn into_config(self, protocol: String) -> kad::Config {
+        let Config {
+            max_packet_size,
+            query_config,
+            record_ttl,
+            record_replication_interval,
+            record_publication_interval,
+            record_filtering,
+            provider_record_ttl,
+            provider_publication_interval,
+            kbucket_inserts,
+            caching,
+            periodic_bootstrap_interval,
+            automatic_bootstrap_throttle,
+        } = self;
+        let mut config = kad::Config::new(StreamProtocol::try_from_owned(protocol).unwrap())
+            .disjoint_query_paths(query_config.disjoint_query_paths)
+            .set_automatic_bootstrap_throttle(automatic_bootstrap_throttle)
+            .set_parallelism(query_config.parallelism)
+            .set_periodic_bootstrap_interval(periodic_bootstrap_interval)
+            .set_provider_record_ttl(provider_record_ttl)
+            .set_query_timeout(query_config.timeout)
+            .set_record_filtering(record_filtering)
+            .set_record_ttl(record_ttl)
+            .set_replication_factor(query_config.replication_factor);
+        config
+            .set_caching(caching)
+            .set_kbucket_inserts(kbucket_inserts)
+            .set_max_packet_size(max_packet_size)
+            .set_provider_publication_interval(provider_publication_interval)
+            .set_replication_interval(record_replication_interval)
+            .set_publication_interval(record_publication_interval);
+        config
+    }
+}
+impl Default for Config {
+    fn default() -> Self {
+        Self {
+            max_packet_size: 16 * 1024,
+            query_config: config::QueryConfig::default(),
+            record_ttl: Some(Duration::from_secs(48 * 60 * 60)),
+            record_replication_interval: Some(Duration::from_secs(60 * 60)),
+            record_publication_interval: Some(Duration::from_secs(22 * 60 * 60)),
+            record_filtering: kad::StoreInserts::Unfiltered,
+            provider_publication_interval: Some(Duration::from_secs(12 * 60 * 60)),
+            provider_record_ttl: Some(Duration::from_secs(48 * 60 * 60)),
+            kbucket_inserts: kad::BucketInserts::OnConnected,
+            caching: kad::Caching::Enabled { max_peers: 1 },
+            periodic_bootstrap_interval: Some(Duration::from_secs(5 * 60)),
+            automatic_bootstrap_throttle: Some(Duration::from_secs(10)),
+        }
+    }
+}
+
+pub mod config {
+    /// The `k` parameter of the Kademlia specification.
+    ///
+    /// This parameter determines:
+    ///
+    ///   1) The (fixed) maximum number of nodes in a bucket.
+    ///   2) The (default) replication factor, which in turn determines:
+    ///       a) The number of closer peers returned in response to a request.
+    ///       b) The number of closest peers to a key to search for in an iterative query.
+    ///
+    /// The choice of (1) is fixed to this constant. The replication factor is configurable
+    /// but should generally be no greater than `K_VALUE`. All nodes in a Kademlia
+    /// DHT should agree on the choices made for (1) and (2).
+    ///
+    /// The current value is `20`.
+    pub const K_VALUE: NonZeroUsize = unsafe { NonZeroUsize::new_unchecked(20) };
+
+    /// The `α` parameter of the Kademlia specification.
+    ///
+    /// This parameter determines the default parallelism for iterative queries,
+    /// i.e. the allowed number of in-flight requests that an iterative query is
+    /// waiting for at a particular time while it continues to make progress towards
+    /// locating the closest peers to a key.
+    ///
+    /// The current value is `3`.
+    pub const ALPHA_VALUE: NonZeroUsize = unsafe { NonZeroUsize::new_unchecked(3) };
+
+    use std::{num::NonZeroUsize, time::Duration};
+
+    use serde::{Deserialize, Serialize};
+    /// The configuration for queries in a `QueryPool`.
+    #[derive(Debug, Clone, Serialize, Deserialize)]
+    pub(crate) struct QueryConfig {
+        /// Timeout of a single query.
+        ///
+        /// See [`crate::behaviour::Config::set_query_timeout`] for details.
+        pub(crate) timeout: Duration,
+        /// The replication factor to use.
+        ///
+        /// See [`crate::behaviour::Config::set_replication_factor`] for details.
+        pub(crate) replication_factor: NonZeroUsize,
+        /// Allowed level of parallelism for iterative queries.
+        ///
+        /// See [`crate::behaviour::Config::set_parallelism`] for details.
+        pub(crate) parallelism: NonZeroUsize,
+        /// Whether to use disjoint paths on iterative lookups.
+        ///
+        /// See [`crate::behaviour::Config::disjoint_query_paths`] for details.
+        pub(crate) disjoint_query_paths: bool,
+    }
+    impl Default for QueryConfig {
+        fn default() -> Self {
+            QueryConfig {
+                timeout: Duration::from_secs(60),
+                replication_factor: NonZeroUsize::new(K_VALUE.get()).expect("K_VALUE > 0"),
+                parallelism: ALPHA_VALUE,
+                disjoint_query_paths: false,
+            }
+        }
+    }
+}
+
 #[derive(Debug)]
 pub(crate) enum InEvent {
     PeerLookup(PeerId, oneshot::Sender<kad::QueryId>),
-    BootStrap(oneshot::Sender<Result<QueryId, NoKnownPeers>>),
-    InsertNode(PeerId, Multiaddr, oneshot::Sender<RoutingUpdate>),
-    SetMode(Option<Mode>),
+    BootStrap(oneshot::Sender<Result<kad::QueryId, kad::NoKnownPeers>>),
+    InsertNode(PeerId, Multiaddr, oneshot::Sender<kad::RoutingUpdate>),
+    SetMode(Option<kad::Mode>),
 }
 
 #[derive(Debug, Clone)]
 pub struct Handle {
     sender: mpsc::Sender<InEvent>,
     event_tx: EventSender,
-    tree_map: Arc<RwLock<BTreeMap<PeerId, Addresses>>>,
+    tree_map: Arc<RwLock<BTreeMap<PeerId, kad::Addresses>>>,
 }
 impl Handle {
     pub(crate) fn new(buffer: usize, event_tx: &EventSender) -> (Self, mpsc::Receiver<InEvent>) {
@@ -58,8 +191,8 @@ impl Handle {
         )
     }
     generate_handler_method!(
-        InsertNode:insert_node(peer_id:PeerId, address:Multiaddr)->RoutingUpdate;
-        BootStrap:bootstrap()->Result<QueryId,NoKnownPeers>;
+        InsertNode:insert_node(peer_id:PeerId, address:Multiaddr)->kad::RoutingUpdate;
+        BootStrap:bootstrap()->Result<kad::QueryId,kad::NoKnownPeers>;
     );
     pub async fn query(&self, peer_id: PeerId) -> Vec<kad::QueryResult> {
         let mut listener = self.event_tx.subscribe();
@@ -92,17 +225,17 @@ impl Handle {
         ));
         handle.await.unwrap()
     }
-    pub async fn lookup(&self, peer_id: &PeerId) -> Option<Addresses> {
+    pub async fn lookup(&self, peer_id: &PeerId) -> Option<kad::Addresses> {
         self.tree_map
             .read()
             .expect("Lock not poisoned.")
             .get(peer_id)
             .cloned()
     }
-    pub async fn all_records(&self) -> BTreeMap<PeerId, Addresses> {
+    pub async fn all_records(&self) -> BTreeMap<PeerId, kad::Addresses> {
         self.tree_map.read().expect("Lock not poisoned.").clone()
     }
-    pub async fn set_mode(&self, mode: Option<Mode>) -> Result<Mode, ()> {
+    pub async fn set_mode(&self, mode: Option<kad::Mode>) -> Result<kad::Mode, ()> {
         let ev = InEvent::SetMode(mode);
         let mut listener = self.event_tx.subscribe();
         self.sender.send(ev).await.expect("send to succeed");
@@ -260,8 +393,8 @@ pub(crate) mod cli {
             return;
         }
         let mode = match command[2] {
-            "client" => Some(Mode::Client),
-            "server" => Some(Mode::Server),
+            "client" => Some(kad::Mode::Client),
+            "server" => Some(kad::Mode::Server),
             "default" => None,
             _ => {
                 println!("Invalid mode, possible modes: `client`, `server`, `default`");
