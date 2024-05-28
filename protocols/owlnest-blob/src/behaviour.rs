@@ -30,7 +30,10 @@ pub struct Behaviour {
     pending_handler_event: VecDeque<ToSwarm<OutEvent, FromBehaviourEvent>>,
     /// A set for all connected peers.
     connected_peers: HashSet<PeerId>,
+    /// Unique ID tracker for recv operations.
     recv_counter: u64,
+    /// Unique ID tracker for send operations.
+    send_counter: u64,
     /// List of pending receive indexed by recv ID.
     pending_recv: HashMap<u64, PendingRecv>,
     /// List of pending send indexed by send ID.
@@ -43,11 +46,30 @@ pub struct Behaviour {
     ongoing_send: HashMap<u64, OngoingFileSend>,
     expiry_check_throttle: Delay,
 }
+impl Default for Behaviour {
+    fn default() -> Self {
+        Self {
+            config: Config::default(),
+            out_events: Default::default(),
+            pending_handler_event: Default::default(),
+            connected_peers: Default::default(),
+            recv_counter: Default::default(),
+            send_counter: Default::default(),
+            pending_recv: Default::default(),
+            pending_send: Default::default(),
+            ongoing_recv: Default::default(),
+            ongoing_send: Default::default(),
+            expiry_check_throttle: Delay::new(Duration::from_secs(5)),
+        }
+    }
+}
 
+/// Information about an recv operation, including pending and ongoing.
 #[derive(Debug, Clone, Serialize)]
 pub struct RecvInfo {
     pub local_recv_id: u64,
     pub bytes_total: u64,
+    pub bytes_received: u64,
     pub file_name: String,
     pub remote: PeerId,
     pub timestamp: u64,
@@ -59,11 +81,30 @@ impl From<&PendingRecv> for RecvInfo {
             remote: value.remote,
             file_name: value.file_name.clone(),
             bytes_total: value.bytes_total,
+            bytes_received: 0,
             timestamp: value.timestamp,
         }
     }
 }
+impl From<&OngoingFileRecv> for RecvInfo {
+    fn from(value: &OngoingFileRecv) -> Self {
+        Self {
+            local_recv_id: value.local_recv_id,
+            bytes_total: value.bytes_total,
+            bytes_received: value.bytes_received,
+            file_name: value
+                .file_path
+                .file_name()
+                .unwrap()
+                .to_string_lossy()
+                .to_string(),
+            remote: value.remote,
+            timestamp: value.last_active,
+        }
+    }
+}
 
+/// Information about a send operation, including pending and ongoing.
 #[derive(Debug, Serialize, Clone)]
 pub struct SendInfo {
     pub local_send_id: u64,
@@ -79,20 +120,21 @@ impl From<&PendingSend> for SendInfo {
         }
     }
 }
+impl From<&OngoingFileSend> for SendInfo {
+    fn from(value: &OngoingFileSend) -> Self {
+        Self {
+            local_send_id: value.local_send_id,
+            remote: value.remote,
+            file_path: value.file_path.clone(),
+        }
+    }
+}
 
 impl Behaviour {
     pub fn new(config: Config) -> Self {
         Self {
             config,
-            out_events: Default::default(),
-            pending_handler_event: Default::default(),
-            connected_peers: Default::default(),
-            recv_counter: Default::default(),
-            pending_recv: Default::default(),
-            pending_send: Default::default(),
-            ongoing_recv: Default::default(),
-            ongoing_send: Default::default(),
-            expiry_check_throttle: Delay::new(Duration::from_secs(5)),
+            ..Default::default()
         }
     }
     /// Call this to insert an event.
@@ -106,9 +148,9 @@ impl Behaviour {
                 file,
                 file_path,
                 to,
-                local_send_id,
                 callback,
             } => {
+                let local_send_id = self.next_send_id();
                 let span = trace_span!("Blob Send", id = local_send_id);
                 let entered = span.enter();
                 trace!("Send request spawned.");
@@ -188,11 +230,15 @@ impl Behaviour {
             ListConnected(callback) => {
                 handle_callback_sender!(self.connected_peers.iter().copied().collect() => callback)
             }
-            ListPendingRecv(callback) => {
-                handle_callback_sender!(self.pending_recv.values().map(|v|v.into()).collect()=>callback)
+            ListRecv(callback) => {
+                let ongoing = self.ongoing_recv.values().map(Into::into);
+                let pending = self.pending_recv.values().map(Into::into);
+                handle_callback_sender!(ongoing.chain(pending).collect()=>callback)
             }
-            ListPendingSend(callback) => {
-                handle_callback_sender!(self.pending_send.values().map(|v|v.into()).collect()=>callback)
+            ListSend(callback) => {
+                let ongoing = self.ongoing_send.values().map(Into::into);
+                let pending = self.pending_send.values().map(Into::into);
+                handle_callback_sender!(ongoing.chain(pending).collect()=>callback)
             }
         }
     }
@@ -250,7 +296,7 @@ impl Behaviour {
             Some(v) => v,
             None => {
                 // Not found in pending recv, report the error directly to caller using callback
-                handle_callback_sender!( Err(error::FileRecvError::PendingRecvNotFound) => callback);
+                handle_callback_sender!( Err(error::FileRecvError::PendingRecvNotFound(recv_id)) => callback);
                 return;
             }
         };
@@ -297,6 +343,7 @@ impl Behaviour {
             file,
             span,
             bytes_total,
+            file_path,
             ..
         } = self
             .pending_send
@@ -312,6 +359,7 @@ impl Behaviour {
                 remote,
                 bytes_total,
                 file_handle: file,
+                file_path,
                 bytes_sent: 0,
                 span,
                 last_active: time_now!(),
@@ -586,6 +634,11 @@ impl Behaviour {
         self.recv_counter += 1;
         id
     }
+    fn next_send_id(&mut self) -> u64 {
+        let id = self.send_counter;
+        self.send_counter += 1;
+        id
+    }
 }
 
 impl NetworkBehaviour for Behaviour {
@@ -751,6 +804,7 @@ struct OngoingFileSend {
     bytes_sent: u64,
     bytes_total: u64,
     file_handle: std::fs::File,
+    file_path: PathBuf,
     span: tracing::Span,
     last_active: u64,
 }

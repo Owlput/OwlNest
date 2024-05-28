@@ -52,7 +52,7 @@ impl Default for Config {
 
 #[derive(Debug)]
 pub(crate) enum InEvent {
-    ListDiscoveredNodes(Sender<Vec<PeerId>>),
+    ListDiscoveredNodes(Sender<Box<[PeerId]>>),
     HasNode(PeerId, Sender<bool>),
 }
 
@@ -74,7 +74,7 @@ impl Handle {
         )
     }
     generate_handler_method! {
-        ListDiscoveredNodes:list_discovered_node()->Vec<PeerId>;
+        ListDiscoveredNodes:list_discovered_node()->Box<[PeerId]>;
         HasNode:has_node(peer_id:PeerId)->bool;
     }
 }
@@ -83,7 +83,7 @@ pub(crate) fn map_in_event(ev: InEvent, behav: &mut Behaviour) {
     use InEvent::*;
     match ev {
         ListDiscoveredNodes(callback) => {
-            let node_list = behav.discovered_nodes().copied().collect::<Vec<PeerId>>();
+            let node_list = behav.discovered_nodes().copied().collect();
             handle_callback_sender!(node_list => callback)
         }
         HasNode(peer_id, callback) => {
@@ -110,49 +110,31 @@ pub fn ev_dispatch(ev: &OutEvent, swarm: &mut Swarm) {
 }
 
 pub(crate) mod cli {
-    use std::str::FromStr;
-
+    use crate::net::p2p::swarm::manager::Manager;
+    use clap::Subcommand;
     use libp2p::PeerId;
 
-    use crate::net::p2p::swarm::manager::Manager;
-
-    pub fn handle_mdns(manager: &Manager, command: Vec<&str>) {
-        if command.len() < 2 {
-            println!("Missing subcommands. Type `mdns help` for more information");
-            return;
-        }
-        match command[1] {
-            "list-discovered" => mdns_listdiscovered(manager),
-            "has-node" => mdns_hasnode(manager, command),
-            "help" => println!("{}", TOP_HELP_MESSAGE),
-            _ => println!("Unrecoginzed command. Type `mdns help` for more information"),
-        }
+    #[derive(Debug, Subcommand)]
+    pub enum Mdns {
+        ListDiscovered,
+        HasNode { peer_id: PeerId },
     }
 
-    fn mdns_listdiscovered(manager: &Manager) {
-        println!(
-            "{:?}",
-            manager
-                .executor()
-                .block_on(manager.mdns().list_discovered_node())
-        );
-    }
-    fn mdns_hasnode(manager: &Manager, command: Vec<&str>) {
-        if command.len() < 3 {
-            println!("Missing required argument: <peer ID>. Syntax `mdns has-node <peer ID>`");
-            return;
-        }
-        let peer_id = match PeerId::from_str(command[2]) {
-            Ok(peer_id) => peer_id,
-            Err(e) => {
-                println!("Error: Failed parsing peer ID `{}`: {}", command[1], e);
-                return;
+    pub fn handle_mdns(manager: &Manager, command: Mdns) {
+        use Mdns::*;
+        match command {
+            ListDiscovered => println!(
+                "{:?}",
+                manager
+                    .executor()
+                    .block_on(manager.mdns().list_discovered_node())
+            ),
+            HasNode { peer_id } => {
+                let result = manager
+                    .executor()
+                    .block_on(manager.mdns().has_node(peer_id));
+                println!("Peer {} discovered? {}", peer_id, result);
             }
-        };
-        let result = manager
-            .executor()
-            .block_on(manager.mdns().has_node(peer_id));
-        println!("Peer {} discovered? {}", peer_id, result)
+        }
     }
-    const TOP_HELP_MESSAGE: &str = r"";
 }

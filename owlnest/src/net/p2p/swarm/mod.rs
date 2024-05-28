@@ -180,7 +180,7 @@ pub enum InEvent {
     AddExternalAddress(Multiaddr, Sender<()>),
     RemoveExternalAddress(Multiaddr, Sender<()>),
     DisconnectFromPeerId(PeerId, Sender<Result<(), ()>>),
-    ListExternalAddresses(Sender<Vec<Multiaddr>>),
-    ListListeners(Sender<Vec<Multiaddr>>),
+    ListExternalAddresses(Sender<Box<[Multiaddr]>>),
+    ListListeners(Sender<Box<[Multiaddr]>>),
     IsConnectedToPeerId(PeerId, Sender<bool>),
 }

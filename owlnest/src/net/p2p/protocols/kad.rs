@@ -283,22 +283,70 @@ pub fn ev_dispatch(ev: &OutEvent) {
 pub(crate) mod cli {
     use super::*;
     use crate::net::p2p::swarm;
+    use clap::{Subcommand, ValueEnum};
     use swarm::manager::Manager;
 
-    /// Top-level handler for `kad` command.
-    pub fn handle_kad(manager: &Manager, command: Vec<&str>) {
-        if command.len() < 2 {
-            println!("Missing subcommands. Type \"kad help\" for more information");
-            return;
+    #[derive(Debug, Subcommand)]
+    pub enum Kad {
+        Query { peer_id: PeerId },
+        Lookup { peer_id: PeerId },
+        BootStrap,
+        SetMode { mode: KadMode },
+        Insert { peer_id: PeerId, address: Multiaddr },
+        InsertDefault,
+    }
+
+    #[derive(Debug, PartialEq, Eq, Copy, Clone, ValueEnum)]
+    pub enum KadMode {
+        Client,
+        Server,
+        Default,
+    }
+    impl From<KadMode> for Option<kad::Mode> {
+        fn from(value: KadMode) -> Self {
+            match value {
+                KadMode::Client => Some(kad::Mode::Client),
+                KadMode::Server => Some(kad::Mode::Server),
+                KadMode::Default => None,
+            }
         }
-        match command[1] {
-            "query" => kad_query(manager, command),
-            "lookup" => kad_lookup(manager, command),
-            "bootstrap" => kad_bootstrap(manager),
-            "set-mode" => kad_setmode(manager, command),
-            "help" => println!("{}", TOP_HELP_MESSAGE),
-            "insert-default" => kad_insert_default(manager),
-            _ => println!("Unrecoginzed subcommands. Type \"kad help\" for more information"),
+    }
+    impl std::fmt::Display for KadMode {
+        fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+            match self {
+                KadMode::Client => write!(f, "Client"),
+                KadMode::Server => write!(f, "Server"),
+                KadMode::Default => write!(f, "Default"),
+            }
+        }
+    }
+
+    /// Top-level handler for `kad` command.
+    pub fn handle_kad(manager: &Manager, command: Kad) {
+        use Kad::*;
+        match command {
+            Query { peer_id } => {
+                let result = manager.executor().block_on(manager.kad().query(peer_id));
+                println!("{:?}", result)
+            }
+            Lookup { peer_id } => {
+                let result = manager.executor().block_on(manager.kad().lookup(&peer_id));
+                println!("{:?}", result)
+            }
+            BootStrap => kad_bootstrap(manager),
+            SetMode { mode } => {
+                if manager
+                    .executor()
+                    .block_on(manager.kad().set_mode(mode.into()))
+                    .is_err()
+                {
+                    println!("Timeout reached for setting kad mode");
+                    return;
+                }
+                println!("Mode for kad has been set to {}", mode)
+            }
+            Insert { .. } => {}
+            InsertDefault => kad_insert_default(manager),
         }
     }
 
@@ -345,39 +393,6 @@ pub(crate) mod cli {
         );
     }
 
-    /// Handler for `kad lookup` command.
-    fn kad_query(manager: &Manager, command: Vec<&str>) {
-        if command.len() < 3 {
-            println!("Missing required argument: <peer ID>");
-            return;
-        }
-        let peer_id = match PeerId::from_str(command[2]) {
-            Ok(peer_id) => peer_id,
-            Err(e) => {
-                println!("Error: Failed parsing peer ID `{}`: {}", command[1], e);
-                return;
-            }
-        };
-        let result = manager.executor().block_on(manager.kad().query(peer_id));
-        println!("{:?}", result)
-    }
-
-    fn kad_lookup(manager: &Manager, command: Vec<&str>) {
-        if command.len() < 3 {
-            println!("Missing required argument: <peer ID>");
-            return;
-        }
-        let peer_id = match PeerId::from_str(command[2]) {
-            Ok(peer_id) => peer_id,
-            Err(e) => {
-                println!("Error: Failed parsing peer ID `{}`: {}", command[1], e);
-                return;
-            }
-        };
-        let result = manager.executor().block_on(manager.kad().lookup(&peer_id));
-        println!("{:?}", result)
-    }
-
     fn kad_bootstrap(manager: &Manager) {
         let result = manager.executor().block_on(manager.kad().bootstrap());
         if result.is_err() {
@@ -386,56 +401,6 @@ pub(crate) mod cli {
         }
         println!("Bootstrap started")
     }
-
-    fn kad_setmode(manager: &Manager, command: Vec<&str>) {
-        if command.len() < 3 {
-            println!("Missing required argument: <mode>. Syntax: `kad set-mode <mode>`");
-            return;
-        }
-        let mode = match command[2] {
-            "client" => Some(kad::Mode::Client),
-            "server" => Some(kad::Mode::Server),
-            "default" => None,
-            _ => {
-                println!("Invalid mode, possible modes: `client`, `server`, `default`");
-                return;
-            }
-        };
-        if manager
-            .executor()
-            .block_on(manager.kad().set_mode(mode))
-            .is_err()
-        {
-            println!("Timeout reached for setting kad mode");
-            return;
-        }
-        println!("mode for kad has been set to {}", command[2])
-    }
-
-    /// Top-level help message for `kad` command.
-    const TOP_HELP_MESSAGE: &str = r#"
-Protocol `/ipfs/kad/1.0.0`
-
-Available Subcommands:
-    query <peer ID>        
-        Initiate a query for the given peer.
-        This will notify peers in the network to lookup the peer.
-    
-    lookup <peer ID>
-        Perform lookup on local address book.
-
-    bootstrap
-        Start traversing the DHT network to get latest information
-        about all peers participating the network.
-
-    set-mode <mode>
-        Set the local DHT manager to the given <mode>.
-        Available modes are:
-            `client`: Don't share local DHT to others.
-            `server`: Broadcast local DHT to others.
-            `default`: Restore to default mode, which is
-                      automatically determined by local node.
-"#;
 }
 
 pub(crate) mod swarm_hooks {

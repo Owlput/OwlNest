@@ -66,3 +66,22 @@ pub(crate) fn ev_dispatch(ev: &OutEvent) {
         }
     }
 }
+
+pub mod cli {
+    use clap::Subcommand;
+    use libp2p::Multiaddr;
+
+    #[derive(Subcommand)]
+    enum AutoNat {
+        #[arg()]
+        AddServer {
+            address: Multiaddr,
+        },
+        RemoveServer {
+            address: Multiaddr,
+        },
+        Probe {
+            address: Multiaddr,
+        },
+    }
+}

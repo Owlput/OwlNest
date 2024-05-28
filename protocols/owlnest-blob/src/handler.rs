@@ -14,7 +14,7 @@ pub enum FromBehaviourEvent {
     NewFileSend {
         file_name: String,
         local_send_id: u64,
-        callback: oneshot::Sender<Result<(), FileSendError>>,
+        callback: oneshot::Sender<Result<u64, FileSendError>>,
         bytes_total: u64,
     },
     /// A chunk of file
@@ -236,7 +236,7 @@ enum OutboundState {
     Busy(PendingSend, SendType, Delay),
 }
 enum SendType {
-    ControlSend(Option<oneshot::Sender<Result<(), FileSendError>>>, u64),
+    ControlSend(Option<oneshot::Sender<Result<u64, FileSendError>>>, u64),
     ControlRecv(Option<oneshot::Sender<Result<Duration, FileRecvError>>>),
     Cancel,
     FileSend(u64),
@@ -298,7 +298,7 @@ impl Handler {
                             SendType::ControlSend(callback, local_send_id) => {
                                 self.pending_out_events
                                     .push_back(ToBehaviourEvent::FileSendPending { local_send_id });
-                                handle_callback_sender!(Ok(())=>callback.unwrap());
+                                handle_callback_sender!(Ok(local_send_id)=>callback.unwrap());
                             }
                             SendType::ControlRecv(callback) => {
                                 handle_callback_sender!(Ok(rtt)=>callback.unwrap());

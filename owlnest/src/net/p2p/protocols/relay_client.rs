@@ -8,9 +8,15 @@ pub use client::Event as OutEvent;
 pub(crate) mod cli {
     use super::*;
     use crate::net::p2p::swarm::{cli::format_transport_error, manager::Manager};
+    use clap::Subcommand;
     use futures::TryFutureExt;
     use libp2p::{multiaddr::Protocol, Multiaddr, PeerId};
     use tracing::{error, warn};
+
+    #[derive(Debug, Subcommand)]
+    pub enum RelayClient {
+        Listen { address: Multiaddr, peer_id: PeerId },
+    }
 
     pub fn setup(manager: &Manager) {
         let mut listener = manager.event_subscriber().subscribe();
@@ -54,48 +60,26 @@ pub(crate) mod cli {
         });
     }
 
-    pub fn handle_relayclient(manager: &Manager, command: Vec<&str>) {
-        if command.len() < 2 {
-            println!("Missing subcommand. Type `relay-client help` for more information");
-            return;
-        }
-        match command[1] {
-            "listen" => handle_listen(manager, command),
-            _ => {}
-        }
-    }
+    pub fn handle_relayclient(manager: &Manager, command: RelayClient) {
+        use RelayClient::*;
+        match command {
+            Listen { address, peer_id } => {
+                let addr: Multiaddr = address
+                    .with(Protocol::P2p(peer_id))
+                    .with(Protocol::P2pCircuit);
+                match manager.swarm().listen_blocking(&addr) {
+                    Ok(listener_id) => println!(
+                        "Successfully listening on {} with listener ID {:?}",
+                        addr, listener_id
+                    ),
 
-    fn handle_listen(manager: &Manager, command: Vec<&str>) {
-        if command.len() < 4 {
-            println!("Missing argument. Syntax relay-client connect <relay-server-address> <relay-server-peer-id>")
-        }
-        let addr = match command[2].parse::<Multiaddr>() {
-            Ok(addr) => addr,
-            Err(e) => {
-                println!("Error: Failed parsing address `{}`: {}", command[2], e);
-                return;
+                    Err(e) => println!(
+                        "Failed to listen on {} with error: {}",
+                        addr,
+                        format_transport_error(e)
+                    ),
+                }
             }
-        };
-
-        let peer_id = match command[3].parse::<PeerId>() {
-            Ok(v) => v,
-            Err(e) => {
-                println!("Failed to parse peer ID for input {}: {}", command[2], e);
-                return;
-            }
-        };
-        let addr = addr.with(Protocol::P2p(peer_id)).with(Protocol::P2pCircuit);
-        match manager.swarm().listen_blocking(&addr) {
-            Ok(listener_id) => println!(
-                "Successfully listening on {} with listener ID {:?}",
-                addr, listener_id
-            ),
-
-            Err(e) => println!(
-                "Failed to listen on {} with error: {}",
-                addr,
-                format_transport_error(e)
-            ),
         }
     }
 }
@@ -126,9 +110,11 @@ mod test {
             .listen_blocking(&"/ip4/127.0.0.1/tcp/0".parse::<Multiaddr>().unwrap()) // Pick a random port that is available
             .is_ok());
         thread::sleep(Duration::from_millis(100));
-        let mut server_address = peer1_m.swarm().list_listeners_blocking();
-        server_address.retain(|addr| addr.to_string().contains("127.0.0.1"));
-        let server_address = server_address.first().cloned().unwrap();
+        let server_address = peer1_m.swarm().list_listeners_blocking();
+        let mut addr_filtered = server_address
+            .iter()
+            .filter(|addr| addr.to_string().contains("127.0.0.1"));
+        let server_address: Multiaddr = addr_filtered.next().cloned().unwrap();
         peer1_m
             .swarm()
             .add_external_address_blocking(server_address.clone()); // The address is on local network

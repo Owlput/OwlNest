@@ -127,156 +127,88 @@ impl Handle {
 }
 
 pub(crate) mod cli {
+    use super::*;
+    use crate::net::p2p::swarm::Manager;
+    use clap::Subcommand;
     use libp2p::PeerId;
+    use tokio::runtime::Handle as RtHandle;
 
-    use crate::net::p2p::swarm::manager::Manager;
+    #[derive(Debug, Subcommand)]
+    pub enum Advertise {
+        #[command(subcommand)]
+        Provider(provider::Provider),
+        SetRemoteAdvertisement {
+            remote: PeerId,
+            state: bool,
+        },
+        QueryAdvertised {
+            remote: PeerId,
+        },
+    }
 
-    pub fn handle_advertise(manager: &Manager, command: Vec<&str>) {
-        if command.len() < 2 {
-            println!("Missing subcommand. Type `advertise help` for more info.")
-        }
-        match command[1] {
-            "provider" => provider::handle_provider(manager, command),
-            "set-advertise-self" => handle_set_advertise_self(manager, command),
-            "query-advertised" => handle_query_advertised(manager, command),
-            "help" => println!("{}", HELP_MESSAGE),
-            _ => println!("Unrecognized command. Type `relay-ext help` for more info."),
+    pub fn handle_advertise(manager: &Manager, command: Advertise) {
+        let handle = manager.advertise();
+        let executor = manager.executor();
+        use Advertise::*;
+        match command {
+            Provider(command) => provider::handle_provider(handle, executor, command),
+            SetRemoteAdvertisement { remote, state } => {
+                executor.block_on(handle.set_remote_advertisement(remote, state));
+                println!("OK")
+            }
+            QueryAdvertised { remote } => {
+                let result = executor.block_on(handle.query_advertised_peer(remote));
+                println!("Query result:{:?}", result)
+            }
         }
     }
 
     mod provider {
+        use clap::{arg, Subcommand};
+
+        #[derive(Debug, Subcommand)]
+        pub enum Provider {
+            Start,
+            Stop,
+            State,
+            ListAdvertised,
+            RemoveAdvertise {
+                #[arg(required = true)]
+                peer: PeerId,
+            },
+            ClearAdvertised,
+        }
+
         use super::*;
-        pub fn handle_provider(manager: &Manager, command: Vec<&str>) {
-            if command.len() < 3 {
-                println!("Missing subcommand. Type `relay-ext provider help` for more info.");
-                return;
-            }
-            match command[2] {
-                "start" => {
-                    manager
-                        .executor()
-                        .block_on(manager.advertise().set_provider_state(true));
-                    println!("advertise is set to provide advertised peers");
+        pub fn handle_provider(handle: &Handle, executor: &RtHandle, command: Provider) {
+            use Provider::*;
+            match command {
+                Start => {
+                    executor.block_on(handle.set_provider_state(true));
+                    println!("Local provider is now providing advertisement");
                 }
-                "stop" => {}
-                "state" => {
-                    let state = manager
-                        .executor()
-                        .block_on(manager.advertise().provider_state());
+                Stop => {
+                    executor.block_on(handle.set_provider_state(false));
+                    println!("Local provider has stopped providing advertisement")
+                }
+                State => {
+                    let state = executor.block_on(handle.provider_state());
                     println!("isProviding:{}", state)
                 }
-                "remove-peer" => {
-                    let peer_id = match command[2].parse::<PeerId>() {
-                        Ok(v) => v,
-                        Err(e) => {
-                            println!("Failed to parse peer ID for input {}: {}", command[2], e);
-                            return;
-                        }
-                    };
-                    let is_advertising = manager
-                        .executor()
-                        .block_on(manager.advertise().remove_advertised(&peer_id));
-                    println!(
-                        "Advertisement for peer {} is set to {}",
-                        peer_id, is_advertising
-                    )
+                ListAdvertised => {
+                    let list = executor.block_on(handle.list_advertised());
+                    println!("Advertising: \n{:?}", list);
                 }
-                "clear" => {
-                    manager
-                        .executor()
-                        .block_on(manager.advertise().clear_advertised());
+                RemoveAdvertise { peer } => {
+                    executor.block_on(handle.remove_advertised(&peer));
+                    println!("Advertisement for peer {} is removed", peer)
                 }
-                "help" => println!("{}", HELP_MESSAGE),
-                _ => {}
+                ClearAdvertised => {
+                    executor.block_on(handle.clear_advertised());
+                }
             }
         }
-
-        const HELP_MESSAGE: &str = r#"
-    Protocol `/owlnest/relay-ext/0.0.1`
-    `relay-ext provider help`
-
-    Available Subcommands:
-        start
-                    Start providing information about advertised 
-                    peers.
-
-        stop
-                    Stop providing information about advertised 
-                    peers.
-
-        state
-                    Get current provider state.
-        
-        remove-peer <peer id>
-                    Remove the given peer from advertisement.
-
-        clear
-                    Remove all peers in the advertisement.
-    "#;
     }
-
-    fn handle_set_advertise_self(manager: &Manager, command: Vec<&str>) {
-        if command.len() < 4 {
-            println!(
-                "Missing argument(s). Syntax: relay-ext set-advertise-self <PeerId> <state:Bool>"
-            );
-            return;
-        }
-        let peer_id: PeerId = match command[2].parse() {
-            Ok(v) => v,
-            Err(e) => {
-                println!("Error: Failed parsing peer ID from `{}`: {}", command[2], e);
-                return;
-            }
-        };
-        let state = match command[3].parse() {
-            Ok(v) => v,
-            Err(_) => {
-                println!(
-                    "Error: Failed parsing boolean from {}. Expecting `true` or `false`",
-                    command[3]
-                );
-                return;
-            }
-        };
-        manager
-            .executor()
-            .block_on(manager.advertise().set_remote_advertisement(peer_id, state));
-        println!("OK")
-    }
-
-    fn handle_query_advertised(manager: &Manager, command: Vec<&str>) {
-        if command.len() < 3 {
-            println!("Missing argument. Syntax: relay-ext query-advertised <PeerId>");
-        }
-        let peer_id: PeerId = match command[2].parse() {
-            Ok(v) => v,
-            Err(e) => {
-                println!("Error: Failed parsing peer ID `{}`: {}", command[2], e);
-                return;
-            }
-        };
-        let result = manager
-            .executor()
-            .block_on(manager.advertise().query_advertised_peer(peer_id));
-        println!("Query result:{:?}", result)
-    }
-
-    const HELP_MESSAGE: &str = r#"
-Protocol `/owlnest/relay-ext/0.0.1`
-Relay protocol extension version 0.0.1
-
-Available subcommands:
-    provider
-                Subcommand for local provider.
-    
-    set-advertise-self <PeerId> <state:Bool>
-                Set advertisement state on a remote peer.
-                `true` to advertise, `false` to stop advertising.
-    
-    query-advertised <PeerId>
-                Query all for advertised peers on a given peer.
-"#;
 }
 
 #[cfg(test)]

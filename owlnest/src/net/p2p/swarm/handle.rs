@@ -48,16 +48,16 @@ impl SwarmHandle {
     generate_handler_method_blocking!(
         AddExternalAddress:add_external_address_blocking(addr:Multiaddr)->();
         IsConnectedToPeerId:is_connected_blocking(peer_id: PeerId) -> bool;
-        ListListeners:list_listeners_blocking()->Vec<Multiaddr>;
-        ListExternalAddresses:list_external_addresses_blocking()->Vec<Multiaddr>;
+        ListListeners:list_listeners_blocking()->Box<[Multiaddr]>;
+        ListExternalAddresses:list_external_addresses_blocking()->Box<[Multiaddr]>;
         DisconnectFromPeerId:disconnect_peer_id_blocking(peer_id:PeerId)->Result<(),()>;
         RemoveExternalAddress:remove_external_address_blocking(addr:Multiaddr)->();
     );
     generate_handler_method!(
         AddExternalAddress:add_external_address(addr:Multiaddr)->();
         IsConnectedToPeerId:is_connected(peer_id: PeerId) -> bool;
-        ListListeners:list_listeners()->Vec<Multiaddr>;
-        ListExternalAddresses:list_external_addresses()->Vec<Multiaddr>;
+        ListListeners:list_listeners()->Box<[Multiaddr]>;
+        ListExternalAddresses:list_external_addresses()->Box<[Multiaddr]>;
         DisconnectFromPeerId:disconnect_peer_id(peer_id:PeerId)->Result<(),()>;
         RemoveExternalAddress:remove_external_address(addr:Multiaddr)->();
     );

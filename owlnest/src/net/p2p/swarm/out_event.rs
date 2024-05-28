@@ -98,7 +98,7 @@ pub enum SwarmEvent {
         /// The addresses that the listener was listening on. These addresses are now considered
         /// expired, similar to if a [`ExpiredListenAddr`](SwarmEvent::ExpiredListenAddr) event
         /// has been generated for each of them.
-        addresses: Vec<Multiaddr>,
+        addresses: Box<[Multiaddr]>,
         /// Reason for the closure. Contains `Ok(())` if the stream produced `None`, or `Err`
         /// if the stream produced an error.
         reason: String,
@@ -214,7 +214,7 @@ impl SwarmEvent {
                 reason,
             } => Self::ListenerClosed {
                 listener_id: *listener_id,
-                addresses: addresses.clone(),
+                addresses: addresses.clone().into(),
                 reason: format!("{:?}", reason),
             },
             libp2p::swarm::SwarmEvent::ListenerError { listener_id, error } => {
@@ -324,7 +324,7 @@ impl TryFrom<super::SwarmEvent> for SwarmEvent {
                 reason,
             } => Self::ListenerClosed {
                 listener_id,
-                addresses,
+                addresses: addresses.into(),
                 reason: format!("{:?}", reason),
             },
             libp2p::swarm::SwarmEvent::ListenerError { listener_id, error } => {
