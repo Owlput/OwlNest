@@ -5,7 +5,6 @@ use crate::net::p2p::swarm::cli::format_transport_error;
 use crate::net::p2p::swarm::manager::Manager;
 use crate::net::p2p::{identity::IdentityUnion, swarm};
 use clap::{Parser, Subcommand};
-use crossterm::style::Stylize;
 use crossterm::terminal::{Clear, ClearType};
 use crossterm::ExecutableCommand;
 use libp2p::Multiaddr;
@@ -30,7 +29,7 @@ pub fn setup_interactive_shell(
         let mut rl = DefaultEditor::new().unwrap();
         let mut retry_times = 0u32;
         loop {
-            let line_read = rl.readline(&">> ".stylize().dark_cyan().to_string());
+            let line_read = rl.readline(">> ");
             match line_read {
                 Ok(line) => {
                     rl.add_history_entry(line.as_str()).unwrap();
@@ -143,8 +142,8 @@ fn handle_err(e: ReadlineError, retry_times: &mut u32) -> bool {
             true
         }
         ReadlineError::WindowResized => false,
-        _ => {
-            println!("Unknown error occurred");
+        e => {
+            println!("Mysterious error {:?} occurred", e);
             should_exit(retry_times, 5)
         }
     }
