@@ -70,6 +70,7 @@ fn handle_command(
         }
     };
     let handle = manager.swarm();
+    let executor = manager.executor();
     use Command::*;
     match command.command {
         Clear => drop(stdout().execute(crossterm::terminal::Clear(
@@ -101,17 +102,28 @@ fn handle_command(
         }
         Swarm(command) => swarm::cli::handle_swarm(manager.swarm(), command),
         #[cfg(any(feature = "owlnest-protocols", feature = "owlnest-messaging"))]
-        Messaging(command) => messaging::cli::handle_messaging(manager, ident, command),
-        #[cfg(any(feature = "libp2p-protocols", feature = "libp2p-kad"))]
-        Kad(command) => kad::cli::handle_kad(manager, command),
-        #[cfg(any(feature = "libp2p-protocols", feature = "libp2p-mdns"))]
-        Mdns(command) => mdns::cli::handle_mdns(manager, command),
-        #[cfg(any(feature = "libp2p-protocols", feature = "libp2p-relay-client"))]
-        RelayClient(command) => relay_client::cli::handle_relayclient(manager, command),
+        Messaging(command) => executor.block_on(messaging::cli::handle_messaging(
+            manager.messaging(),
+            ident,
+            command,
+        )),
         #[cfg(any(feature = "owlnest-protocols", feature = "owlnest-advertise"))]
-        Advertise(command) => advertise::cli::handle_advertise(manager, command),
+        Advertise(command) => executor.block_on(advertise::cli::handle_advertise(
+            manager.advertise(),
+            command,
+        )),
         #[cfg(any(feature = "owlnest-protocols", feature = "owlnest-blob"))]
-        Blob(command) => blob::cli::handle_blob(manager, command),
+        Blob(command) => executor.block_on(blob::cli::handle_blob(manager.blob(), command)),
+        #[cfg(any(feature = "libp2p-protocols", feature = "libp2p-kad"))]
+        Kad(command) => executor.block_on(kad::cli::handle_kad(manager.kad(), command)),
+        #[cfg(any(feature = "libp2p-protocols", feature = "libp2p-mdns"))]
+        Mdns(command) => executor.block_on(mdns::cli::handle_mdns(manager.mdns(), command)),
+        #[cfg(any(feature = "libp2p-protocols", feature = "libp2p-relay-client"))]
+        RelayClient(command) => relay_client::cli::handle_relay_client(manager, command),
+        #[cfg(any(feature = "libp2p-protocols", feature = "libp2p-autonat"))]
+        AutoNat(command) => {
+            executor.block_on(autonat::cli::handle_autonat(manager.autonat(), command))
+        }
         Utils(command) => handle_utils(command),
     }
 }
@@ -157,29 +169,55 @@ struct Cli {
 
 #[derive(Debug, Subcommand)]
 enum Command {
+    /// Show the peer ID of local peer.
     Id,
+    /// Clear the terminal.
     Clear,
+    /// Shutdown this peer.
+    /// Currently, the only way to shutdown is to return from `main`.
+    /// Graceful shutdown is not fully supported by upstream.
     Shutdown,
+    /// Dial the given address.
+    /// This is a short-hand for `swarm dial`
     Dial {
+        /// The address to dial, in multiaddr format.
+        /// For more information, please refer to `swarm dial`
+        #[arg(required = true)]
         address: Multiaddr,
     },
+    /// Listen on the given address.
+    /// This is a short-hand for `swarm listen`
     Listen {
+        /// The address to listen on, in multiaddr format.
+        /// For more information, please refer to `swarm listen`
+        #[arg(required = true)]
         address: Multiaddr,
     },
+    /// Subcommand for managing the swarm.  
     #[command(subcommand)]
     Swarm(swarm::cli::Swarm),
-    #[command(subcommand)]
-    Kad(kad::cli::Kad),
-    #[command(subcommand)]
-    RelayClient(relay_client::cli::RelayClient),
+    /// Subcommand for managing `owlnest-messaging` protocol.
     #[command(subcommand)]
     Messaging(messaging::cli::Messaging),
-    #[command(subcommand)]
-    Mdns(mdns::cli::Mdns),
+    /// Subcommand for managing `owlnest-blob` protocol.
     #[command(subcommand)]
     Blob(blob::cli::Blob),
+    /// Subcommand for managing `owlnest-advertise` protocol.
     #[command(subcommand)]
     Advertise(advertise::cli::Advertise),
+    /// Subcommand for managing `libp2p-mdns` protocol.
+    #[command(subcommand)]
+    Mdns(mdns::cli::Mdns),
+    /// Subcommand for managing `libp2p-autonat` protocol.
+    #[command(subcommand)]
+    AutoNat(autonat::cli::AutoNat),
+    /// Subcommand for managing `libp2p-kad` protocol.
+    #[command(subcommand)]
+    Kad(kad::cli::Kad),
+    /// Subcommand for managing relay client.
+    #[command(subcommand)]
+    RelayClient(relay_client::cli::RelayClient),
+    /// Subcommand for using various utilities.
     #[command(subcommand)]
     Utils(utils::Utils),
 }

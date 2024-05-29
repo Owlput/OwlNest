@@ -13,9 +13,19 @@ pub(crate) mod cli {
     use libp2p::{multiaddr::Protocol, Multiaddr, PeerId};
     use tracing::{error, warn};
 
+    /// Subcommand for interacting relay client.
     #[derive(Debug, Subcommand)]
     pub enum RelayClient {
-        Listen { address: Multiaddr, peer_id: PeerId },
+        /// Listen on the given relay
+        Listen {
+            /// The address of the relay, in multiaddr format.
+            #[arg(required = true)]
+            address: Multiaddr,
+            /// The peer ID of the relay.
+            /// The reason behind is that there can be multiple peers behind the same address.
+            #[arg(required = true)]
+            peer_id: PeerId,
+        },
     }
 
     pub fn setup(manager: &Manager) {
@@ -60,7 +70,7 @@ pub(crate) mod cli {
         });
     }
 
-    pub fn handle_relayclient(manager: &Manager, command: RelayClient) {
+    pub fn handle_relay_client(manager: &Manager, command: RelayClient) {
         use RelayClient::*;
         match command {
             Listen { address, peer_id } => {

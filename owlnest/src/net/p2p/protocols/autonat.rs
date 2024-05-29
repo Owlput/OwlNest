@@ -69,19 +69,70 @@ pub(crate) fn ev_dispatch(ev: &OutEvent) {
 
 pub mod cli {
     use clap::Subcommand;
-    use libp2p::Multiaddr;
+    use libp2p::{Multiaddr, PeerId};
 
-    #[derive(Subcommand)]
-    enum AutoNat {
-        #[arg()]
+    use super::Handle;
+
+    /// Command for managing `libp2p-autonat` protocol.
+    #[derive(Debug, Subcommand)]
+    pub enum AutoNat {
+        /// Add a server to be periodically probed to check for NAT status.
         AddServer {
-            address: Multiaddr,
+            /// The peer to act as the server.
+            #[arg(required = true)]
+            peer_id: PeerId,
+            /// The address to probe, in multiaddr format.
+            #[arg(required = false)]
+            address: Option<Multiaddr>,
         },
+        /// Remove a server that will be periodcally probed.
         RemoveServer {
-            address: Multiaddr,
+            /// The server to remove.
+            #[arg(required = true)]
+            peer_id: PeerId,
         },
+        /// Manually oneshot probing the address.
+        /// This command will return immediately without reporting the result.
+        /// Use `autonat get-nat-status` to get the updated NAT status.
         Probe {
+            /// The address to probe, in multiaddr format.
+            #[arg(required = true)]
             address: Multiaddr,
         },
+        /// Get current NAT status and it confidence score.  
+        /// `Private` for behind NAT walls, `Public` for publicly available,
+        /// `Unknown` for unknown status.
+        /// The confidence score is simply the number of servers
+        /// that report the current status.
+        GetNatStatus,
+    }
+
+    pub async fn handle_autonat(handle: &Handle, command: AutoNat) {
+        match command {
+            AutoNat::AddServer { peer_id, address } => {
+                handle.add_server(peer_id, address).await;
+                println!("OK.");
+            }
+            AutoNat::RemoveServer { peer_id } => {
+                handle.remove_server(peer_id).await;
+                println!("OK.");
+            }
+            AutoNat::Probe { address } => {
+                handle.probe(address).await;
+                println!("OK.");
+            }
+            AutoNat::GetNatStatus => {
+                let (status, confidence) = handle.get_nat_status().await;
+                use super::NatStatus::*;
+                match status {
+                    Private => println!("NAT status: Private; Confidence: {}", confidence),
+                    Public(addr) => println!(
+                        "NAT status: Public; Public address: {}, Confidence: {}",
+                        addr, confidence
+                    ),
+                    Unknown => println!("NAT status: Unknown"),
+                }
+            }
+        }
     }
 }

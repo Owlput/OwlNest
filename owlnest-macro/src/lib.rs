@@ -1,5 +1,4 @@
 pub mod behaviour_select;
-pub mod cli;
 pub mod connection_handler_select;
 
 pub mod utils {

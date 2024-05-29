@@ -128,36 +128,48 @@ impl Handle {
 
 pub(crate) mod cli {
     use super::*;
-    use crate::net::p2p::swarm::Manager;
     use clap::Subcommand;
     use libp2p::PeerId;
-    use tokio::runtime::Handle as RtHandle;
 
+    /// Subcommand for managing `owlnest-advertise` protocol.  
+    /// `owlnest-advertise` intends to provide a machine-operable way
+    /// of advertising some information about a peer.  
+    /// Currenyly, it's used to advertise peers that are listening on
+    /// the relay server.
+    /// Peers can post an advertisement on other peers that support this protocol,
+    /// then the AD can be seen by other peers through active query.
     #[derive(Debug, Subcommand)]
     pub enum Advertise {
-        #[command(subcommand)]
-        Provider(provider::Provider),
+        /// Post an AD on or retract an AD from the remote.  
+        /// This command will return immediately, and it's effect is not guaranteed.
+        /// The remote can still be showing the AD.
         SetRemoteAdvertisement {
+            /// Peer ID of the remote peer.
             remote: PeerId,
+            /// `true` to posting an AD, `false` to retract an AD.
             state: bool,
         },
+        /// Query for all ADs on the remote peer.
         QueryAdvertised {
+            /// Peer ID of the remote peer.
             remote: PeerId,
         },
+        /// Subcommand for managing local provider, e.g whether or not to
+        /// answer query from other peers.
+        #[command(subcommand)]
+        Provider(provider::Provider),
     }
 
-    pub fn handle_advertise(manager: &Manager, command: Advertise) {
-        let handle = manager.advertise();
-        let executor = manager.executor();
+    pub async fn handle_advertise(handle: &Handle, command: Advertise) {
         use Advertise::*;
         match command {
-            Provider(command) => provider::handle_provider(handle, executor, command),
+            Provider(command) => provider::handle_provider(handle, command).await,
             SetRemoteAdvertisement { remote, state } => {
-                executor.block_on(handle.set_remote_advertisement(remote, state));
+                handle.set_remote_advertisement(remote, state).await;
                 println!("OK")
             }
             QueryAdvertised { remote } => {
-                let result = executor.block_on(handle.query_advertised_peer(remote));
+                let result = handle.query_advertised_peer(remote).await;
                 println!("Query result:{:?}", result)
             }
         }
@@ -166,45 +178,54 @@ pub(crate) mod cli {
     mod provider {
         use clap::{arg, Subcommand};
 
+        /// Commands for managing local provider.
         #[derive(Debug, Subcommand)]
         pub enum Provider {
+            /// Start the local provider, e.g begin answering queries.
             Start,
+            /// Stop the local provider, e.g stop answering queries.
             Stop,
+            /// Get the current state of local provider.
             State,
+            /// List all advertisement on local provider.
             ListAdvertised,
+            /// Remove the AD of the given peer from local provider.
             RemoveAdvertise {
+                /// The peer ID to remove
                 #[arg(required = true)]
                 peer: PeerId,
             },
+            /// Remove all ADs from local provider
             ClearAdvertised,
         }
 
         use super::*;
-        pub fn handle_provider(handle: &Handle, executor: &RtHandle, command: Provider) {
+        pub async fn handle_provider(handle: &Handle, command: Provider) {
             use Provider::*;
             match command {
                 Start => {
-                    executor.block_on(handle.set_provider_state(true));
+                    handle.set_provider_state(true).await;
                     println!("Local provider is now providing advertisement");
                 }
                 Stop => {
-                    executor.block_on(handle.set_provider_state(false));
+                    handle.set_provider_state(false).await;
                     println!("Local provider has stopped providing advertisement")
                 }
                 State => {
-                    let state = executor.block_on(handle.provider_state());
+                    let state = handle.provider_state().await;
                     println!("isProviding:{}", state)
                 }
                 ListAdvertised => {
-                    let list = executor.block_on(handle.list_advertised());
+                    let list = handle.list_advertised().await;
                     println!("Advertising: \n{:?}", list);
                 }
                 RemoveAdvertise { peer } => {
-                    executor.block_on(handle.remove_advertised(&peer));
+                    handle.remove_advertised(&peer).await;
                     println!("Advertisement for peer {} is removed", peer)
                 }
                 ClearAdvertised => {
-                    executor.block_on(handle.clear_advertised());
+                    handle.clear_advertised().await;
+                    println!("All ADs has been cleared.")
                 }
             }
         }

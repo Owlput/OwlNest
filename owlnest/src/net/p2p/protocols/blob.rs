@@ -153,7 +153,7 @@ impl Handle {
 }
 
 pub(crate) mod cli {
-    use crate::net::p2p::swarm::Manager;
+    use super::Handle;
     use clap::Subcommand;
 
     #[derive(Debug, Subcommand)]
@@ -161,6 +161,7 @@ pub(crate) mod cli {
         /// Send a file to remote. Does not take folders or multiple files.
         #[command(arg_required_else_help = true)]
         Send {
+            /// Peer to send the file to.
             #[arg(required = true)]
             remote: libp2p::PeerId,
             /// Path to the file.
@@ -174,6 +175,7 @@ pub(crate) mod cli {
         /// Accept a send request from remote.
         #[command(arg_required_else_help = true)]
         Recv {
+            /// Recieve ID associated with the receive request.
             #[arg(required = true)]
             local_recv_id: u64,
             /// Path to write the file to.
@@ -187,28 +189,28 @@ pub(crate) mod cli {
         /// Cancel a pending or ongoing send operation.
         #[command(arg_required_else_help = true)]
         CancelSend {
+            /// Send ID associated with the receive request.
             #[arg(required = true)]
             local_send_id: u64,
         },
         /// Cancel a pending or ongoing receive operation.
         #[command(arg_required_else_help = true)]
         CancelRecv {
+            /// Recieve ID associated with the receive request.
             #[arg(required = true)]
             local_recv_id: u64,
         },
     }
 
-    pub fn handle_blob(manager: &Manager, command: Blob) {
-        let handle = manager.blob();
-        let executor = manager.executor();
+    pub async fn handle_blob(handle: &Handle, command: Blob) {
         use Blob::*;
         match command {
             ListSend => {
-                let list = executor.block_on(handle.list_pending_send());
+                let list = handle.list_pending_send().await;
                 println!("{:?}", list)
             }
             Send { remote, file_path } => {
-                let result = executor.block_on(handle.send_file(remote, file_path));
+                let result = handle.send_file(remote, file_path).await;
                 match result {
                     Ok(id) => println!("Send initated with ID {}", id),
                     Err(e) => println!("Send failed with error {:?}", e),
@@ -218,7 +220,7 @@ pub(crate) mod cli {
                 local_recv_id,
                 path_to_write,
             } => {
-                let result = executor.block_on(handle.recv_file(local_recv_id, path_to_write));
+                let result = handle.recv_file(local_recv_id, path_to_write).await;
                 match result {
                     Ok(_rtt) => println!("Recv ID {} accepted", local_recv_id),
                     Err(e) => println!("Send failed with error {}", e),

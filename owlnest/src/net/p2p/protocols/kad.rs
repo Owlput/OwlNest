@@ -282,17 +282,69 @@ pub fn ev_dispatch(ev: &OutEvent) {
 
 pub(crate) mod cli {
     use super::*;
-    use crate::net::p2p::swarm;
     use clap::{Subcommand, ValueEnum};
-    use swarm::manager::Manager;
 
+    /// Subcommand for interacting with `libp2p-kad` protocol.  
+    /// Kadelima protocol is an effecient routing algorithm
+    /// for reaching peers in a distributed environment, while
+    /// also being an excellent way of discovering more peers.    
+    /// Peers can exchange their views of the network to help
+    /// stitching a more complete view of the network and discover
+    /// more peers.
     #[derive(Debug, Subcommand)]
     pub enum Kad {
-        Query { peer_id: PeerId },
-        Lookup { peer_id: PeerId },
-        BootStrap,
-        SetMode { mode: KadMode },
-        Insert { peer_id: PeerId, address: Multiaddr },
+        /// Initate a query for the given peer across the entire network,
+        /// e.g all peers participating the network will be notified to look for the peer.  
+        /// Logically closest peers will be returned if the given peer is not found.  
+        Query {
+            /// The peer to query for.
+            #[arg(required = true)]
+            peer_id: PeerId,
+        },
+        /// Try to look up the given peer on local routing table.
+        /// Will return None when the peer is not found.  
+        /// No request will be sent to the network.
+        Lookup {
+            /// The peer to look for.
+            #[arg(required = true)]
+            peer_id: PeerId,
+        },
+        /// Start bootstraping the network, e.g. contact all peers participating the network
+        /// to get their view of the network in order to update the view on local peer.  
+        /// New peers will be added to local routing table and contacted to get their view,
+        /// so this can be a resource-intensive(CPU time, memory, network) operation, but
+        /// it is essential to maintain a healthy routing table.  
+        /// Bootstrapping therefore cannot be started when there is no sufficient nodes in the table.
+        /// So it is recommended to issue `kad insert-default` before the first bootstrap.
+        /// Bootstrapping will be automatically scheduled every 2 minutes regardless of this command.
+        /// You can configure the interval in `owlnest_config.toml` if you find it too frequent.
+        Bootstrap,
+        /// Set current mode of local DHT provider:
+        /// - `Client`: Only passively listen to the network
+        /// without publishing record or answering queries.
+        /// - `Server`: Actively publish records and answer queries.
+        /// - `Default`: Automatically determin the mode according to
+        /// public reachability of local peer. If local peer is publicly reachable,
+        /// the mode will be set to `Server`, or `Client` otherwise.
+        SetMode {
+            /// The mode to set: `client`, `server` or `default`
+            #[arg(required = true)]
+            mode: KadMode,
+        },
+        /// Manually insert the record into local routing table.
+        Insert {
+            /// The peer ID to insert.
+            #[arg(required = true)]
+            peer_id: PeerId,
+            /// The address associated with the given peer.
+            /// The address will be removed if later determined unreachable.
+            #[arg(required = true)]
+            address: Multiaddr,
+        },
+        /// Insert the default nodes of the network to local routing table.
+        /// Currently those peers are from official IPFS nodes. Visit
+        /// https://docs.ipfs.tech/how-to/modify-bootstrap-list/ for more
+        /// information about the nodes and their importance.
         InsertDefault,
     }
 
@@ -322,84 +374,86 @@ pub(crate) mod cli {
     }
 
     /// Top-level handler for `kad` command.
-    pub fn handle_kad(manager: &Manager, command: Kad) {
+    pub async fn handle_kad(handle: &Handle, command: Kad) {
         use Kad::*;
         match command {
             Query { peer_id } => {
-                let result = manager.executor().block_on(manager.kad().query(peer_id));
+                let result = handle.query(peer_id).await;
                 println!("{:?}", result)
             }
             Lookup { peer_id } => {
-                let result = manager.executor().block_on(manager.kad().lookup(&peer_id));
+                let result = handle.lookup(&peer_id).await;
                 println!("{:?}", result)
             }
-            BootStrap => kad_bootstrap(manager),
+            Bootstrap => {
+                let result = handle.bootstrap().await;
+                if result.is_err() {
+                    println!("No known peer in the DHT");
+                    return;
+                }
+                println!("Bootstrap started")
+            }
             SetMode { mode } => {
-                if manager
-                    .executor()
-                    .block_on(manager.kad().set_mode(mode.into()))
-                    .is_err()
-                {
+                if handle.set_mode(mode.into()).await.is_err() {
                     println!("Timeout reached for setting kad mode");
                     return;
                 }
                 println!("Mode for kad has been set to {}", mode)
             }
             Insert { .. } => {}
-            InsertDefault => kad_insert_default(manager),
+            InsertDefault => {
+                let result = handle
+                    .insert_node(
+                        PeerId::from_str("QmNnooDu7bfjPFoTZYxMNLWUQJyrVwtbZg5gBMjTezGAJN").unwrap(),
+                        "/dnsaddr/bootstrap.libp2p.io".parse::<Multiaddr>().unwrap(),
+                    )
+                    .await;
+                println!(
+                    "QmNnooDu7bfjPFoTZYxMNLWUQJyrVwtbZg5gBMjTezGAJN:{:?}",
+                    result
+                );
+                let result = handle
+                    .insert_node(
+                        PeerId::from_str("QmQCU2EcMqAqQPR2i9bChDtGNJchTbq5TbXJJ16u19uLTa").unwrap(),
+                        "/dnsaddr/bootstrap.libp2p.io".parse::<Multiaddr>().unwrap(),
+                    )
+                    .await;
+                println!(
+                    "QmQCU2EcMqAqQPR2i9bChDtGNJchTbq5TbXJJ16u19uLTa:{:?}",
+                    result
+                );
+                let result = handle
+                    .insert_node(
+                        PeerId::from_str("QmbLHAnMoJPWSCR5Zhtx6BHJX9KiKNN6tpvbUcqanj75Nb").unwrap(),
+                        "/dnsaddr/bootstrap.libp2p.io".parse::<Multiaddr>().unwrap(),
+                    )
+                    .await;
+                println!(
+                    "QmbLHAnMoJPWSCR5Zhtx6BHJX9KiKNN6tpvbUcqanj75Nb:{:?}",
+                    result
+                );
+                let result = handle
+                    .insert_node(
+                        PeerId::from_str("QmcZf59bWwK5XFi76CZX8cbJ4BhTzzA3gU1ZjYZcYW3dwt").unwrap(),
+                        "/dnsaddr/bootstrap.libp2p.io".parse::<Multiaddr>().unwrap(),
+                    )
+                    .await;
+                println!(
+                    "QmcZf59bWwK5XFi76CZX8cbJ4BhTzzA3gU1ZjYZcYW3dwt:{:?}",
+                    result
+                );
+                let result = handle
+                    .insert_node(
+                        PeerId::from_str("QmaCpDMGvV2BGHeYERUEnRQAwe3N8SzbUtfsmvsqQLuvuJ").unwrap(),
+                        "/ip4/104.131.131.82/tcp/4001".parse::<Multiaddr>().unwrap(),
+                    )
+                    .await;
+                println!(
+                    "QmaCpDMGvV2BGHeYERUEnRQAwe3N8SzbUtfsmvsqQLuvuJ:{:?}",
+                    result
+                );
+            }
         }
-    }
-
-    fn kad_insert_default(manager: &Manager) {
-        let result = manager.executor().block_on(manager.kad().insert_node(
-            PeerId::from_str("QmNnooDu7bfjPFoTZYxMNLWUQJyrVwtbZg5gBMjTezGAJN").unwrap(),
-            "/dnsaddr/bootstrap.libp2p.io".parse::<Multiaddr>().unwrap(),
-        ));
-        println!(
-            "QmNnooDu7bfjPFoTZYxMNLWUQJyrVwtbZg5gBMjTezGAJN:{:?}",
-            result
-        );
-        let result = manager.executor().block_on(manager.kad().insert_node(
-            PeerId::from_str("QmQCU2EcMqAqQPR2i9bChDtGNJchTbq5TbXJJ16u19uLTa").unwrap(),
-            "/dnsaddr/bootstrap.libp2p.io".parse::<Multiaddr>().unwrap(),
-        ));
-        println!(
-            "QmQCU2EcMqAqQPR2i9bChDtGNJchTbq5TbXJJ16u19uLTa:{:?}",
-            result
-        );
-        let result = manager.executor().block_on(manager.kad().insert_node(
-            PeerId::from_str("QmbLHAnMoJPWSCR5Zhtx6BHJX9KiKNN6tpvbUcqanj75Nb").unwrap(),
-            "/dnsaddr/bootstrap.libp2p.io".parse::<Multiaddr>().unwrap(),
-        ));
-        println!(
-            "QmbLHAnMoJPWSCR5Zhtx6BHJX9KiKNN6tpvbUcqanj75Nb:{:?}",
-            result
-        );
-        let result = manager.executor().block_on(manager.kad().insert_node(
-            PeerId::from_str("QmcZf59bWwK5XFi76CZX8cbJ4BhTzzA3gU1ZjYZcYW3dwt").unwrap(),
-            "/dnsaddr/bootstrap.libp2p.io".parse::<Multiaddr>().unwrap(),
-        ));
-        println!(
-            "QmcZf59bWwK5XFi76CZX8cbJ4BhTzzA3gU1ZjYZcYW3dwt:{:?}",
-            result
-        );
-        let result = manager.executor().block_on(manager.kad().insert_node(
-            PeerId::from_str("QmaCpDMGvV2BGHeYERUEnRQAwe3N8SzbUtfsmvsqQLuvuJ").unwrap(),
-            "/ip4/104.131.131.82/tcp/4001".parse::<Multiaddr>().unwrap(),
-        ));
-        println!(
-            "QmaCpDMGvV2BGHeYERUEnRQAwe3N8SzbUtfsmvsqQLuvuJ:{:?}",
-            result
-        );
-    }
-
-    fn kad_bootstrap(manager: &Manager) {
-        let result = manager.executor().block_on(manager.kad().bootstrap());
-        if result.is_err() {
-            println!("No known peer in the DHT");
-            return;
-        }
-        println!("Bootstrap started")
     }
 }
 

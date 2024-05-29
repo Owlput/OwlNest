@@ -110,29 +110,32 @@ pub fn ev_dispatch(ev: &OutEvent, swarm: &mut Swarm) {
 }
 
 pub(crate) mod cli {
-    use crate::net::p2p::swarm::manager::Manager;
+    use super::*;
     use clap::Subcommand;
-    use libp2p::PeerId;
 
+    /// Subcommand for interacting with `libp2p-mdns` protocol.  
+    /// This protocol constantly listens on the local network
+    /// to see if anyone broadcasts messages to find some hosts,
+    /// or with information about itself.
     #[derive(Debug, Subcommand)]
     pub enum Mdns {
+        /// List all discovered peers through mDNS.
         ListDiscovered,
-        HasNode { peer_id: PeerId },
+        /// Check if the given peer can be observed though mDNS,
+        /// e.g on your local network.
+        HasNode {
+            /// The peer ID to check.
+            #[arg(required = true)]
+            peer_id: PeerId,
+        },
     }
 
-    pub fn handle_mdns(manager: &Manager, command: Mdns) {
+    pub async fn handle_mdns(handle: &Handle, command: Mdns) {
         use Mdns::*;
         match command {
-            ListDiscovered => println!(
-                "{:?}",
-                manager
-                    .executor()
-                    .block_on(manager.mdns().list_discovered_node())
-            ),
+            ListDiscovered => println!("{:?}", handle.list_discovered_node().await),
             HasNode { peer_id } => {
-                let result = manager
-                    .executor()
-                    .block_on(manager.mdns().has_node(peer_id));
+                let result = handle.has_node(peer_id).await;
                 println!("Peer {} discovered? {}", peer_id, result);
             }
         }
