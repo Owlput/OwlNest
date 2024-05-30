@@ -18,6 +18,7 @@ pub use libp2p::PeerId;
 #[derive(Debug, Default, Serialize, Deserialize)]
 pub struct SwarmConfig {
     pub swarm: swarm::Config,
+    #[cfg(any(feature = "libp2p-protocols", feature = "libp2p-kad"))]
     pub kad: kad::Config,
     #[cfg(any(feature = "libp2p-protocols", feature = "libp2p-identify"))]
     pub identify: identify::Config,
