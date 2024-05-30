@@ -18,7 +18,6 @@ toml = "*"
 
 [dev-dependencies]
 serial_test = "3"
-owlnest = { path = "../../owlnest", features = ["owlnest-protocols","test-suits"] }
 
 [build-dependencies]
 prost-build = "0.12"
