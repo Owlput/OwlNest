@@ -1,3 +1,5 @@
+use std::{fmt::Display, io::ErrorKind};
+
 use super::*;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -40,13 +42,25 @@ pub enum FileSendError {
 
 #[derive(Debug)]
 pub enum FileRecvError {
-    IllegalFilePath,
-    PendingRecvNotFound,
+    PendingRecvNotFound(u64),
     Timeout,
-    FsError(std::io::ErrorKind),
+    FsError {
+        path: String,
+        error: std::io::ErrorKind,
+    },
 }
-impl From<std::io::Error> for FileRecvError {
-    fn from(value: std::io::Error) -> Self {
-        Self::FsError(value.kind())
+impl Display for FileRecvError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self{
+            FileRecvError::PendingRecvNotFound(id) => write!(f,"Cannot find operation associated with recv ID {}, is the request already accepted or cancaled?", id),
+            FileRecvError::Timeout => write!(f,"Timeout when waiting response from remote."),
+            FileRecvError::FsError{path,error} => {
+                match error {
+                    ErrorKind::AlreadyExists => write!(f,"File(or folder) {} already exists. Overwritting is not allowed. Please delete the file before accepting the request.", path),
+                    ErrorKind::PermissionDenied => write!(f, "Cannot write to file(or folder) {}: Permission denied. Please make sure you have properly set the permission.", path),
+                    e => write!(f,"OS reported OtherError {}", e)
+                }
+            },
+        }
     }
 }

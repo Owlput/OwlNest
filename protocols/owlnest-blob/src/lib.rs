@@ -1,4 +1,3 @@
-#![feature(byte_slice_trim_ascii)]
 #![feature(extract_if)]
 #![feature(hash_extract_if)]
 
@@ -21,6 +20,7 @@ pub use behaviour::{RecvInfo, SendInfo};
 pub use config::Config;
 pub use protocol::PROTOCOL_NAME;
 
+/// Events that this behaviour accepts.
 #[derive(Debug)]
 pub enum InEvent {
     /// Initate a file-send request.
@@ -31,11 +31,7 @@ pub enum InEvent {
         /// Full path to the file, including file name.
         file_path: PathBuf,
         to: PeerId,
-        /// A monotonic ID assigned to this request.
-        /// The ID is unique during the lifetime of the app,
-        /// but the order is not guaranteed.
-        local_send_id: u64,
-        callback: oneshot::Sender<Result<(), FileSendError>>,
+        callback: oneshot::Sender<Result<u64, FileSendError>>,
     },
     /// Local acceptes a pending recv.
     AcceptFile {
@@ -48,13 +44,20 @@ pub enum InEvent {
         path: PathBuf,
         callback: oneshot::Sender<Result<Duration, error::FileRecvError>>,
     },
-    ListConnected(oneshot::Sender<Vec<PeerId>>),
-    ListPendingRecv(oneshot::Sender<Vec<RecvInfo>>),
-    ListPendingSend(oneshot::Sender<Vec<SendInfo>>),
+    /// List all peers that are connected and support this protocol.
+    ListConnected(oneshot::Sender<Box<[PeerId]>>),
+    /// List all recv activities, including pending and ongoing.
+    ListRecv(oneshot::Sender<Box<[RecvInfo]>>),
+    /// List all send activities, including pending and ongoing.
+    ListSend(oneshot::Sender<Box<[SendInfo]>>),
+    /// Cancel a recv operation associated with the given ID.
+    /// No more bytes will be written upon seen by the behaviour
     CancelRecv {
         local_recv_id: u64,
         callback: oneshot::Sender<Result<(), ()>>,
     },
+    /// Cancel a send operation associated with the give ID.
+    /// No more bytes will be read upon seen by the behaviour
     CancelSend {
         local_send_id: u64,
         callback: oneshot::Sender<Result<(), ()>>,
@@ -62,6 +65,7 @@ pub enum InEvent {
 }
 
 #[derive(Debug)]
+/// Events that can be emitted by this behaviour.
 pub enum OutEvent {
     /// A remote informed local of a pending file.
     IncomingFile {
@@ -73,6 +77,7 @@ pub enum OutEvent {
         local_recv_id: u64,
         bytes_total: u64,
     },
+    /// Remote has sent us a chunk of file and has been written.
     RecvProgressed {
         local_recv_id: u64,
         /// The amount of bytes that have received.
@@ -93,10 +98,17 @@ pub enum OutEvent {
         local_send_id: u64,
         error: String,
     },
+    /// The send operation associsted with the ID is cancelled.
     CancelledSend(u64),
+    /// The recv operation associated with the ID is cancelled.
     CancelledRecv(u64),
     Error(error::Error),
+    /// An inbound stream has been successfully negotiated.
     InboundNegotiated(PeerId),
+    /// An outbound stream has been successfully negotiated.
+    /// The peer will be added to the connected peer list
+    /// if an outbound stream is successfully negotiated.
     OutboundNegotiated(PeerId),
+    /// The peer doesn't support this protocol.
     Unsupported(PeerId),
 }

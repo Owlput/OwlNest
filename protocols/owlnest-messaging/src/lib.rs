@@ -20,7 +20,7 @@ pub use protocol::PROTOCOL_NAME;
 #[derive(Debug)]
 pub enum InEvent {
     SendMessage(PeerId, Message, u64),
-    ListConnected(oneshot::Sender<Vec<PeerId>>),
+    ListConnected(oneshot::Sender<Box<[PeerId]>>),
 }
 
 #[derive(Debug)]

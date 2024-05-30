@@ -1,216 +1,141 @@
 use crate::net::p2p::swarm::handle::SwarmHandle;
+use clap::Subcommand;
 use libp2p::{Multiaddr, PeerId, TransportError};
 
-pub(crate) fn handle_swarm(handle: &SwarmHandle, command: Vec<&str>) {
-    if command.len() < 2 {
-        println!("Error: Missing subcommands. Type \"swarm help\" for more information");
-        return;
-    }
-    match command[1] {
-        "help" => println!("{}", TOP_HELP_MESSAGE),
-        "dial" => {
-            if command.len() < 3 {
-                println!(
-                    "Error: Missing required argument <address>, syntax: `swarm dial <address>`"
-                );
-                return;
+/// Subcommand for managing the swarm.  
+/// Swarm is libp2p way of managing raw connections(or transports, e.g. TCP, UDP, QUIC, WebSocket).
+/// Every request to initate a connection to another peer must go through the swarm.
+#[derive(Debug, Subcommand)]
+pub enum Swarm {
+    /// Dial the given address.
+    /// This command will return immediately without confirming if the dial actually succeeded.
+    Dial {
+        /// The address to dial, in multiaddr format.
+        /// e.g. /ip4/127.0.0.1/tcp/42
+        /// Visit `https://github.com/libp2p/specs/blob/master/addressing/README.md#multiaddr-in-libp2p`
+        /// for more info about multiaddress
+        #[arg(required = true)]
+        address: Multiaddr,
+    },
+    /// Listen on the given local address.
+    /// For listening on a relay server, it is recommended to use relay-client subcommand instead.
+    /// Will return the id of the first listener created.
+    /// Note that the listener can be dropped afterwards.
+    Listen {
+        /// The address to listen on, in multiaddr format.  
+        /// e.g. `/ip4/127.0.0.1/tcp/42`;  
+        /// `/ip4/some_remote_ip/tcp/port_number/p2p/peer_id_of_relay/p2p-circuit`  
+        /// Visit `https://github.com/libp2p/specs/blob/master/addressing/README.md#multiaddr-in-libp2p`
+        /// for more info about multiaddress
+        #[arg(required = true)]
+        address: Multiaddr,
+    },
+    /// Subcommand for handling active listeners.
+    /// To add new listeners, use `listen` instead.
+    #[command(subcommand)]
+    Listener(listener::Listener),
+    /// Subcommand for managing confirmed external addresses
+    /// e.g. addresses that can be reached by others.
+    #[command(subcommand)]
+    ExternalAddr(external_address::ExternalAddr),
+    /// Check if the peer with the given ID is connected.
+    IsConnected {
+        /// The peer ID to check.
+        #[arg(required = true)]
+        peer_id: PeerId,
+    },
+}
+
+pub(crate) fn handle_swarm(handle: &SwarmHandle, command: Swarm) {
+    use Swarm::*;
+    match command {
+        Dial { address } => {
+            if let Err(e) = handle.dial_blocking(&address) {
+                println!("Failed to initiate dial {} with error: {:?}", address, e);
+            } else {
+                println!("Dialing {}", address);
             }
-            handle_swarm_dial(handle, command[2])
         }
-        "listen" => {
-            if command.len() < 3 {
-                println!(
-                    "Error: Missing required argument <address>, syntax: `swarm listen <address>`"
-                );
-                return;
-            }
-            handle_swarm_listen(handle, command[2])
-        }
-        "listener" => listener::handle_swarm_listener(handle, command),
-        "external-addr" => external_address::handle_swarm_externaladdress(handle, command),
-        "isconnected" => handle_swarm_isconnected(handle, command),
-        _ => println!(
-            "Failed to execute: unrecognized subcommand. Type \"swarm help\" for more information."
-        ),
+        Listen { address } => match handle.listen_blocking(&address) {
+            Ok(listener_id) => println!(
+                "Successfully listening on {} with listener ID {:?}",
+                address, listener_id
+            ),
+
+            Err(e) => println!(
+                "Failed to listen on {} with error: {}",
+                address,
+                format_transport_error(e)
+            ),
+        },
+        Listener(command) => listener::handle_swarm_listener(handle, command),
+        ExternalAddr(command) => external_address::handle_swarm_externaladdress(handle, command),
+        IsConnected { peer_id } => println!("{}", handle.is_connected_blocking(peer_id)),
     }
 }
 
-pub(crate) fn handle_swarm_dial(handle: &SwarmHandle, addr: &str) {
-    let addr = match addr.parse::<Multiaddr>() {
-        Ok(addr) => addr,
-        Err(e) => {
-            println!("Error: Failed parsing address `{}`: {}", addr, e);
-            return;
-        }
-    };
-    if let Err(e) = handle.dial_blocking(&addr) {
-        println!("Failed to initiate dial {} with error: {:?}", addr, e);
-    } else {
-        println!("Dialing {}", addr);
-    }
-}
-
-pub(crate) fn handle_swarm_listen(handle: &SwarmHandle, addr: &str) {
-    let addr = match addr.parse::<Multiaddr>() {
-        Ok(addr) => addr,
-        Err(e) => {
-            println!("Error: Failed parsing address `{}`: {}", addr, e);
-            return;
-        }
-    };
-    match handle.listen_blocking(&addr) {
-        Ok(listener_id) => println!(
-            "Successfully listening on {} with listener ID {:?}",
-            addr, listener_id
-        ),
-
-        Err(e) => println!(
-            "Failed to listen on {} with error: {}",
-            addr,
-            format_transport_error(e)
-        ),
-    }
-}
-
-mod listener {
-    use super::SwarmHandle;
-
-    pub fn handle_swarm_listener(handle: &SwarmHandle, command: Vec<&str>) {
-        if command.len() < 3 {
-            println!("Missing subcommands. Type \"swarm listener help\" for more information");
-            return;
-        }
-        match command[2]{
-            "ls" => println!("Active listeners: {:?}",handle.list_listeners_blocking()),
-            "help" => println!("{}",HELP_MESSAGE),
-            _=>println!("Failed to execute: unrecognized subcommand. Type \"swarm listener help\" for more information.")
-        }
-    }
-
-    const HELP_MESSAGE: &str = r"
-    swarm listener: Subcommand for managing listeners of this swarm
-
-    Available Subcommands:
-        ls
-            List all listeners of this swarm.
-
-        help
-            Show this help message.
-    ";
-}
-
-mod external_address {
+pub mod listener {
     use super::*;
-    pub fn handle_swarm_externaladdress(handle: &SwarmHandle, command: Vec<&str>) {
-        if command.len() < 3 {
-            println!("Missing subcommands. Type \"swarm external help\" for more information");
-            return;
-        }
-        match command[2] {
-            "add" => add(handle, command),
-            "remove" => remove(handle, command),
-            "ls" => ls(handle),
-            "help" => println!("{}", HELP_MESSAGE),
-            _ => {}
-        }
-    }
-    fn add(handle: &SwarmHandle, command: Vec<&str>) {
-        if command.len() < 4 {
-            println!("Missing argument <address>. Syntax: swarm external-addr add <PeerId>");
-            return;
-        }
-        let addr = match command[3].parse::<Multiaddr>() {
-            Ok(addr) => addr,
-            Err(e) => {
-                println!("Error: Failed parsing address `{}`: {}", command[3], e);
-                return;
-            }
-        };
-        handle.add_external_address_blocking(addr.clone());
-        println!("External address `{}` added", addr)
-    }
-    fn remove(handle: &SwarmHandle, command: Vec<&str>) {
-        if command.len() < 4 {
-            println!("Missing argument <address>. Syntax: swarm external-addr remove <PeerId>");
-            return;
-        }
-        let addr = match command[3].parse::<Multiaddr>() {
-            Ok(addr) => addr,
-            Err(e) => {
-                println!("Error: Failed parsing address `{}`: {}", command[3], e);
-                return;
-            }
-        };
-        handle.remove_external_address_blocking(addr.clone());
-        println!("External address `{}` removed", addr)
-    }
-    fn ls(handle: &SwarmHandle) {
-        let addresses = handle.list_external_addresses_blocking();
-        println!("External addresses: {:?}", addresses)
+
+    /// Subcommand for managing listeners.
+    #[derive(Debug, Subcommand)]
+    pub enum Listener {
+        /// List all listeners
+        Ls,
     }
 
-    const HELP_MESSAGE: &str = r"
-    swarm external-addr: Subcommand for managing external addresses of the swarm
-
-    Available subcommands:
-        add <address>
-            Add the <address> to external address(bind).
-        
-        remove <address>
-            Remove the <address> from external address.
-
-        ls
-            List all external address of this swarm.
-        
-        help
-            Show this help message.
-    ";
+    pub fn handle_swarm_listener(handle: &SwarmHandle, command: Listener) {
+        use Listener::*;
+        match command {
+            Ls => println!("Active listeners: {:?}", handle.list_listeners_blocking()),
+        }
+    }
 }
 
-fn handle_swarm_isconnected(handle: &SwarmHandle, command: Vec<&str>) {
-    if command.len() < 3 {
-        println!("Missing argument <PeerId>. Syntax: swarm isconnected <PeerId>");
-        return;
+pub mod external_address {
+    use super::*;
+
+    /// Subcommand for managing external addresses.
+    /// Note that some protocol will use this information
+    /// to determine whether the address is publicly reachable.  
+    /// Local addresses(10.0.0.0,127.0.0.1,192.168.0.0) are not
+    /// considered external addresses by default, you can manually
+    /// add them to the list.
+    #[derive(Debug, Subcommand)]
+    pub enum ExternalAddr {
+        /// List all addresses that are considered publicly reachable.
+        Ls,
+        /// Manually add an address to the list of external addresses.
+        Add {
+            /// The address to add.
+            #[arg(required = true)]
+            address: Multiaddr,
+        },
+        /// Manually remove an address to the list of external addresses.
+        Remove {
+            /// The address to remove.
+            #[arg(required = true)]
+            address: Multiaddr,
+        },
     }
-    let peer_id = match command[2].parse::<PeerId>() {
-        Ok(v) => v,
-        Err(e) => {
-            println!("Failed to parse peer ID for input {}: {}", command[2], e);
-            return;
+    pub fn handle_swarm_externaladdress(handle: &SwarmHandle, command: ExternalAddr) {
+        use ExternalAddr::*;
+        match command {
+            Add { address } => {
+                handle.add_external_address_blocking(address.clone());
+                println!("External address `{}` added", address)
+            }
+            Remove { address } => {
+                handle.remove_external_address_blocking(address.clone());
+                println!("External address `{}` removed", address)
+            }
+            Ls => {
+                let addresses = handle.list_external_addresses_blocking();
+                println!("External addresses: {:?}", addresses)
+            }
         }
-    };
-    println!("{}", handle.is_connected_blocking(peer_id))
+    }
 }
-
-const TOP_HELP_MESSAGE: &str = r#"
-swarm: Subcommand for managing libp2p swarm.
-
-Available subcommands:
-    dial <address>          
-        Dial <address>, in multiaddr format.
-        Dial result may not shown directly after command issued.
-
-    listen <address>        
-        Listen on <address>, in multiaddr format.
-
-    listener <subcommand>
-        Managing connection listeners.
-
-    external-addr <subcommand>           
-        Managing external addresses.
-
-    disconnect <peer ID>
-        Terminate connections from the given peer.
-
-    isconnected <peer ID>
-        Check whether the swarm has connected to the given peer.
-
-    ban <peer ID>
-        Ban the given peer, refuse further connections from that peer.
-                
-    unban <peer ID>
-        Unban the given peer.
-"#;
 
 pub(crate) fn format_transport_error(e: TransportError<std::io::Error>) -> String {
     match e {

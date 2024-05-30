@@ -4,8 +4,6 @@ pub use owlnest_blob::{config, error, Behaviour, InEvent, OutEvent};
 pub use owlnest_blob::{RecvInfo, SendInfo};
 use owlnest_macro::{generate_handler_method, with_timeout};
 use std::path::Path;
-use std::sync::atomic::{AtomicU64, Ordering};
-use std::sync::Arc;
 use std::time::Duration;
 use tokio::sync::{mpsc, oneshot};
 use tracing::{trace, warn};
@@ -14,7 +12,6 @@ use tracing::{trace, warn};
 pub struct Handle {
     sender: mpsc::Sender<InEvent>,
     event_tx: EventSender,
-    send_counter: Arc<AtomicU64>,
 }
 impl Handle {
     pub fn new(buffer: usize, event_tx: &EventSender) -> (Self, mpsc::Receiver<InEvent>) {
@@ -23,7 +20,6 @@ impl Handle {
             Self {
                 sender: tx,
                 event_tx: event_tx.clone(),
-                send_counter: Arc::new(AtomicU64::new(0)),
             },
             rx,
         )
@@ -49,17 +45,15 @@ impl Handle {
                 e => error::FileSendError::OtherFsError(e),
             })?;
         let (tx, rx) = oneshot::channel();
-        let local_send_id = self.next_id();
         let ev = InEvent::SendFile {
             file,
             file_path: path.as_ref().to_owned(),
             to,
-            local_send_id,
             callback: tx,
         };
         self.sender.send(ev).await.expect("send to succeed");
         match with_timeout!(rx, 10) {
-            Ok(v) => v.expect("callback to succeed").map(|_| local_send_id),
+            Ok(v) => v.expect("callback to succeed"),
             Err(_) => {
                 warn!("timeout reached for a timed future");
                 Err(error::FileSendError::Timeout)
@@ -85,7 +79,10 @@ impl Handle {
         {
             Ok(file) => file,
             Err(err) => {
-                return Err(error::FileRecvError::FsError(err.kind()));
+                return Err(error::FileRecvError::FsError {
+                    path: path_to_write.to_string_lossy().to_string(),
+                    error: err.kind(),
+                });
             }
         };
 
@@ -146,15 +143,102 @@ impl Handle {
     generate_handler_method!(
         /// List receives that are still in pending phase.
         /// Ongoing receives should be tracked by the user interface.
-        ListPendingRecv:list_pending_recv()->Vec<RecvInfo>;
+        ListRecv:list_pending_recv()->Box<[RecvInfo]>;
         /// List sends that are still in pending phase.
         /// Ongoing sends should be tracked by the user interface.
-        ListPendingSend:list_pending_send()->Vec<SendInfo>;
+        ListSend:list_pending_send()->Box<[SendInfo]>;
         /// List all peers that have successfully negotiated this protocol.
-        ListConnected:list_connected()->Vec<PeerId>;
+        ListConnected:list_connected()->Box<[PeerId]>;
     );
-    fn next_id(&self) -> u64 {
-        self.send_counter.fetch_add(1, Ordering::SeqCst)
+}
+
+pub(crate) mod cli {
+    use super::Handle;
+    use clap::Subcommand;
+
+    #[derive(Debug, Subcommand)]
+    pub enum Blob {
+        /// Send a file to remote. Does not take folders or multiple files.
+        #[command(arg_required_else_help = true)]
+        Send {
+            /// Peer to send the file to.
+            #[arg(required = true)]
+            remote: libp2p::PeerId,
+            /// Path to the file.
+            #[arg(required = true)]
+            file_path: String,
+        },
+        /// List all send operation, pending and ongoing.
+        ListSend,
+        /// List all recv operation, pending or ongoing.
+        ListRecv,
+        /// Accept a send request from remote.
+        #[command(arg_required_else_help = true)]
+        Recv {
+            /// Recieve ID associated with the receive request.
+            #[arg(required = true)]
+            local_recv_id: u64,
+            /// Path to write the file to.
+            /// If supplied with a folder, a file with its original name is created,
+            /// fail if cannot be created.
+            /// If supplied with a file, the content will be written to that file
+            /// without using the original name, fail if already exists(no overwrite).
+            #[arg(default_value = ".")]
+            path_to_write: String,
+        },
+        /// Cancel a pending or ongoing send operation.
+        #[command(arg_required_else_help = true)]
+        CancelSend {
+            /// Send ID associated with the receive request.
+            #[arg(required = true)]
+            local_send_id: u64,
+        },
+        /// Cancel a pending or ongoing receive operation.
+        #[command(arg_required_else_help = true)]
+        CancelRecv {
+            /// Recieve ID associated with the receive request.
+            #[arg(required = true)]
+            local_recv_id: u64,
+        },
+    }
+
+    pub async fn handle_blob(handle: &Handle, command: Blob) {
+        use Blob::*;
+        match command {
+            ListSend => {
+                let list = handle.list_pending_send().await;
+                println!("{:?}", list)
+            }
+            Send { remote, file_path } => {
+                let result = handle.send_file(remote, file_path).await;
+                match result {
+                    Ok(id) => println!("Send initated with ID {}", id),
+                    Err(e) => println!("Send failed with error {:?}", e),
+                }
+            }
+            Recv {
+                local_recv_id,
+                path_to_write,
+            } => {
+                let result = handle.recv_file(local_recv_id, path_to_write).await;
+                match result {
+                    Ok(_rtt) => println!("Recv ID {} accepted", local_recv_id),
+                    Err(e) => println!("Send failed with error {}", e),
+                }
+            }
+            _ => todo!(),
+        }
+    }
+    pub mod send {
+        use clap::Parser;
+        use libp2p::PeerId;
+
+        #[derive(Parser, Debug)]
+        struct Args {
+            #[arg(long)]
+            peer: PeerId,
+            source: String,
+        }
     }
 }
 
@@ -233,14 +317,12 @@ mod test {
                 .len()
                 == 3
         );
-        assert!(
-            peer2_m
-                .executor()
-                .block_on(peer2_m.blob().list_pending_recv())
-                .extract_if(|v| v.local_recv_id == 2)
-                .count()
-                == 0
-        ); // Check if the recv_id increments linearly
+        assert!(peer2_m
+            .executor()
+            .block_on(peer2_m.blob().list_pending_recv())
+            .iter()
+            .find(|v| v.local_recv_id == 2)
+            .is_none()); // Check if the recv_id increments linearly
     }
 
     #[test]
@@ -289,14 +371,12 @@ mod test {
                 .len()
                 == 3
         );
-        assert!(
-            peer1_m
-                .executor()
-                .block_on(peer1_m.blob().list_pending_send())
-                .extract_if(|v| v.local_send_id == 2)
-                .count()
-                == 0
-        ); // Check if the send_id increments linearly
+        assert!(peer1_m
+            .executor()
+            .block_on(peer1_m.blob().list_pending_send())
+            .iter()
+            .find(|v| v.local_send_id == 2)
+            .is_none()); // Check if the send_id increments linearly
     }
 
     fn setup_peer() -> (Manager, Manager) {

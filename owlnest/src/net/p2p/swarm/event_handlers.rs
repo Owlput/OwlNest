@@ -55,7 +55,7 @@ pub async fn handle_swarm_event(ev: &super::SwarmEvent, swarm: &mut Swarm) {
                 let info = transport_err
                     .iter()
                     .map(closure)
-                    .collect::<Vec<(Multiaddr, String)>>();
+                    .collect::<Box<[(Multiaddr, String)]>>();
                 info!("Outgoing connection error: {:?}", info);
                 return;
             }
@@ -137,14 +137,11 @@ pub fn swarm_op_exec(swarm: &mut Swarm, ev: InEvent) {
             handle_callback_sender!(swarm.disconnect_peer_id(peer_id) => callback)
         }
         ListExternalAddresses(callback) => {
-            let addr_list = swarm
-                .external_addresses()
-                .cloned()
-                .collect::<Vec<Multiaddr>>();
+            let addr_list = swarm.external_addresses().cloned().collect();
             handle_callback_sender!(addr_list => callback)
         }
         ListListeners(callback) => {
-            let listener_list = swarm.listeners().cloned().collect::<Vec<Multiaddr>>();
+            let listener_list = swarm.listeners().cloned().collect();
             handle_callback_sender!(listener_list => callback)
         }
         IsConnectedToPeerId(peer_id, callback) => {
