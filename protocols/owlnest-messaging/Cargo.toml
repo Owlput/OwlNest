@@ -14,5 +14,3 @@ owlnest-prelude = { path = "../../owlnest-prelude", features = [
 serde_json = "1"
 futures-timer = { workspace = true }
 
-[dev-dependencies]
-owlnest = { path = "../../owlnest", features = ["owlnest-protocols"] }

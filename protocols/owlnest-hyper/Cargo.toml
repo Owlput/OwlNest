@@ -15,6 +15,3 @@ tracing = { workspace = true }
 serde = { workspace = true }
 toml = "*"
 futures = { workspace = true }
-
-[dev-dependencies]
-owlnest = { path = "../../owlnest", features = ["owlnest-protocols"] }

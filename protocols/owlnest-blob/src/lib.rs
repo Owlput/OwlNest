@@ -1,4 +1,3 @@
-#![feature(byte_slice_trim_ascii)]
 #![feature(extract_if)]
 #![feature(hash_extract_if)]
 
