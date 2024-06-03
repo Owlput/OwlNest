@@ -13,5 +13,6 @@ use owlnest_proc::{generate_behaviour_select, with_field};
 #[cfg_attr(any(feature = "libp2p-protocols", feature = "libp2p-relay-server"), with_field({pub relay_server:RelayServer}))]
 #[cfg_attr(any(feature = "libp2p-protocols", feature = "libp2p-kad"), with_field({pub kad:Kad}))]
 #[cfg_attr(any(feature = "libp2p-protocols", feature = "libp2p-relay-client"), with_field({pub relay_client:RelayClient}))]
+#[cfg_attr(any(feature = "libp2p-protocols", feature = "libp2p-gossipsub"), with_field({pub gossipsub:Gossipsub}))]
 #[generate_behaviour_select]
 pub struct Behaviour {}

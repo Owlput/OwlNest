@@ -11,16 +11,16 @@ use tracing::warn;
 #[derive(Debug, Clone)]
 pub struct Handle {
     sender: mpsc::Sender<InEvent>,
-    event_tx: EventSender,
+    swarm_event_source: EventSender,
     counter: Arc<AtomicU64>,
 }
 impl Handle {
-    pub fn new(buffer: usize, event_tx: &EventSender) -> (Self, mpsc::Receiver<InEvent>) {
+    pub fn new(buffer: usize, swarm_event_source: &EventSender) -> (Self, mpsc::Receiver<InEvent>) {
         let (tx, rx) = mpsc::channel(buffer);
         (
             Self {
                 sender: tx,
-                event_tx: event_tx.clone(),
+                swarm_event_source: swarm_event_source.clone(),
                 counter: Arc::new(AtomicU64::new(0)),
             },
             rx,
@@ -33,7 +33,7 @@ impl Handle {
     ) -> Result<Duration, error::SendError> {
         let op_id = self.next_id();
         let ev = InEvent::SendMessage(peer_id, message, op_id);
-        let mut listener = self.event_tx.subscribe();
+        let mut listener = self.swarm_event_source.subscribe();
         let fut = listen_event!(listener for Messaging, OutEvent::SendResult(result, id)=>{
             if *id != op_id {
                 continue;

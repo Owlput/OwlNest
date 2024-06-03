@@ -33,6 +33,7 @@ owlnest-advertise = { path = "../protocols/owlnest-advertise", optional = true }
 toml = "*"
 clap = {version = "4.5", features = ["derive"]}
 shlex = "1.3"
+dashmap = "*"
 
 [dev-dependencies]
 xxhash-rust = { version = "*", features = ["xxh3"] }
@@ -56,3 +57,4 @@ libp2p-autonat = []
 libp2p-mdns = []
 libp2p-upnp = []
 libp2p-dcutr = []
+libp2p-gossipsub = []

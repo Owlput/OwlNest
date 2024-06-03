@@ -1,17 +1,17 @@
 
 pub struct Handle {
     sender: mpsc::Sender<InEvent>,
-    event_tx: EventSender,
+    swarm_event_source: EventSender,
     counter: Arc<AtomicU64>,
 }
 #[allow(unused)]
 impl Handle {
-    pub fn new(buffer: usize, event_tx: &EventSender) -> (Self, mpsc::Receiver<InEvent>) {
+    pub fn new(buffer: usize, swarm_event_source: &EventSender) -> (Self, mpsc::Receiver<InEvent>) {
         let (tx, rx) = mpsc::channel(buffer);
         (
             Self {
                 sender: tx,
-                event_tx: event_tx.clone(),
+                swarm_event_source: swarm_event_source.clone(),
                 counter: Arc::new(AtomicU64::new(0)),
             },
             rx,

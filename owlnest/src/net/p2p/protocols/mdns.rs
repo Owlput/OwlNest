@@ -60,15 +60,15 @@ pub(crate) enum InEvent {
 pub struct Handle {
     sender: mpsc::Sender<InEvent>,
     #[allow(unused)]
-    event_tx: EventSender,
+    swarm_event_source: EventSender,
 }
 impl Handle {
-    pub(crate) fn new(buffer: usize, event_tx: &EventSender) -> (Self, mpsc::Receiver<InEvent>) {
+    pub(crate) fn new(buffer: usize, swarm_event_source: &EventSender) -> (Self, mpsc::Receiver<InEvent>) {
         let (tx, rx) = mpsc::channel(buffer);
         (
             Self {
                 sender: tx,
-                event_tx: event_tx.clone(),
+                swarm_event_source: swarm_event_source.clone(),
             },
             rx,
         )

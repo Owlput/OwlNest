@@ -157,15 +157,15 @@ pub(crate) enum InEvent {
 #[derive(Debug, Clone)]
 pub struct Handle {
     sender: mpsc::Sender<InEvent>,
-    event_tx: EventSender,
+    swarm_event_source: EventSender,
     tree_map: Arc<RwLock<BTreeMap<PeerId, kad::Addresses>>>,
 }
 impl Handle {
-    pub(crate) fn new(buffer: usize, event_tx: &EventSender) -> (Self, mpsc::Receiver<InEvent>) {
+    pub(crate) fn new(buffer: usize, swarm_event_source: &EventSender) -> (Self, mpsc::Receiver<InEvent>) {
         let (tx, rx) = mpsc::channel(buffer);
         let tree_map = Arc::new(RwLock::new(BTreeMap::new()));
         let tree_map_clone = tree_map.clone();
-        let mut listener = event_tx.subscribe();
+        let mut listener = swarm_event_source.subscribe();
         tokio::spawn(async move {
             while let Ok(ev) = listener.recv().await {
                 if let SwarmEvent::Behaviour(BehaviourEvent::Kad(OutEvent::RoutingUpdated {
@@ -184,7 +184,7 @@ impl Handle {
         (
             Self {
                 sender: tx,
-                event_tx: event_tx.clone(),
+                swarm_event_source: swarm_event_source.clone(),
                 tree_map: tree_map_clone,
             },
             rx,
@@ -195,7 +195,7 @@ impl Handle {
         BootStrap:bootstrap()->Result<kad::QueryId,kad::NoKnownPeers>;
     );
     pub async fn query(&self, peer_id: PeerId) -> Vec<kad::QueryResult> {
-        let mut listener = self.event_tx.subscribe();
+        let mut listener = self.swarm_event_source.subscribe();
         let (callback_tx, callback_rx) = oneshot::channel();
 
         self.sender
@@ -237,7 +237,7 @@ impl Handle {
     }
     pub async fn set_mode(&self, mode: Option<kad::Mode>) -> Result<kad::Mode, ()> {
         let ev = InEvent::SetMode(mode);
-        let mut listener = self.event_tx.subscribe();
+        let mut listener = self.swarm_event_source.subscribe();
         self.sender.send(ev).await.expect("send to succeed");
         let fut = listen_event!(listener for Kad, OutEvent::ModeChanged { new_mode }=>{
             return *new_mode;

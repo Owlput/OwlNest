@@ -8,16 +8,16 @@ use tokio::sync::mpsc;
 #[derive(Debug, Clone)]
 pub struct Handle {
     sender: mpsc::Sender<InEvent>,
-    event_tx: EventSender,
+    swarm_event_source: EventSender,
     counter: Arc<AtomicU64>,
 }
 impl Handle {
-    pub(crate) fn new(buffer: usize, event_tx: &EventSender) -> (Self, mpsc::Receiver<InEvent>) {
+    pub(crate) fn new(buffer: usize, swarm_event_source: &EventSender) -> (Self, mpsc::Receiver<InEvent>) {
         let (tx, rx) = mpsc::channel(buffer);
         (
             Self {
                 sender: tx,
-                event_tx: event_tx.clone(),
+                swarm_event_source: swarm_event_source.clone(),
                 counter: Arc::new(AtomicU64::new(0)),
             },
             rx,
@@ -29,7 +29,7 @@ impl Handle {
         &self,
         relay: PeerId,
     ) -> Result<Option<Box<[PeerId]>>, Error> {
-        let mut listener = self.event_tx.subscribe();
+        let mut listener = self.swarm_event_source.subscribe();
         let fut = listen_event!(listener for Advertise,
             OutEvent::QueryAnswered { from, list } => {
                 if *from == relay {
@@ -67,7 +67,7 @@ impl Handle {
     /// Will return a recent(not immediate) state change.
     pub async fn set_provider_state(&self, state: bool) -> bool {
         let op_id = self.next_id();
-        let mut listener = self.event_tx.subscribe();
+        let mut listener = self.swarm_event_source.subscribe();
         let fut = listen_event!(
             listener for Advertise,
             OutEvent::ProviderState(state, id)=> {
@@ -84,7 +84,7 @@ impl Handle {
     /// Will return a immediate state report, e.g. only changes caused by this operation.
     pub async fn provider_state(&self) -> bool {
         let op_id = self.next_id();
-        let mut listener = self.event_tx.subscribe();
+        let mut listener = self.swarm_event_source.subscribe();
         let fut = listen_event!(listener for Advertise, OutEvent::ProviderState(state, id)=> {
             if *id == op_id {
                 return *state;
@@ -98,7 +98,7 @@ impl Handle {
     /// Will return a recent(not immediate) state change.
     pub async fn remove_advertised(&self, peer_id: &PeerId) -> bool {
         let ev = InEvent::RemoveAdvertised(*peer_id);
-        let mut listener = self.event_tx.subscribe();
+        let mut listener = self.swarm_event_source.subscribe();
         let fut = listen_event!(listener for Advertise,
             OutEvent::AdvertisedPeerChanged(target,state)=>{
                 if *target == *peer_id{
