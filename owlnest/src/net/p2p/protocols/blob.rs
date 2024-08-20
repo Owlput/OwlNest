@@ -155,6 +155,8 @@ impl Handle {
 pub(crate) mod cli {
     use super::Handle;
     use clap::Subcommand;
+    use prettytable::table;
+    use printable::iter::PrintableIter;
 
     #[derive(Debug, Subcommand)]
     pub enum Blob {
@@ -207,7 +209,25 @@ pub(crate) mod cli {
         match command {
             ListSend => {
                 let list = handle.list_pending_send().await;
-                println!("{:?}", list)
+                let print_pending = list
+                    .iter()
+                    .filter(|v| v.started == false)
+                    .printable()
+                    .with_left_bound("")
+                    .with_right_bound("")
+                    .with_separator("\n");
+                let print_started = list
+                    .iter()
+                    .filter(|v| v.started == false)
+                    .printable()
+                    .with_left_bound("")
+                    .with_right_bound("")
+                    .with_separator("\n");
+                let table = table!(
+                    ["Pending Send", "Ongoing Send"],
+                    [print_pending, print_started]
+                );
+                table.printstd()
             }
             Send { remote, file_path } => {
                 let result = handle.send_file(remote, file_path).await;

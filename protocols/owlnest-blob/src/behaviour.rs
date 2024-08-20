@@ -108,14 +108,32 @@ impl From<&OngoingFileRecv> for RecvInfo {
 #[derive(Debug, Serialize, Clone)]
 pub struct SendInfo {
     pub local_send_id: u64,
+    pub bytes_sent: u64,
+    pub bytes_total: u64,
+    pub started: bool,
     pub remote: PeerId,
     pub file_path: PathBuf,
+}
+impl std::fmt::Display for SendInfo{
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let file_path  = self.file_path.to_string_lossy();
+        write!(f,"ID({}){:30}\n",self.local_send_id,&file_path[file_path.len().saturating_sub(30)..])?;
+        write!(f,"Remote: {}\n", self.remote)?;
+        if self.started{
+            write!(f,"Bytes total: {}; Bytes sent: {}({:.1}%)\n", self.bytes_total, self.bytes_sent, self.bytes_total/self.bytes_sent)
+        } else {
+            write!(f,"Bytes total: {}", self.bytes_total)
+        }
+    }
 }
 impl From<&PendingSend> for SendInfo {
     fn from(value: &PendingSend) -> Self {
         Self {
             local_send_id: value.local_send_id,
             remote: value.remote,
+            bytes_total: value.bytes_total,
+            bytes_sent: 0,
+            started: false,
             file_path: value.file_path.clone(),
         }
     }
@@ -126,6 +144,9 @@ impl From<&OngoingFileSend> for SendInfo {
             local_send_id: value.local_send_id,
             remote: value.remote,
             file_path: value.file_path.clone(),
+            bytes_total: value.bytes_total,
+            bytes_sent: value.bytes_sent,
+            started: true,
         }
     }
 }
@@ -551,7 +572,7 @@ impl Behaviour {
                 .map(|(k, _)| k)
                 .copied()
                 .collect::<Box<[u64]>>()
-                .into_iter()
+                .iter()
                 .for_each(|k| {
                     self.cancel_send_by_local_send_id(*k);
                 });
@@ -563,7 +584,7 @@ impl Behaviour {
                 .map(|(k, _)| k)
                 .copied()
                 .collect::<Box<[u64]>>()
-                .into_iter()
+                .iter()
                 .for_each(|k| {
                     self.cancel_recv_by_local_recv_id(*k);
                 });
@@ -575,7 +596,7 @@ impl Behaviour {
                 .map(|(k, _)| k)
                 .copied()
                 .collect::<Box<[u64]>>()
-                .into_iter()
+                .iter()
                 .for_each(|k| {
                     self.cancel_send_by_local_send_id(*k);
                 });
@@ -586,7 +607,7 @@ impl Behaviour {
                 .filter(|(_, v)| self.config.ongoing_recv_timeout > time_now - v.last_active)
                 .map(|(_, v)| v.local_recv_id)
                 .collect::<Box<[u64]>>()
-                .into_iter()
+                .iter()
                 .for_each(|k| {
                     self.cancel_recv_by_local_recv_id(*k);
                 });

@@ -12,7 +12,10 @@ pub struct Handle {
     counter: Arc<AtomicU64>,
 }
 impl Handle {
-    pub(crate) fn new(buffer: usize, swarm_event_source: &EventSender) -> (Self, mpsc::Receiver<InEvent>) {
+    pub(crate) fn new(
+        buffer: usize,
+        swarm_event_source: &EventSender,
+    ) -> (Self, mpsc::Receiver<InEvent>) {
         let (tx, rx) = mpsc::channel(buffer);
         (
             Self {
@@ -127,9 +130,12 @@ impl Handle {
 }
 
 pub(crate) mod cli {
+
     use super::*;
     use clap::Subcommand;
     use libp2p::PeerId;
+    use prettytable::table;
+    use printable::iter::PrintableIter;
 
     /// Subcommand for managing `owlnest-advertise` protocol.  
     /// `owlnest-advertise` intends to provide a machine-operable way
@@ -170,7 +176,23 @@ pub(crate) mod cli {
             }
             QueryAdvertised { remote } => {
                 let result = handle.query_advertised_peer(remote).await;
-                println!("Query result:{:?}", result)
+                match result {
+                    Ok(v) => {
+                        if v.is_none() {
+                            return println!("Remote {} is not providing", remote);
+                        }
+                        let list = v.expect("Already handled");
+                        let table = table!(
+                            [format!("Peers advertised by\n{}", remote)],
+                            [list.iter().printable().with_left_bound("").with_right_bound("").with_separator("\n")]
+                        );
+                        table.printstd();
+                    }
+                    Err(_) => println!(
+                        "Remote {} is not connected or doesn't support `owlput-advertise`.",
+                        remote
+                    ),
+                }
             }
         }
     }

@@ -21,11 +21,11 @@ pub struct Config {
     record_ttl: Option<Duration>,
     record_replication_interval: Option<Duration>,
     record_publication_interval: Option<Duration>,
-    record_filtering: kad::StoreInserts,
+    record_filtering: config::StoreInserts,
     provider_record_ttl: Option<Duration>,
     provider_publication_interval: Option<Duration>,
-    kbucket_inserts: kad::BucketInserts,
-    caching: kad::Caching,
+    kbucket_inserts: config::BucketInserts,
+    caching: config::Caching,
     periodic_bootstrap_interval: Option<Duration>,
     automatic_bootstrap_throttle: Option<Duration>,
 }
@@ -52,12 +52,11 @@ impl Config {
             .set_periodic_bootstrap_interval(periodic_bootstrap_interval)
             .set_provider_record_ttl(provider_record_ttl)
             .set_query_timeout(query_config.timeout)
-            .set_record_filtering(record_filtering)
             .set_record_ttl(record_ttl)
             .set_replication_factor(query_config.replication_factor);
         config
-            .set_caching(caching)
-            .set_kbucket_inserts(kbucket_inserts)
+            .set_caching(caching.into())
+            .set_kbucket_inserts(kbucket_inserts.into())
             .set_max_packet_size(max_packet_size)
             .set_provider_publication_interval(provider_publication_interval)
             .set_replication_interval(record_replication_interval)
@@ -73,11 +72,11 @@ impl Default for Config {
             record_ttl: Some(Duration::from_secs(48 * 60 * 60)),
             record_replication_interval: Some(Duration::from_secs(60 * 60)),
             record_publication_interval: Some(Duration::from_secs(22 * 60 * 60)),
-            record_filtering: kad::StoreInserts::Unfiltered,
+            record_filtering: config::StoreInserts::Unfiltered,
             provider_publication_interval: Some(Duration::from_secs(12 * 60 * 60)),
             provider_record_ttl: Some(Duration::from_secs(48 * 60 * 60)),
-            kbucket_inserts: kad::BucketInserts::OnConnected,
-            caching: kad::Caching::Enabled { max_peers: 1 },
+            kbucket_inserts: config::BucketInserts::OnConnected,
+            caching: config::Caching::Enabled { max_peers: 1 },
             periodic_bootstrap_interval: Some(Duration::from_secs(5 * 60)),
             automatic_bootstrap_throttle: Some(Duration::from_secs(10)),
         }
@@ -144,6 +143,91 @@ pub mod config {
             }
         }
     }
+    /// The configurable filtering strategies for the acceptance of
+    /// incoming records.
+    ///
+    /// This can be used for e.g. signature verification or validating
+    /// the accompanying [`Key`].
+    ///
+    /// [`Key`]: crate::record::Key
+    #[derive(Copy, Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+    pub enum StoreInserts {
+        /// Whenever a (provider) record is received,
+        /// the record is forwarded immediately to the [`RecordStore`].
+        Unfiltered,
+        /// Whenever a (provider) record is received, an event is emitted.
+        /// Provider records generate a [`InboundRequest::AddProvider`] under [`Event::InboundRequest`],
+        /// normal records generate a [`InboundRequest::PutRecord`] under [`Event::InboundRequest`].
+        ///
+        /// When deemed valid, a (provider) record needs to be explicitly stored in
+        /// the [`RecordStore`] via [`RecordStore::put`] or [`RecordStore::add_provider`],
+        /// whichever is applicable. A mutable reference to the [`RecordStore`] can
+        /// be retrieved via [`Behaviour::store_mut`].
+        FilterBoth,
+    }
+    impl From<StoreInserts> for super::kad::StoreInserts {
+        fn from(value: StoreInserts) -> Self {
+            match value {
+                StoreInserts::Unfiltered => Self::Unfiltered,
+                StoreInserts::FilterBoth => Self::FilterBoth,
+            }
+        }
+    }
+
+    /// The configurable strategies for the insertion of peers
+    /// and their addresses into the k-buckets of the Kademlia
+    /// routing table.
+    #[derive(Copy, Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+    pub enum BucketInserts {
+        /// Whenever a connection to a peer is established as a
+        /// result of a dialing attempt and that peer is not yet
+        /// in the routing table, it is inserted as long as there
+        /// is a free slot in the corresponding k-bucket. If the
+        /// k-bucket is full but still has a free pending slot,
+        /// it may be inserted into the routing table at a later time if an unresponsive
+        /// disconnected peer is evicted from the bucket.
+        OnConnected,
+        /// New peers and addresses are only added to the routing table via
+        /// explicit calls to [`Behaviour::add_address`].
+        ///
+        /// > **Note**: Even though peers can only get into the
+        /// > routing table as a result of [`Behaviour::add_address`],
+        /// > routing table entries are still updated as peers
+        /// > connect and disconnect (i.e. the order of the entries
+        /// > as well as the network addresses).
+        Manual,
+    }
+    impl From<BucketInserts> for super::kad::BucketInserts {
+        fn from(value: BucketInserts) -> Self {
+            match value {
+                BucketInserts::OnConnected => Self::OnConnected,
+                BucketInserts::Manual => Self::Manual,
+            }
+        }
+    }
+
+    /// The configuration for Kademlia "write-back" caching after successful
+    /// lookups via [`Behaviour::get_record`].
+    #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+    pub enum Caching {
+        /// Caching is disabled and the peers closest to records being looked up
+        /// that do not return a record are not tracked, i.e.
+        /// [`GetRecordOk::FinishedWithNoAdditionalRecord`] is always empty.
+        Disabled,
+        /// Up to `max_peers` peers not returning a record that are closest to the key
+        /// being looked up are tracked and returned in [`GetRecordOk::FinishedWithNoAdditionalRecord`].
+        /// The write-back operation must be performed explicitly, if
+        /// desired and after choosing a record from the results, via [`Behaviour::put_record_to`].
+        Enabled { max_peers: u16 },
+    }
+    impl From<Caching> for super::kad::Caching {
+        fn from(value: Caching) -> Self {
+            match value {
+                Caching::Disabled => Self::Disabled,
+                Caching::Enabled { max_peers } => Self::Enabled { max_peers },
+            }
+        }
+    }
 }
 
 #[derive(Debug)]
@@ -161,7 +245,10 @@ pub struct Handle {
     tree_map: Arc<RwLock<BTreeMap<PeerId, kad::Addresses>>>,
 }
 impl Handle {
-    pub(crate) fn new(buffer: usize, swarm_event_source: &EventSender) -> (Self, mpsc::Receiver<InEvent>) {
+    pub(crate) fn new(
+        buffer: usize,
+        swarm_event_source: &EventSender,
+    ) -> (Self, mpsc::Receiver<InEvent>) {
         let (tx, rx) = mpsc::channel(buffer);
         let tree_map = Arc::new(RwLock::new(BTreeMap::new()));
         let tree_map_clone = tree_map.clone();

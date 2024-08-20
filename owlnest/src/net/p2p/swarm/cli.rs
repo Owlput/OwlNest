@@ -1,6 +1,7 @@
 use crate::net::p2p::swarm::handle::SwarmHandle;
 use clap::Subcommand;
 use libp2p::{Multiaddr, PeerId, TransportError};
+use prettytable::table;
 
 /// Subcommand for managing the swarm.  
 /// Swarm is libp2p way of managing raw connections(or transports, e.g. TCP, UDP, QUIC, WebSocket).
@@ -75,6 +76,8 @@ pub(crate) fn handle_swarm(handle: &SwarmHandle, command: Swarm) {
 }
 
 pub mod listener {
+    use printable::iter::PrintableIter;
+
     use super::*;
 
     /// Subcommand for managing listeners.
@@ -87,12 +90,19 @@ pub mod listener {
     pub fn handle_swarm_listener(handle: &SwarmHandle, command: Listener) {
         use Listener::*;
         match command {
-            Ls => println!("Active listeners: {:?}", handle.list_listeners_blocking()),
+            Ls => {
+                let list = handle.list_listeners_blocking();
+                let printable_list = list.iter().printable().with_left_bound("").with_right_bound("").with_separator("\n");
+                let table  = table!(["Active Listeners"], [printable_list]);
+                table.printstd();
+            }
         }
     }
 }
 
 pub mod external_address {
+    use printable::iter::PrintableIter;
+
     use super::*;
 
     /// Subcommand for managing external addresses.
@@ -130,8 +140,9 @@ pub mod external_address {
                 println!("External address `{}` removed", address)
             }
             Ls => {
-                let addresses = handle.list_external_addresses_blocking();
-                println!("External addresses: {:?}", addresses)
+                let list = handle.list_external_addresses_blocking();
+                let table  = table!(["External Addresses"], [list.iter().printable()]);
+                table.printstd();
             }
         }
     }
