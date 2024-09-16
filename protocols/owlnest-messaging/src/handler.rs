@@ -121,10 +121,11 @@ impl ConnectionHandler for Handler {
                 self.pending_out_events
                     .push_back(ToBehaviourEvent::OutboundNegotiated)
             }
+            ConnectionEvent::AddressChange(_) => {}
             ConnectionEvent::DialUpgradeError(e) => {
                 self.on_dial_upgrade_error(e);
             }
-            ConnectionEvent::AddressChange(_) | ConnectionEvent::ListenUpgradeError(_) => {}
+            // ConnectionEvent::ListenUpgradeError(_) => {}
             ConnectionEvent::LocalProtocolsChange(_) => {}
             ConnectionEvent::RemoteProtocolsChange(_) => {}
             uncovered => unimplemented!("New branch {:?} not covered", uncovered),

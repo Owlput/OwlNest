@@ -96,3 +96,27 @@ max_circuits = 16
 max_circuits_per_peer = 4
 max_circuit_duration = 43200
 max_circuit_bytes = 0
+
+[gossipsub]
+validation_mode = "Strict"
+max_transmit_size = 65536
+history_length = 5
+history_gossip = 3
+mesh_n = 6
+mesh_n_low = 5
+mesh_n_high = 12
+retain_scores = 4
+gossip_lazy = 6
+gossip_factor = 0.25
+allow_self_origin = false
+gossip_retransimission = 3
+max_ihave_length = 5000
+max_ihave_messages = 10
+
+[gossipsub.heartbeat_interval]
+secs = 1
+nanos = 0
+
+[gossipsub.duplicate_cache_time]
+secs = 60
+nanos = 0

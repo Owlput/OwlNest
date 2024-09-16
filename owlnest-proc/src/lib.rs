@@ -150,9 +150,9 @@ pub fn generate_manager(_attr: TokenStream, item: TokenStream) -> TokenStream {
             #(pub #idents3:#paths2::Handle,)*
         }
         impl HandleBundle{
-            pub fn new(buffer: usize,event_tx:&EventSender)->(Self,RxBundle){
+            pub fn new(buffer: usize,swarm_event_source:&EventSender)->(Self,RxBundle){
                 let swarm = SwarmHandle::new(buffer);
-                #(let #idents4 = #paths3::Handle::new(buffer,event_tx);)*
+                #(let #idents4 = #paths3::Handle::new(buffer,swarm_event_source);)*
                 (Self{
                     swarm:swarm.0.clone(),
                     #(#idents5:#idents6.0.clone(),)*

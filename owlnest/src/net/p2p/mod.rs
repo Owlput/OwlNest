@@ -32,6 +32,8 @@ pub struct SwarmConfig {
     pub advertise: advertise::config::Config,
     #[cfg(any(feature = "libp2p-protocols", feature = "libp2p-relay-server"))]
     pub relay_server: relay_server::Config,
+    #[cfg(any(feature = "libp2p-protocols", feature = "libp2p-gossipsub"))]
+    pub gossipsub: gossipsub::Config,
 }
 
 #[allow(unused)]
@@ -73,6 +75,8 @@ pub mod test_suit {
             advertise: advertise::config::Config::default(),
             #[cfg(any(feature = "libp2p-protocols", feature = "libp2p-relay-server"))]
             relay_server: protocols::relay_server::Config::default(),
+            #[cfg(any(feature = "libp2p-protocols", feature = "libp2p-gossipsub"))]
+            gossipsub: gossipsub::Config::default(),
         };
         let mgr = swarm::Builder::new(swarm_config).build(ident, rt.handle().clone());
         drop(guard);

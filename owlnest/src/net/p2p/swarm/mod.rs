@@ -127,6 +127,8 @@ impl Builder {
                     upnp: upnp::Behaviour::default(),
                     #[cfg(any(feature = "libp2p-protocols", feature = "libp2p-ping"))]
                     ping: ping::Behaviour::new(Default::default()),
+                    #[cfg(any(feature = "libp2p-protocols", feature = "libp2p-gossipsub"))]
+                    gossipsub: gossipsub::Behaviour::new(gossipsub::MessageAuthenticity::Signed(ident.get_keypair()),Default::default()).unwrap(),
                     // hyper:hyper::Behaviour::new(Default::default())
                 })
                 .expect("behaviour incorporation to succeed")

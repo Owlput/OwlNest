@@ -56,6 +56,9 @@ pub mod upnp;
 #[cfg(any(feature = "libp2p-protocols", feature = "libp2p-ping"))]
 pub mod ping;
 
+#[cfg(any(feature = "libp2p-protocols", feature = "libp2p-gossipsub"))]
+pub mod gossipsub;
+
 // pub mod hyper;
 
 pub mod event_listener {}

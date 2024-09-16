@@ -128,7 +128,7 @@ mod test {
         peer1_m
             .swarm()
             .add_external_address_blocking(server_address.clone()); // The address is on local network
-        thread::sleep(Duration::from_millis(20000));
+        thread::sleep(Duration::from_millis(200));
         assert!(peer2_m.swarm().dial_blocking(&server_address).is_ok());
         thread::sleep(Duration::from_millis(200));
         assert!(peer2_m

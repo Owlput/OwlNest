@@ -11,15 +11,15 @@ use tracing::{trace, warn};
 #[allow(dead_code)]
 pub struct Handle {
     sender: mpsc::Sender<InEvent>,
-    event_tx: EventSender,
+    swarm_event_source: EventSender,
 }
 impl Handle {
-    pub fn new(buffer: usize, event_tx: &EventSender) -> (Self, mpsc::Receiver<InEvent>) {
+    pub fn new(buffer: usize, swarm_event_source: &EventSender) -> (Self, mpsc::Receiver<InEvent>) {
         let (tx, rx) = mpsc::channel(buffer);
         (
             Self {
                 sender: tx,
-                event_tx: event_tx.clone(),
+                swarm_event_source: swarm_event_source.clone(),
             },
             rx,
         )
@@ -155,6 +155,8 @@ impl Handle {
 pub(crate) mod cli {
     use super::Handle;
     use clap::Subcommand;
+    use prettytable::table;
+    use printable::iter::PrintableIter;
 
     #[derive(Debug, Subcommand)]
     pub enum Blob {
@@ -207,7 +209,25 @@ pub(crate) mod cli {
         match command {
             ListSend => {
                 let list = handle.list_pending_send().await;
-                println!("{:?}", list)
+                let print_pending = list
+                    .iter()
+                    .filter(|v| v.started == false)
+                    .printable()
+                    .with_left_bound("")
+                    .with_right_bound("")
+                    .with_separator("\n");
+                let print_started = list
+                    .iter()
+                    .filter(|v| v.started == false)
+                    .printable()
+                    .with_left_bound("")
+                    .with_right_bound("")
+                    .with_separator("\n");
+                let table = table!(
+                    ["Pending Send", "Ongoing Send"],
+                    [print_pending, print_started]
+                );
+                table.printstd()
             }
             Send { remote, file_path } => {
                 let result = handle.send_file(remote, file_path).await;

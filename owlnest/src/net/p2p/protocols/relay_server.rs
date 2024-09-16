@@ -4,6 +4,7 @@ use tracing::{debug, info};
 
 pub type Behaviour = libp2p::relay::Behaviour;
 pub type OutEvent = libp2p::relay::Event;
+pub use libp2p::relay::{HOP_PROTOCOL_NAME, STOP_PROTOCOL_NAME};
 
 /// Log the events to tracing
 pub(crate) fn ev_dispatch(ev: &OutEvent) {

@@ -103,6 +103,7 @@ macro_rules! behaviour_select {
                 peer: ::libp2p::PeerId,
                 addr: &::libp2p::Multiaddr,
                 role_override: ::libp2p_swarm::derive_prelude::Endpoint,
+                port_use: ::libp2p::core::transport::PortUse,
             ) -> Result<
                 Self::ConnectionHandler,
                 ::libp2p::swarm::ConnectionDenied,
@@ -113,6 +114,7 @@ macro_rules! behaviour_select {
                         peer,
                         addr,
                         role_override,
+                        port_use
                     )?,)*
                 };
                 Ok(handler)

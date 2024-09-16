@@ -123,6 +123,8 @@ fn handle_command(
         Mdns(command) => executor.block_on(mdns::cli::handle_mdns(manager.mdns(), command)),
         #[cfg(any(feature = "libp2p-protocols", feature = "libp2p-relay-client"))]
         RelayClient(command) => relay_client::cli::handle_relay_client(manager, command),
+        #[cfg(any(feature = "libp2p-protocols", feature = "libp2p-gossipsub"))]
+        Gossipsub(command) => executor.block_on(gossipsub::cli::handle_gossipsub(manager.gossipsub(), command)),
         Utils(command) => handle_utils(command),
     }
 }
@@ -211,6 +213,10 @@ enum Command {
     #[cfg(any(feature = "libp2p-protocols", feature = "libp2p-autonat"))]
     #[command(subcommand)]
     AutoNat(autonat::cli::AutoNat),
+    /// Subcommand for managing `libp2p-gossipsub`.
+    #[cfg(any(feature = "libp2p-protocols", feature = "libp2p-gossipsub"))]
+    #[command(subcommand)]
+    Gossipsub(gossipsub::cli::Gossipsub),
     /// Subcommand for managing `libp2p-kad` protocol.
     #[cfg(any(feature = "libp2p-protocols", feature = "libp2p-kad"))]
     #[command(subcommand)]

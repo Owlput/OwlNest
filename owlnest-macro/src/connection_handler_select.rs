@@ -264,7 +264,7 @@ macro_rules! generate_outbound_upgrade_select {
 
             fn protocol_info(&self) -> Self::InfoIter {
                 match self{
-                    $(Self::$behaviour(inner)=>core::iter::once(UpgradeInfoSelect::$behaviour(inner.protocol_info().next().unwrap())),)*
+                    $(Self::$behaviour(inner)=>core::iter::once(UpgradeInfoSelect::$behaviour(inner.protocol_info().into_iter().next().unwrap())),)*
                 }
             }
         }

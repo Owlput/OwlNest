@@ -126,6 +126,7 @@ impl NetworkBehaviour for Behaviour {
         peer: PeerId,
         _addr: &Multiaddr,
         _role_override: Endpoint,
+        _port_use: PortUse,
     ) -> Result<Self::ConnectionHandler, ConnectionDenied> {
         self.on_connect(&peer);
         Ok(handler::Handler::new(self.config.clone()))
