@@ -107,7 +107,10 @@ impl From<messages::CancelRecv> for ToBehaviourEvent {
     }
 }
 pub mod messages {
+    #[cfg(target_os = "windows")]
     include!(concat!(env!("OUT_DIR"), "\\messages.rs"));
+    #[cfg(target_os = "linux")]
+    include!(concat!(env!("OUT_DIR"), "/messages.rs"));
 }
 
 enum State {
