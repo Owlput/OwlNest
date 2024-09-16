@@ -14,6 +14,7 @@ pub mod handler_prelude {
 pub mod swarm_prelude {}
 pub mod behaviour_prelude {
     pub use libp2p::core::Endpoint;
+    pub use libp2p::core::transport::PortUse;
     pub use libp2p::swarm::NetworkBehaviour;
     pub use libp2p::swarm::NotifyHandler;
     pub use libp2p::swarm::{ConnectionClosed, ConnectionDenied, ConnectionHandler, ConnectionId};

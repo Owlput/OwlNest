@@ -24,7 +24,7 @@ rustyline = "14"
 chrono = "0.4"
 owlnest-proc = { path = "../owlnest-proc" }
 void = "1"
-crossterm = "0.27"
+crossterm = "0.28"
 owlnest-macro = { path = "../owlnest-macro" }
 either = "*"
 owlnest-blob = { path = "../protocols/owlnest-blob", optional = true }
@@ -44,6 +44,7 @@ temp-dir = "*"
 
 [features]
 full = ["owlnest-protocols","libp2p-protocols"]
+default = ["full", "volatile"]
 owlnest-protocols = ["dep:owlnest-blob","dep:owlnest-messaging","dep:owlnest-advertise"]
 libp2p-protocols = []
 test-suits = []
@@ -60,3 +61,5 @@ libp2p-mdns = []
 libp2p-upnp = []
 libp2p-dcutr = []
 libp2p-gossipsub = []
+volatile = []
+persistent = []

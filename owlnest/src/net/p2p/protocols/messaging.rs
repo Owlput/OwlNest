@@ -1,26 +1,54 @@
-use crate::net::p2p::swarm::EventSender;
+use crate::net::p2p::swarm::{BehaviourEvent, EventSender, SwarmEvent};
 use libp2p::PeerId;
 use owlnest_macro::{generate_handler_method, listen_event, with_timeout};
 pub use owlnest_messaging::*;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
+use store::MemMessageStore;
 use tokio::sync::mpsc;
 use tracing::warn;
 
-#[derive(Debug, Clone)]
+type MessageStore = Box<dyn store::MessageStore + 'static + Send + Sync>;
+
+#[derive(Clone)]
 pub struct Handle {
     sender: mpsc::Sender<InEvent>,
     swarm_event_source: EventSender,
+    pub message_store: Arc<MessageStore>,
     counter: Arc<AtomicU64>,
 }
 impl Handle {
-    pub fn new(buffer: usize, swarm_event_source: &EventSender) -> (Self, mpsc::Receiver<InEvent>) {
+    pub(crate) fn new(
+        buffer: usize,
+        swarm_event_source: &EventSender,
+    ) -> (Self, mpsc::Receiver<InEvent>) {
         let (tx, rx) = mpsc::channel(buffer);
+        let message_store = Arc::new(Box::new(MemMessageStore::default())
+            as Box<dyn store::MessageStore + 'static + Send + Sync>);
+        let mut listener = swarm_event_source.subscribe();
+        let store = message_store.clone();
+        tokio::spawn(async move {
+            while let Ok(ev) = listener.recv().await {
+                if let SwarmEvent::Behaviour(BehaviourEvent::Messaging(ev)) = ev.as_ref() {
+                    match ev {
+                        OutEvent::IncomingMessage { from, msg } => {
+                            store::MessageStore::push_message(
+                                store.as_ref().as_ref(),
+                                from,
+                                msg.clone(),
+                            );
+                        }
+                        _ => {}
+                    }
+                }
+            }
+        });
         (
             Self {
                 sender: tx,
                 swarm_event_source: swarm_event_source.clone(),
+                message_store,
                 counter: Arc::new(AtomicU64::new(0)),
             },
             rx,
@@ -32,7 +60,7 @@ impl Handle {
         message: Message,
     ) -> Result<Duration, error::SendError> {
         let op_id = self.next_id();
-        let ev = InEvent::SendMessage(peer_id, message, op_id);
+        let ev = InEvent::SendMessage(peer_id, message.clone(), op_id);
         let mut listener = self.swarm_event_source.subscribe();
         let fut = listen_event!(listener for Messaging, OutEvent::SendResult(result, id)=>{
             if *id != op_id {
@@ -42,7 +70,10 @@ impl Handle {
         });
         self.sender.send(ev).await.expect("send to succeed");
         match with_timeout!(fut, 10) {
-            Ok(v) => v,
+            Ok(v) => {
+                self.message_store.push_message(&peer_id, message.clone());
+                v
+            }
             Err(_) => {
                 warn!("timeout reached for a timed future");
                 Err(error::SendError::Timeout)
@@ -106,6 +137,69 @@ pub(crate) mod cli {
                     Err(e) => println!("Error occurred when sending message: {}", e),
                 }
             }
+        }
+    }
+}
+
+pub mod store {
+    use dashmap::DashMap;
+    use libp2p::PeerId;
+    use owlnest_messaging::Message;
+
+    pub trait MessageStore {
+        fn insert_empty_record(&self, peer_id: &PeerId);
+        fn get_messages(&self, peer_id: &PeerId) -> Option<Box<[Message]>>;
+        fn push_message(&self, remote: &PeerId, message: Message);
+        fn list_all_peers(&self) -> Box<[PeerId]>;
+        fn clear_message(&self, peer_id: Option<&PeerId>);
+        fn empty_store(&self);
+    }
+
+    #[derive(Debug, Clone, Default)]
+    pub struct MemMessageStore {
+        store: DashMap<PeerId, Vec<Message>>,
+    }
+    impl MessageStore for MemMessageStore {
+        fn insert_empty_record(&self, peer_id: &PeerId) {
+            if let None = self.store.get(peer_id) {
+                self.store.insert(*peer_id, vec![]);
+            }
+        }
+        fn get_messages(&self, peer_id: &PeerId) -> Option<Box<[Message]>> {
+            self.store
+                .get(peer_id)
+                .map(|v| v.value().clone().into_boxed_slice())
+        }
+        fn push_message(&self, remote: &PeerId, message: Message) {
+            if let None = self.store.get(remote) {
+                self.store.insert(*remote, vec![message]);
+                return;
+            }
+            self.store
+                .get_mut(remote)
+                .map(|mut entry| entry.value_mut().push(message));
+        }
+        fn list_all_peers(&self) -> Box<[PeerId]> {
+            self.store.iter().map(|entry| *entry.key()).collect()
+        }
+        fn clear_message(&self, peer_id: Option<&PeerId>) {
+            if peer_id.is_none() {
+                self.store
+                    .iter_mut()
+                    .map(|mut entry| {
+                        entry.value_mut().clear();
+                        entry.value_mut().shrink_to_fit()
+                    })
+                    .count();
+                return;
+            }
+            self.store.get_mut(peer_id.unwrap()).map(|mut entry| {
+                entry.value_mut().clear();
+                entry.value_mut().shrink_to_fit()
+            });
+        }
+        fn empty_store(&self) {
+            self.store.clear();
         }
     }
 }

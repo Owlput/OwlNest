@@ -12,7 +12,7 @@ tokio = { workspace = true }
 owlnest-macro = { path = "../../owlnest-macro" }
 xxhash-rust = { version = "*", features = ["xxh3"] }
 futures-timer = { workspace = true }
-prost = "0.12"
+prost = "0.13"
 toml = "*"
 
 
@@ -20,4 +20,4 @@ toml = "*"
 serial_test = "3"
 
 [build-dependencies]
-prost-build = "0.12"
+prost-build = "0.13"

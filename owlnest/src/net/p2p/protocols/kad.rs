@@ -52,9 +52,10 @@ impl Config {
             .set_periodic_bootstrap_interval(periodic_bootstrap_interval)
             .set_provider_record_ttl(provider_record_ttl)
             .set_query_timeout(query_config.timeout)
-            .set_record_ttl(record_ttl)
-            .set_replication_factor(query_config.replication_factor);
+            .set_record_filtering(record_filtering.into())
+            .set_record_ttl(record_ttl);
         config
+            .set_replication_factor(query_config.replication_factor)
             .set_caching(caching.into())
             .set_kbucket_inserts(kbucket_inserts.into())
             .set_max_packet_size(max_packet_size)

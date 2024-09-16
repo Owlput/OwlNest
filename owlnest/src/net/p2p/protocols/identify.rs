@@ -3,6 +3,7 @@ use std::time::Duration;
 pub use libp2p::identify::Behaviour;
 pub use libp2p::identify::Event as OutEvent;
 pub use libp2p::identify::PROTOCOL_NAME;
+pub use libp2p::identify::Info;
 use serde::Deserialize;
 use serde::Serialize;
 use tracing::{debug, trace, warn};
@@ -73,19 +74,19 @@ impl Default for Config {
 pub(crate) fn ev_dispatch(ev: &OutEvent) {
     use OutEvent::*;
     match ev {
-        Received { peer_id, info } => {
+        Received { peer_id, info, .. } => {
             debug!("Identified peer {} : {}", peer_id, info.protocol_version)
         }
-        Sent { peer_id } => trace!(
+        Sent { peer_id, .. } => trace!(
             "Identification information has been sent to peer {} as response",
             peer_id
         ),
-        Pushed { peer_id, info } => trace!(
+        Pushed { peer_id, info, .. } => trace!(
             "Information {:?} has been sent to peer {} for identification",
             info,
             peer_id
         ),
-        Error { peer_id, error } => {
+        Error { peer_id, error, .. } => {
             warn!("Error when identifying peer {} with {}", peer_id, error)
         }
     }
