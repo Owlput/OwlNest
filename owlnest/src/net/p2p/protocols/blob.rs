@@ -518,9 +518,7 @@ mod test {
             .with_writer(Mutex::new(std::io::stdout()))
             .with_filter(filter);
         let reg = tracing_subscriber::registry().with(layer);
-        let sub =
-            tracing::subscriber::set_global_default(reg).expect(SUBSCRIBER_CONFLICT_ERROR_MESSAGE);
+        tracing::subscriber::set_global_default(reg).expect(SUBSCRIBER_CONFLICT_ERROR_MESSAGE);
         LogTracer::init().unwrap();
-        sub
     }
 }
