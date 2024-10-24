@@ -227,12 +227,12 @@ mod test {
     // Attach when necessary
     #[allow(unused)]
     fn setup_logging() {
+        use crate::net::p2p::protocols::SUBSCRIBER_CONFLICT_ERROR_MESSAGE;
         use std::sync::Mutex;
         use tracing::Level;
         use tracing_log::LogTracer;
         use tracing_subscriber::layer::SubscriberExt;
         use tracing_subscriber::Layer;
-        use crate::net::p2p::protocols::SUBSCRIBER_CONFLICT_ERROR_MESSAGE;
         let filter = tracing_subscriber::filter::Targets::new()
             .with_target("owlnest", Level::DEBUG)
             .with_target("owlnest::net::p2p::protocols::kad", Level::WARN)

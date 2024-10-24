@@ -114,15 +114,26 @@ pub struct SendInfo {
     pub remote: PeerId,
     pub file_path: PathBuf,
 }
-impl std::fmt::Display for SendInfo{
+impl std::fmt::Display for SendInfo {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        let file_path  = self.file_path.to_string_lossy();
-        write!(f,"ID({}){:30}\n",self.local_send_id,&file_path[file_path.len().saturating_sub(30)..])?;
-        write!(f,"Remote: {}\n", self.remote)?;
-        if self.started{
-            write!(f,"Bytes total: {}; Bytes sent: {}({:.1}%)\n", self.bytes_total, self.bytes_sent, self.bytes_total/self.bytes_sent)
+        let file_path = self.file_path.to_string_lossy();
+        writeln!(
+            f,
+            "ID({}){:30}",
+            self.local_send_id,
+            &file_path[file_path.len().saturating_sub(30)..]
+        )?;
+        writeln!(f, "Remote: {}", self.remote)?;
+        if self.started {
+            writeln!(
+                f,
+                "Bytes total: {}; Bytes sent: {}({:.1}%)",
+                self.bytes_total,
+                self.bytes_sent,
+                self.bytes_total / self.bytes_sent
+            )
         } else {
-            write!(f,"Bytes total: {}", self.bytes_total)
+            write!(f, "Bytes total: {}", self.bytes_total)
         }
     }
 }
@@ -745,7 +756,7 @@ impl NetworkBehaviour for Behaviour {
         cx: &mut std::task::Context<'_>,
     ) -> Poll<ToSwarm<super::OutEvent, FromBehaviourEvent>> {
         trace!(name:"Poll","Polling owlnest_blob::Behaviour");
-        if let Poll::Ready(_) = self.expiry_check_throttle.poll_unpin(cx) {
+        if self.expiry_check_throttle.poll_unpin(cx).is_ready() {
             self.check_expiry()
         }
         if let Some(ev) = self.out_events.pop_front() {

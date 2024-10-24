@@ -161,7 +161,7 @@ pub mod store {
     }
     impl MessageStore for MemMessageStore {
         fn insert_empty_record(&self, peer_id: &PeerId) {
-            if let None = self.store.get(peer_id) {
+            if self.store.get(peer_id).is_none() {
                 self.store.insert(*peer_id, vec![]);
             }
         }
@@ -171,13 +171,13 @@ pub mod store {
                 .map(|v| v.value().clone().into_boxed_slice())
         }
         fn push_message(&self, remote: &PeerId, message: Message) {
-            if let None = self.store.get(remote) {
+            if self.store.get(remote).is_none() {
                 self.store.insert(*remote, vec![message]);
                 return;
             }
-            self.store
-                .get_mut(remote)
-                .map(|mut entry| entry.value_mut().push(message));
+            if let Some(mut entry) = self.store.get_mut(remote) {
+                entry.value_mut().push(message)
+            };
         }
         fn list_all_peers(&self) -> Box<[PeerId]> {
             self.store.iter().map(|entry| *entry.key()).collect()
@@ -193,10 +193,10 @@ pub mod store {
                     .count();
                 return;
             }
-            self.store.get_mut(peer_id.unwrap()).map(|mut entry| {
+            if let Some(mut entry) = self.store.get_mut(peer_id.unwrap()) {
                 entry.value_mut().clear();
                 entry.value_mut().shrink_to_fit()
-            });
+            };
         }
         fn empty_store(&self) {
             self.store.clear();
@@ -282,12 +282,12 @@ mod test {
     // Attach when necessary
     #[allow(unused)]
     fn setup_logging() {
+        use crate::net::p2p::protocols::SUBSCRIBER_CONFLICT_ERROR_MESSAGE;
         use std::sync::Mutex;
         use tracing::Level;
         use tracing_log::LogTracer;
         use tracing_subscriber::layer::SubscriberExt;
         use tracing_subscriber::Layer;
-        use crate::net::p2p::protocols::SUBSCRIBER_CONFLICT_ERROR_MESSAGE;
         let filter = tracing_subscriber::filter::Targets::new()
             .with_target("owlnest_messaging", Level::TRACE)
             .with_target("owlnest_blob", Level::INFO)

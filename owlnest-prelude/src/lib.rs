@@ -13,8 +13,8 @@ pub mod handler_prelude {
 
 pub mod swarm_prelude {}
 pub mod behaviour_prelude {
-    pub use libp2p::core::Endpoint;
     pub use libp2p::core::transport::PortUse;
+    pub use libp2p::core::Endpoint;
     pub use libp2p::swarm::NetworkBehaviour;
     pub use libp2p::swarm::NotifyHandler;
     pub use libp2p::swarm::{ConnectionClosed, ConnectionDenied, ConnectionHandler, ConnectionId};
@@ -34,13 +34,13 @@ pub mod utils {
             use std::io;
             use std::time::{Duration, Instant};
             use xxhash_rust::xxh3::xxh3_128;
-
-            /// Universal protocol for sending bytes
-
-            // Send and receive operation are performed on different negoticated substreams
-            //      send()-->Outbound------>Inbound-->recv()
-            //      recv()<--Inbound<------Outbound<--send()
-            //              Peer A          Peer B
+            /// Universal protocol for sending bytes.  
+            /// Send and receive operation are performed on different negoticated substreams
+            ///```norun
+            ///      send()-->Outbound------>Inbound-->recv()
+            ///      recv()<--Inbound<------Outbound<--send()
+            ///         Peer A                   Peer B
+            /// ```
             pub async fn send<S>(mut stream: S, msg_bytes: Vec<u8>) -> io::Result<(S, Duration)>
             where
                 S: AsyncRead + AsyncWrite + Unpin,

@@ -26,13 +26,13 @@ pub struct Config {
     /// Use IPv6 instead of IPv4.
     pub enable_ipv6: bool,
 }
-impl Into<libp2p::mdns::Config> for Config {
-    fn into(self) -> libp2p::mdns::Config {
+impl From<Config> for libp2p::mdns::Config {
+    fn from(value: Config) -> Self {
         let Config {
             ttl,
             query_interval,
             enable_ipv6,
-        } = self;
+        } = value;
         libp2p::mdns::Config {
             ttl,
             query_interval,
@@ -63,7 +63,10 @@ pub struct Handle {
     swarm_event_source: EventSender,
 }
 impl Handle {
-    pub(crate) fn new(buffer: usize, swarm_event_source: &EventSender) -> (Self, mpsc::Receiver<InEvent>) {
+    pub(crate) fn new(
+        buffer: usize,
+        swarm_event_source: &EventSender,
+    ) -> (Self, mpsc::Receiver<InEvent>) {
         let (tx, rx) = mpsc::channel(buffer);
         (
             Self {

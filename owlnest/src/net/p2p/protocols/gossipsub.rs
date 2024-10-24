@@ -165,7 +165,7 @@ impl Handle {
         self.subscribe_topic_hash(H::hash(topic_string.into()))
             .await
     }
-    /// Use a topic hash to subscribe to a topic.  
+    /// Use a topic hash to subscribe to a topic. Any type of hash can be used here.  
     /// Returns `Ok(true)` if the subscription worked. Returns `Ok(false)` if we were already
     /// subscribed.  
     pub async fn subscribe_topic_hash(
@@ -189,7 +189,7 @@ impl Handle {
         self.unsubscribe_topic_hash(H::hash(topic_string.into()))
             .await
     }
-    /// Use a topic hash to unsubscribe from a topic.  
+    /// Use a topic hash to unsubscribe from a topic. Any type of hash can be used here.  
     /// Returns [`Ok(true)`] if we were subscribed to this topic.
     pub async fn unsubscribe_topic_hash(
         &self,
@@ -203,7 +203,7 @@ impl Handle {
         self.sender.send(ev).await.expect("Send to succeed");
         rx.await.unwrap()
     }
-    /// List all peers that interests in the topic.
+    /// List all peers that interests in the topic. Any type of hash can be used here.  
     pub async fn mesh_peers_of_topic(&self, topic_hash: TopicHash) -> Box<[PeerId]> {
         let (tx, rx) = oneshot::channel();
         let ev = InEvent::MeshPeersOfTopic(topic_hash, tx);
@@ -226,10 +226,6 @@ impl Handle {
         with_timeout!(rx, 10)
             .expect("future to complete within 10s")
             .expect("callback to succeed")
-            .to_vec()
-            .into_iter()
-            .map(|(peer, topic_hash)| (peer, topic_hash))
-            .collect()
     }
     generate_handler_method!(
         /// Publishes the message with the given topic to the network.
@@ -426,8 +422,8 @@ pub(crate) mod cli {
     /// Subcommand for interacting with `libp2p-gossipsub`.
     ///
     /// Gossipsub works by randomly talking to peers that support this protocol
-    /// about topics of interest and form a virtual network of peers whose interested
-    /// topic is the same.  
+    /// about topics of interest and historical messages, forming a virtual network of peers
+    /// whose interested topic is the same.  
     /// Through the network, peers can publish and propagate messages to other peers.
     /// However, messages are delivered with best-effort, there is no guarantee
     /// to receive all messages associated with a certain topic.  
@@ -623,7 +619,7 @@ pub(crate) mod cli {
                 let list = handle.all_peers_with_topic().await;
                 let mut table = prettytable::Table::new();
                 table.add_row(row!["Peer ID", "Subscribed Topics"]);
-                list.to_vec().into_iter().for_each(|(peer, topics)| {
+                list.iter().for_each(|(peer, topics)| {
                     table.add_row(row![peer, topics.iter().printable()]);
                 });
                 table.printstd();
@@ -766,7 +762,7 @@ pub mod store {
             is_subscribed
         }
         fn unsubscribe_topic(&self, topic_hash: &TopicHash) -> bool {
-            self.subscribed.remove(&topic_hash).is_some()
+            self.subscribed.remove(topic_hash).is_some()
         }
         fn subscribed_topics(&self) -> Box<[ReadableTopic]> {
             self.subscribed

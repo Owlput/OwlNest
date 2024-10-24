@@ -124,7 +124,10 @@ fn handle_command(
         #[cfg(any(feature = "libp2p-protocols", feature = "libp2p-relay-client"))]
         RelayClient(command) => relay_client::cli::handle_relay_client(manager, command),
         #[cfg(any(feature = "libp2p-protocols", feature = "libp2p-gossipsub"))]
-        Gossipsub(command) => executor.block_on(gossipsub::cli::handle_gossipsub(manager.gossipsub(), command)),
+        Gossipsub(command) => executor.block_on(gossipsub::cli::handle_gossipsub(
+            manager.gossipsub(),
+            command,
+        )),
         Utils(command) => handle_utils(command),
     }
 }

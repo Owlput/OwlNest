@@ -409,11 +409,11 @@ pub(crate) mod cli {
         Bootstrap,
         /// Set current mode of local DHT provider:
         /// - `Client`: Only passively listen to the network
-        /// without publishing record or answering queries.
+        ///   without publishing record or answering queries.
         /// - `Server`: Actively publish records and answer queries.
         /// - `Default`: Automatically determin the mode according to
-        /// public reachability of local peer. If local peer is publicly reachable,
-        /// the mode will be set to `Server`, or `Client` otherwise.
+        ///   public reachability of local peer. If local peer is publicly reachable,
+        ///   the mode will be set to `Server`, or `Client` otherwise.
         SetMode {
             /// The mode to set: `client`, `server` or `default`
             #[arg(required = true)]

@@ -211,14 +211,14 @@ pub(crate) mod cli {
                 let list = handle.list_pending_send().await;
                 let print_pending = list
                     .iter()
-                    .filter(|v| v.started == false)
+                    .filter(|v| !v.started)
                     .printable()
                     .with_left_bound("")
                     .with_right_bound("")
                     .with_separator("\n");
                 let print_started = list
                     .iter()
-                    .filter(|v| v.started == false)
+                    .filter(|v| !v.started)
                     .printable()
                     .with_left_bound("")
                     .with_right_bound("")
@@ -502,13 +502,13 @@ mod test {
     }
     // Attach when necessary
     #[allow(unused)]
-    fn setup_logging(){
+    fn setup_logging() {
+        use crate::net::p2p::protocols::SUBSCRIBER_CONFLICT_ERROR_MESSAGE;
         use std::sync::Mutex;
         use tracing::Level;
         use tracing_log::LogTracer;
         use tracing_subscriber::layer::SubscriberExt;
         use tracing_subscriber::Layer;
-        use crate::net::p2p::protocols::SUBSCRIBER_CONFLICT_ERROR_MESSAGE;
         let filter = tracing_subscriber::filter::Targets::new()
             .with_target("owlnest", Level::INFO)
             .with_target("owlnest_blob", Level::DEBUG)
@@ -518,7 +518,8 @@ mod test {
             .with_writer(Mutex::new(std::io::stdout()))
             .with_filter(filter);
         let reg = tracing_subscriber::registry().with(layer);
-        let sub = tracing::subscriber::set_global_default(reg).expect(SUBSCRIBER_CONFLICT_ERROR_MESSAGE);
+        let sub =
+            tracing::subscriber::set_global_default(reg).expect(SUBSCRIBER_CONFLICT_ERROR_MESSAGE);
         LogTracer::init().unwrap();
         sub
     }
