@@ -2,7 +2,6 @@ pub mod identity;
 pub mod protocols;
 pub mod swarm;
 
-use std::io::stdout;
 use std::sync::Arc;
 
 use crate::net::p2p::protocols::*;
@@ -86,30 +85,5 @@ pub mod test_suit {
             rt.block_on(notifier_clone.notified());
         });
         (mgr, shutdown_notifier)
-    }
-
-    #[allow(unused)]
-    // tests only
-    pub fn setup_logging() {
-        use std::sync::Mutex;
-        use tracing::level_filters::LevelFilter;
-        use tracing::Level;
-        use tracing_log::LogTracer;
-        use tracing_subscriber::layer::SubscriberExt;
-        use tracing_subscriber::Layer;
-        let filter = tracing_subscriber::filter::Targets::new()
-            .with_target("owlnest", Level::TRACE)
-            .with_target("rustyline", LevelFilter::ERROR)
-            .with_target("libp2p_noise", Level::WARN)
-            .with_target("libp2p_mdns", Level::DEBUG)
-            .with_target("hickory_proto", Level::WARN)
-            .with_target("", Level::DEBUG);
-        let layer = tracing_subscriber::fmt::Layer::default()
-            .with_ansi(false)
-            .with_writer(Mutex::new(stdout()))
-            .with_filter(filter);
-        let reg = tracing_subscriber::registry().with(layer);
-        tracing::subscriber::set_global_default(reg).expect("you can only set global default once");
-        LogTracer::init().unwrap()
     }
 }

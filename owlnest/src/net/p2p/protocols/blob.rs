@@ -277,7 +277,6 @@ mod test {
     #[test]
     #[serial]
     fn single_send_recv() {
-        setup_logging();
         let (peer1_m, peer2_m) = setup_peer();
         send_recv(&peer1_m, &peer2_m)
     }
@@ -402,7 +401,6 @@ mod test {
     fn setup_peer() -> (Manager, Manager) {
         let (peer1_m, _) = setup_default();
         let (peer2_m, _) = setup_default();
-        // setup_logging();
         peer1_m
             .executor()
             .block_on(
@@ -502,12 +500,15 @@ mod test {
         drop(right_file_buf);
         left_file_hash == right_file_hash
     }
-    fn setup_logging() {
+    // Attach when necessary
+    #[allow(unused)]
+    fn setup_logging(){
         use std::sync::Mutex;
         use tracing::Level;
         use tracing_log::LogTracer;
         use tracing_subscriber::layer::SubscriberExt;
         use tracing_subscriber::Layer;
+        use crate::net::p2p::protocols::SUBSCRIBER_CONFLICT_ERROR_MESSAGE;
         let filter = tracing_subscriber::filter::Targets::new()
             .with_target("owlnest", Level::INFO)
             .with_target("owlnest_blob", Level::DEBUG)
@@ -517,7 +518,8 @@ mod test {
             .with_writer(Mutex::new(std::io::stdout()))
             .with_filter(filter);
         let reg = tracing_subscriber::registry().with(layer);
-        tracing::subscriber::set_global_default(reg).expect("you can only set global default once");
-        LogTracer::init().unwrap()
+        let sub = tracing::subscriber::set_global_default(reg).expect(SUBSCRIBER_CONFLICT_ERROR_MESSAGE);
+        LogTracer::init().unwrap();
+        sub
     }
 }

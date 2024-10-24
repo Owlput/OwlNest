@@ -62,3 +62,6 @@ pub mod gossipsub;
 // pub mod hyper;
 
 pub mod event_listener {}
+
+#[allow(unused)]
+const SUBSCRIBER_CONFLICT_ERROR_MESSAGE:&str = "You can only set global default once. Did you forget to remove some attached log subscribers?";
