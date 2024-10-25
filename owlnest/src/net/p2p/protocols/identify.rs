@@ -2,8 +2,8 @@ use std::time::Duration;
 
 pub use libp2p::identify::Behaviour;
 pub use libp2p::identify::Event as OutEvent;
-pub use libp2p::identify::PROTOCOL_NAME;
 pub use libp2p::identify::Info;
+pub use libp2p::identify::PROTOCOL_NAME;
 use serde::Deserialize;
 use serde::Serialize;
 use tracing::{debug, trace, warn};

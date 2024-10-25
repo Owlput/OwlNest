@@ -79,8 +79,8 @@ impl Default for Config {
         }
     }
 }
-impl Into<libp2p::relay::Config> for Config {
-    fn into(self) -> libp2p::relay::Config {
+impl From<Config> for libp2p::relay::Config {
+    fn from(value: Config) -> Self {
         let default = libp2p::relay::Config::default();
         let Config {
             max_reservations,
@@ -90,7 +90,7 @@ impl Into<libp2p::relay::Config> for Config {
             max_circuits_per_peer,
             max_circuit_duration,
             max_circuit_bytes,
-        } = self;
+        } = value;
         libp2p::relay::Config {
             max_reservations,
             max_reservations_per_peer,

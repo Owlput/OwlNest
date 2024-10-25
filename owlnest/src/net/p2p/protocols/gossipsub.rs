@@ -1,12 +1,15 @@
+use std::str::FromStr;
 use std::sync::Arc;
 
 use crate::net::p2p::swarm::EventSender;
+use clap::ValueEnum;
 pub use config::Config;
 pub use libp2p::gossipsub::Behaviour;
 pub use libp2p::gossipsub::Event as OutEvent;
+pub use libp2p::gossipsub::Topic;
+pub use libp2p::gossipsub::{Hasher, IdentityHash, Sha256Hash, TopicHash};
 pub use libp2p::gossipsub::{Message, MessageAuthenticity, MessageId};
 pub use libp2p::gossipsub::{PublishError, SubscriptionError};
-pub use libp2p::gossipsub::{Sha256Topic, TopicHash};
 use libp2p::PeerId;
 use owlnest_macro::generate_handler_method;
 use owlnest_macro::handle_callback_sender;
@@ -25,13 +28,16 @@ pub enum InEvent {
     /// Subscribe to the topic.  
     /// Returns `Ok(true)` if the subscription worked. Returns `Ok(false)` if we were already
     /// subscribed.
-    SubscribeTopic(
-        Sha256Topic,
-        oneshot::Sender<Result<bool, SubscriptionError>>,
-    ),
+    SubscribeTopic {
+        topic_hash: TopicHash,
+        callback: oneshot::Sender<Result<bool, SubscriptionError>>,
+    },
     /// Unsubscribe from the topic.  
     /// Returns [`Ok(true)`] if we were subscribed to this topic.
-    UnsubscribeTopic(Sha256Topic, oneshot::Sender<Result<bool, PublishError>>),
+    UnsubscribeTopic {
+        topic_hash: TopicHash,
+        callback: oneshot::Sender<Result<bool, PublishError>>,
+    },
     /// Publishes the message with the given topic to the network.  
     /// Duplicate messages will not be published, resulting in `PublishError::Duplicate`
     PublishMessage(
@@ -49,52 +55,81 @@ pub enum InEvent {
     AllPeersWithTopic(oneshot::Sender<Box<[(PeerId, Box<[TopicHash]>)]>>),
 }
 
+#[derive(Debug, Copy, Clone, ValueEnum, PartialEq, Eq, Serialize, Deserialize)]
+pub enum HashType {
+    Sha256,
+    Identity,
+}
+impl HashType {
+    pub fn hash(&self, topic_string: String) -> TopicHash {
+        match self {
+            Self::Sha256 => Sha256Hash::hash(topic_string),
+            Self::Identity => IdentityHash::hash(topic_string),
+        }
+    }
+}
+impl FromStr for HashType {
+    type Err = ();
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "sha256" => Ok(Self::Sha256),
+            "identity" => Ok(Self::Identity),
+            _ => Err(()),
+        }
+    }
+}
+impl std::fmt::Display for HashType {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        self.to_possible_value()
+            .expect("no values are skipped")
+            .get_name()
+            .fmt(f)
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum ReadableTopic {
-    HashOnly(serde_types::TopicHash),
-    StringOnly(String),
-    Both {
+    HashOnly {
         hash: serde_types::TopicHash,
-        string: String,
+        hash_type: Option<HashType>,
+    },
+    StringOnly {
+        topic_string: String,
+    },
+    Both {
+        topic_hash: serde_types::TopicHash,
+        hash_type: Option<HashType>,
+        topic_string: String,
     },
 }
 impl ReadableTopic {
-    pub fn get_hash(&self) -> serde_types::TopicHash {
+    pub fn from_string(topic_string: String, hash_type: HashType) -> Self {
+        Self::Both {
+            topic_hash: hash_type.hash(topic_string.clone()).into(),
+            hash_type: Some(hash_type),
+            topic_string,
+        }
+    }
+    pub fn get_hash<FallbackHasher: Hasher>(&self) -> serde_types::TopicHash {
         match self {
-            ReadableTopic::HashOnly(hash) => hash.clone(),
-            ReadableTopic::StringOnly(string) => Sha256Topic::new(string).hash().into(),
-            ReadableTopic::Both { hash, .. } => hash.clone(),
+            ReadableTopic::HashOnly { hash, .. } => hash.clone(),
+            ReadableTopic::StringOnly { topic_string } => {
+                FallbackHasher::hash(topic_string.clone()).into()
+            }
+            ReadableTopic::Both {
+                topic_hash: hash, ..
+            } => hash.clone(),
         }
     }
     pub fn get_string(&self) -> Option<&String> {
         match self {
-            ReadableTopic::HashOnly(_) => None,
-            ReadableTopic::StringOnly(string) => Some(string),
-            ReadableTopic::Both { string, .. } => Some(string),
+            ReadableTopic::HashOnly { .. } => None,
+            ReadableTopic::StringOnly { topic_string } => Some(topic_string),
+            ReadableTopic::Both {
+                topic_string: string,
+                ..
+            } => Some(string),
         }
-    }
-}
-impl From<String> for ReadableTopic {
-    fn from(value: String) -> Self {
-        let topic = Sha256Topic::new(value.clone());
-        Self::Both {
-            hash: topic.hash().into(),
-            string: value,
-        }
-    }
-}
-impl From<&str> for ReadableTopic {
-    fn from(value: &str) -> Self {
-        let topic = Sha256Topic::new(value);
-        Self::Both {
-            hash: topic.hash().into(),
-            string: value.to_owned(),
-        }
-    }
-}
-impl From<TopicHash> for ReadableTopic {
-    fn from(value: TopicHash) -> Self {
-        Self::HashOnly(value.into())
     }
 }
 
@@ -120,39 +155,58 @@ impl Handle {
         };
         (handle, rx)
     }
-    /// Subscribe to the topic.  
+    /// Use a topic string to subscribe to a topic.  
     /// Returns `Ok(true)` if the subscription worked. Returns `Ok(false)` if we were already
     /// subscribed.  
-    /// Note: You can only subscribe to a topic
-    /// when you have string representation of the topic.
-    /// This is intentional.
-    pub async fn subscribe_topic(
+    pub async fn subscribe_topic<H: Hasher>(
         &self,
         topic_string: impl Into<String>,
     ) -> Result<bool, SubscriptionError> {
-        let topic = Sha256Topic::new(topic_string);
+        self.subscribe_topic_hash(H::hash(topic_string.into()))
+            .await
+    }
+    /// Use a topic hash to subscribe to a topic. Any type of hash can be used here.  
+    /// Returns `Ok(true)` if the subscription worked. Returns `Ok(false)` if we were already
+    /// subscribed.  
+    pub async fn subscribe_topic_hash(
+        &self,
+        topic_hash: TopicHash,
+    ) -> Result<bool, SubscriptionError> {
         let (tx, rx) = oneshot::channel();
-        let ev = InEvent::SubscribeTopic(topic, tx);
+        let ev = InEvent::SubscribeTopic {
+            topic_hash,
+            callback: tx,
+        };
         self.sender.send(ev).await.expect("Send to succeed");
         rx.await.unwrap()
     }
-    /// Unsubscribe from the topic.  
+    /// Use a topic string to unsubscribe from a topic.  
     /// Returns [`Ok(true)`] if we were subscribed to this topic.
-    pub async fn unsubscribe_topic(
+    pub async fn unsubscribe_topic<H: Hasher>(
         &self,
         topic_string: impl Into<String>,
     ) -> Result<bool, PublishError> {
-        let topic = Sha256Topic::new(topic_string);
+        self.unsubscribe_topic_hash(H::hash(topic_string.into()))
+            .await
+    }
+    /// Use a topic hash to unsubscribe from a topic. Any type of hash can be used here.  
+    /// Returns [`Ok(true)`] if we were subscribed to this topic.
+    pub async fn unsubscribe_topic_hash(
+        &self,
+        topic_hash: TopicHash,
+    ) -> Result<bool, PublishError> {
         let (tx, rx) = oneshot::channel();
-        let ev = InEvent::UnsubscribeTopic(topic, tx);
+        let ev = InEvent::UnsubscribeTopic {
+            topic_hash,
+            callback: tx,
+        };
         self.sender.send(ev).await.expect("Send to succeed");
         rx.await.unwrap()
     }
-    /// List all peers that interests in the topic.
-    pub async fn mesh_peers_of_topic(&self, topic: impl Into<String>) -> Box<[PeerId]> {
+    /// List all peers that interests in the topic. Any type of hash can be used here.  
+    pub async fn mesh_peers_of_topic(&self, topic_hash: TopicHash) -> Box<[PeerId]> {
         let (tx, rx) = oneshot::channel();
-        let topic = Sha256Topic::new(topic.into());
-        let ev = InEvent::MeshPeersOfTopic(topic.hash(), tx);
+        let ev = InEvent::MeshPeersOfTopic(topic_hash, tx);
         self.sender
             .send(ev)
             .await
@@ -172,10 +226,6 @@ impl Handle {
         with_timeout!(rx, 10)
             .expect("future to complete within 10s")
             .expect("callback to succeed")
-            .to_vec()
-            .into_iter()
-            .map(|(peer, topic_hash)| (peer, topic_hash))
-            .collect()
     }
     generate_handler_method!(
         /// Publishes the message with the given topic to the network.
@@ -198,12 +248,18 @@ impl std::fmt::Debug for Handle {
 pub(crate) fn map_in_event(behav: &mut Behaviour, ev: InEvent) {
     use InEvent::*;
     match ev {
-        SubscribeTopic(topic_hash, callback) => {
+        SubscribeTopic {
+            topic_hash,
+            callback,
+        } => {
             let result = behav.subscribe(&topic_hash);
             handle_callback_sender!(result => callback);
         }
-        UnsubscribeTopic(topic, callback) => {
-            let result = behav.unsubscribe(&topic);
+        UnsubscribeTopic {
+            topic_hash,
+            callback,
+        } => {
+            let result = behav.unsubscribe(&topic_hash);
             handle_callback_sender!(result => callback)
         }
         MeshPeersOfTopic(topic_hash, callback) => {
@@ -354,17 +410,20 @@ mod config {
 }
 
 pub(crate) mod cli {
-    use super::Handle;
+    use super::{Handle, HashType};
     use clap::Subcommand;
-    use libp2p::{gossipsub::Sha256Topic, PeerId};
+    use libp2p::{
+        gossipsub::{Hasher, IdentityHash, Sha256Hash, Sha256Topic, TopicHash},
+        PeerId,
+    };
     use prettytable::{row, Table};
     use printable::iter::PrintableIter;
 
     /// Subcommand for interacting with `libp2p-gossipsub`.
     ///
     /// Gossipsub works by randomly talking to peers that support this protocol
-    /// about topics of interest and form a virtual network of peers whose interested
-    /// topic is the same.  
+    /// about topics of interest and historical messages, forming a virtual network of peers
+    /// whose interested topic is the same.  
     /// Through the network, peers can publish and propagate messages to other peers.
     /// However, messages are delivered with best-effort, there is no guarantee
     /// to receive all messages associated with a certain topic.  
@@ -372,15 +431,11 @@ pub(crate) mod cli {
     #[derive(Debug, Subcommand)]
     pub enum Gossipsub {
         /// Subscribe to the given topic.
-        Subscribe {
-            /// String representation of the topic to subscribe to.
-            topic: String,
-        },
+        #[command(subcommand)]
+        Subscribe(SubUnsubCommand),
         /// Unsubscribe to the given topic
-        Unsubscribe {
-            /// String representation of the topic to unsubscribe.
-            topic: String,
-        },
+        #[command(subcommand)]
+        Unsubscribe(SubUnsubCommand),
         /// Publish a message on the given topic.  
         /// The message can be arbitrary bytes but here we perfer string for convenience.  
         /// The message will be signed using local identity by default.  
@@ -404,30 +459,88 @@ pub(crate) mod cli {
         /// along with all known topic that the peer is subscribing.
         AllPeersWithTopic,
         /// Get all known peers that is subscribing the topic.
-        MeshPeersOfTopic {
-            /// The topic to lookup from.
-            topic: String,
+        #[command(subcommand)]
+        MeshPeersOfTopic(SubUnsubCommand),
+    }
+
+    #[derive(Debug, Clone, Subcommand)]
+    pub enum SubUnsubCommand {
+        ByString {
+            /// String representation of the topic to subscribe/unsubscribe to.
+            topic_string: String,
+            /// The type of hasher to use.
+            #[arg(long, require_equals = true, value_enum)]
+            hash_type: HashType,
         },
+        ByHash {
+            /// Hash representation of the topic to subscribe/unsubscribe to.
+            topic_hash: String,
+            #[arg(long, require_equals = true, value_enum)]
+            hash_type: HashType,
+        },
+    }
+    impl SubUnsubCommand {
+        pub(crate) fn inner(&self) -> &String {
+            match self {
+                Self::ByHash { topic_hash, .. } => topic_hash,
+                Self::ByString { topic_string, .. } => topic_string,
+            }
+        }
+        pub(crate) fn get_hash_type(&self) -> &HashType {
+            match self {
+                Self::ByHash { hash_type, .. } => hash_type,
+                Self::ByString { hash_type, .. } => hash_type,
+            }
+        }
+        pub(crate) fn get_hash(&self) -> TopicHash {
+            if let Self::ByHash { topic_hash, .. } = &self {
+                return TopicHash::from_raw(topic_hash);
+            }
+            match self.get_hash_type() {
+                HashType::Identity => IdentityHash::hash(self.inner().clone()),
+                HashType::Sha256 => Sha256Hash::hash(self.inner().clone()),
+            }
+        }
     }
 
     pub async fn handle_gossipsub(handle: &Handle, command: Gossipsub) {
         match command {
-            Gossipsub::Subscribe { topic } => {
-                let result = handle.subscribe_topic(topic.clone()).await;
+            Gossipsub::Subscribe(command) => {
+                let result = match &command {
+                    SubUnsubCommand::ByHash {
+                        topic_hash,
+                        hash_type: HashType::Identity,
+                    } => {
+                        handle
+                            .subscribe_topic_hash(TopicHash::from_raw(topic_hash))
+                            .await
+                    }
+                    SubUnsubCommand::ByHash {
+                        topic_hash,
+                        hash_type: HashType::Sha256,
+                    } => {
+                        handle
+                            .subscribe_topic_hash(TopicHash::from_raw(topic_hash))
+                            .await
+                    }
+                    SubUnsubCommand::ByString {
+                        topic_string,
+                        hash_type: HashType::Identity,
+                    } => handle.subscribe_topic::<IdentityHash>(topic_string).await,
+                    SubUnsubCommand::ByString {
+                        topic_string,
+                        hash_type: HashType::Sha256,
+                    } => handle.subscribe_topic::<Sha256Hash>(topic_string).await,
+                };
                 match result {
                     Ok(v) => {
                         if v {
                             println!(
-                                r#"Successfully subscribed to the topic "{}", topic hash: {}"#,
-                                topic,
-                                Sha256Topic::new(topic.clone()).hash()
+                                r#"Successfully subscribed to the topic "{}""#,
+                                command.inner(),
                             )
                         } else {
-                            println!(
-                                r#"Already subscribed to the topic "{}", topic hash: {}"#,
-                                topic,
-                                Sha256Topic::new(topic.clone()).hash()
-                            )
+                            println!(r#"Already subscribed to the topic "{}""#, command.inner(),)
                         }
                     }
                     Err(e) => {
@@ -435,22 +548,42 @@ pub(crate) mod cli {
                     }
                 }
             }
-            Gossipsub::Unsubscribe { topic } => {
-                let result = handle.unsubscribe_topic(topic.clone()).await;
+            Gossipsub::Unsubscribe(command) => {
+                let result = match &command {
+                    SubUnsubCommand::ByHash {
+                        topic_hash,
+                        hash_type: HashType::Identity,
+                    } => {
+                        handle
+                            .unsubscribe_topic_hash(TopicHash::from_raw(topic_hash))
+                            .await
+                    }
+                    SubUnsubCommand::ByHash {
+                        topic_hash,
+                        hash_type: HashType::Sha256,
+                    } => {
+                        handle
+                            .unsubscribe_topic_hash(TopicHash::from_raw(topic_hash))
+                            .await
+                    }
+                    SubUnsubCommand::ByString {
+                        topic_string,
+                        hash_type: HashType::Identity,
+                    } => handle.unsubscribe_topic::<IdentityHash>(topic_string).await,
+                    SubUnsubCommand::ByString {
+                        topic_string,
+                        hash_type: HashType::Sha256,
+                    } => handle.unsubscribe_topic::<Sha256Hash>(topic_string).await,
+                };
                 match result {
                     Ok(v) => {
                         if v {
                             println!(
-                                r#"Successfully unsubscribed from the topic "{}", topic hash: {}"#,
-                                topic,
-                                Sha256Topic::new(topic.clone()).hash()
+                                r#"Successfully unsubscribed from the topic "{}""#,
+                                command.inner(),
                             )
                         } else {
-                            println!(
-                                r#"Topic "{}" not subscribed previously, topic hash: {}"#,
-                                topic,
-                                Sha256Topic::new(topic.clone()).hash()
-                            )
+                            println!(r#"Topic "{}" not subscribed previously."#, command.inner())
                         }
                     }
                     Err(e) => {
@@ -486,16 +619,16 @@ pub(crate) mod cli {
                 let list = handle.all_peers_with_topic().await;
                 let mut table = prettytable::Table::new();
                 table.add_row(row!["Peer ID", "Subscribed Topics"]);
-                list.to_vec().into_iter().for_each(|(peer, topics)| {
+                list.iter().for_each(|(peer, topics)| {
                     table.add_row(row![peer, topics.iter().printable()]);
                 });
                 table.printstd();
             }
-            Gossipsub::MeshPeersOfTopic { topic } => {
-                let list = handle.mesh_peers_of_topic(topic.clone()).await;
+            Gossipsub::MeshPeersOfTopic(topic) => {
+                let list = handle.mesh_peers_of_topic(topic.get_hash()).await;
                 let mut table = Table::new();
                 table.add_row(row![
-                    format!("Peers associated with topic\n{}", topic),
+                    format!("Peers associated with topic\n{}", topic.get_hash()),
                     format!("{}", list.iter().printable())
                 ]);
                 table.printstd()
@@ -507,7 +640,7 @@ pub(crate) mod cli {
 pub mod store {
     use dashmap::{DashMap, DashSet};
     use libp2p::{
-        gossipsub::{Message, Sha256Topic, TopicHash},
+        gossipsub::{IdentityHash, Message, Sha256Topic, TopicHash},
         PeerId,
     };
 
@@ -610,9 +743,9 @@ pub mod store {
         /// Returns `true` when we have not subscribed before.  
         /// This will add to existing store if not presnet.
         fn subscribe_topic(&self, topic: ReadableTopic) -> bool {
-            let hash: TopicHash = topic.get_hash().into();
+            let hash: TopicHash = topic.get_hash::<IdentityHash>().into();
             let is_subscribed = self.subscribed.insert(hash.clone());
-            if let ReadableTopic::HashOnly(_) = topic {
+            if let ReadableTopic::HashOnly { .. } = topic {
                 if self.vacant.get(&hash).is_none() {
                     // insert if not present
                     self.vacant.insert(hash, Default::default());
@@ -629,7 +762,7 @@ pub mod store {
             is_subscribed
         }
         fn unsubscribe_topic(&self, topic_hash: &TopicHash) -> bool {
-            self.subscribed.remove(&topic_hash).is_some()
+            self.subscribed.remove(topic_hash).is_some()
         }
         fn subscribed_topics(&self) -> Box<[ReadableTopic]> {
             self.subscribed
@@ -642,11 +775,15 @@ pub mod store {
                         .map(|entry| entry.value().0.clone())
                     {
                         return ReadableTopic::Both {
-                            hash: hash.into(),
-                            string,
+                            topic_hash: hash.into(),
+                            topic_string: string,
+                            hash_type: None,
                         };
                     };
-                    ReadableTopic::HashOnly(hash.into())
+                    ReadableTopic::HashOnly {
+                        hash: hash.into(),
+                        hash_type: None,
+                    }
                 })
                 .collect()
         }

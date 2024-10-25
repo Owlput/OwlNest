@@ -15,7 +15,7 @@ pub mod mdns;
 #[cfg(any(feature = "owlnest-protocols", feature = "owlnest-messaging"))]
 pub mod messaging;
 
-/// A behaviour that allows remote control of a node.
+// /// A behaviour that allows remote control of a node.
 // pub mod tethering;
 
 /// A wrapper around reference implementation of libp2p relay client.
@@ -62,3 +62,7 @@ pub mod gossipsub;
 // pub mod hyper;
 
 pub mod event_listener {}
+
+#[allow(unused)]
+const SUBSCRIBER_CONFLICT_ERROR_MESSAGE: &str =
+    "You can only set global default once. Did you forget to remove some attached log subscribers?";

@@ -92,8 +92,13 @@ pub mod listener {
         match command {
             Ls => {
                 let list = handle.list_listeners_blocking();
-                let printable_list = list.iter().printable().with_left_bound("").with_right_bound("").with_separator("\n");
-                let table  = table!(["Active Listeners"], [printable_list]);
+                let printable_list = list
+                    .iter()
+                    .printable()
+                    .with_left_bound("")
+                    .with_right_bound("")
+                    .with_separator("\n");
+                let table = table!(["Active Listeners"], [printable_list]);
                 table.printstd();
             }
         }
@@ -141,7 +146,7 @@ pub mod external_address {
             }
             Ls => {
                 let list = handle.list_external_addresses_blocking();
-                let table  = table!(["External Addresses"], [list.iter().printable()]);
+                let table = table!(["External Addresses"], [list.iter().printable()]);
                 table.printstd();
             }
         }

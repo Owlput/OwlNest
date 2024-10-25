@@ -5,14 +5,50 @@ members = [
     "owlnest-proc",
     "owlnest-macro",
     "protocols/owlnest-blob",
-    "owlnest-prelude"
-, "protocols/owlnest-hyper", "protocols/owlnest-messaging", "protocols/owlnest-advertise","protocols/template"]
+    "owlnest-prelude",
+    "protocols/owlnest-hyper",
+    "protocols/owlnest-messaging",
+    "protocols/owlnest-advertise",
+    "protocols/template",
+]
 default_member = ["owlnest"]
 resolver = "2"
 
 [workspace.dependencies]
 tokio = { version = "1", features = ["full"] }
-libp2p = { path = "../../Owlput/rust-libp2p/libp2p", features = ["full"] }
+libp2p = { path = "../../Owlput/rust-libp2p/libp2p", features = [
+    "autonat",
+    "cbor",
+    "dcutr",
+    "dns",
+    "ecdsa",
+    "ed25519",
+    "gossipsub",
+    "identify",
+    "json",
+    "kad",
+    "macros",
+    "mdns",
+    "memory-connection-limits",
+    "metrics",
+    "noise",
+    "ping",
+    "pnet",
+    "quic",
+    "relay",
+    "rendezvous",
+    "request-response",
+    "serde",
+    "tcp",
+    "tls",
+    "tokio",
+    "uds",
+    "websocket-websys",
+    "websocket",
+    "webtransport-websys",
+    "yamux",
+    "upnp",
+] }
 libp2p-swarm = { path = "../../Owlput/rust-libp2p/swarm" }
 libp2p-tls = { path = "../../Owlput/rust-libp2p/transports/tls" }
 libp2p-noise = { path = "../../Owlput/rust-libp2p/transports/noise" }

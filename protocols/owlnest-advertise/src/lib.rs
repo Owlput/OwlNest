@@ -5,8 +5,8 @@ pub mod behaviour;
 pub mod config;
 mod handler;
 
-pub use protocol::PROTOCOL_NAME;
 pub use behaviour::Behaviour;
+pub use protocol::PROTOCOL_NAME;
 use tokio::sync::oneshot;
 
 #[derive(Debug, Clone)]

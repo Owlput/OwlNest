@@ -278,7 +278,7 @@ impl Handler {
             match self.outbound.take() {
                 Some(OutboundState::Busy(mut task, send_type, mut timer)) => {
                     let poll_result = task.poll_unpin(cx);
-                    if let Poll::Pending = poll_result {
+                    if poll_result.is_pending() {
                         trace!("Outbound busy");
                         if timer.poll_unpin(cx).is_ready() {
                             return Some(ConnectionHandlerEvent::NotifyBehaviour(

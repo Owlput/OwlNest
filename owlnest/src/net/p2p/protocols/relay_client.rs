@@ -99,6 +99,7 @@ mod test {
     use crate::net::p2p::{swarm::Manager, test_suit::setup_default};
     use libp2p::{multiaddr::Protocol, Multiaddr};
     use owlnest_macro::listen_event;
+    use serial_test::serial;
     use std::{
         io::stdout,
         sync::{atomic::AtomicU8, Arc},
@@ -107,8 +108,8 @@ mod test {
     };
 
     #[test]
+    #[serial]
     fn test() {
-        setup_logging();
         let (peer1_m, _) = setup_default();
         let (peer2_m, _) = setup_default();
         let (peer3_m, _) = setup_default();
@@ -223,7 +224,10 @@ mod test {
         assert_eq!(counter.fetch_add(0, Ordering::Relaxed), 5)
     }
 
+    // Attach when necessary
+    #[allow(unused)]
     fn setup_logging() {
+        use crate::net::p2p::protocols::SUBSCRIBER_CONFLICT_ERROR_MESSAGE;
         use std::sync::Mutex;
         use tracing::Level;
         use tracing_log::LogTracer;
@@ -249,7 +253,7 @@ mod test {
             .with_writer(Mutex::new(stdout()))
             .with_filter(filter);
         let reg = tracing_subscriber::registry().with(layer);
-        tracing::subscriber::set_global_default(reg).expect("you can only set global default once");
+        tracing::subscriber::set_global_default(reg).expect(SUBSCRIBER_CONFLICT_ERROR_MESSAGE);
         LogTracer::init().unwrap()
     }
 

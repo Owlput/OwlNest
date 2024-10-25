@@ -211,14 +211,14 @@ pub(crate) mod cli {
                 let list = handle.list_pending_send().await;
                 let print_pending = list
                     .iter()
-                    .filter(|v| v.started == false)
+                    .filter(|v| !v.started)
                     .printable()
                     .with_left_bound("")
                     .with_right_bound("")
                     .with_separator("\n");
                 let print_started = list
                     .iter()
-                    .filter(|v| v.started == false)
+                    .filter(|v| !v.started)
                     .printable()
                     .with_left_bound("")
                     .with_right_bound("")
@@ -277,7 +277,6 @@ mod test {
     #[test]
     #[serial]
     fn single_send_recv() {
-        setup_logging();
         let (peer1_m, peer2_m) = setup_peer();
         send_recv(&peer1_m, &peer2_m)
     }
@@ -402,7 +401,6 @@ mod test {
     fn setup_peer() -> (Manager, Manager) {
         let (peer1_m, _) = setup_default();
         let (peer2_m, _) = setup_default();
-        // setup_logging();
         peer1_m
             .executor()
             .block_on(
@@ -502,7 +500,10 @@ mod test {
         drop(right_file_buf);
         left_file_hash == right_file_hash
     }
+    // Attach when necessary
+    #[allow(unused)]
     fn setup_logging() {
+        use crate::net::p2p::protocols::SUBSCRIBER_CONFLICT_ERROR_MESSAGE;
         use std::sync::Mutex;
         use tracing::Level;
         use tracing_log::LogTracer;
@@ -517,7 +518,7 @@ mod test {
             .with_writer(Mutex::new(std::io::stdout()))
             .with_filter(filter);
         let reg = tracing_subscriber::registry().with(layer);
-        tracing::subscriber::set_global_default(reg).expect("you can only set global default once");
-        LogTracer::init().unwrap()
+        tracing::subscriber::set_global_default(reg).expect(SUBSCRIBER_CONFLICT_ERROR_MESSAGE);
+        LogTracer::init().unwrap();
     }
 }

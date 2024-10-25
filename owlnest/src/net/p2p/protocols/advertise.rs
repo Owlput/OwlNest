@@ -184,7 +184,12 @@ pub(crate) mod cli {
                         let list = v.expect("Already handled");
                         let table = table!(
                             [format!("Peers advertised by\n{}", remote)],
-                            [list.iter().printable().with_left_bound("").with_right_bound("").with_separator("\n")]
+                            [list
+                                .iter()
+                                .printable()
+                                .with_left_bound("")
+                                .with_right_bound("")
+                                .with_separator("\n")]
                         );
                         table.printstd();
                     }
@@ -258,12 +263,13 @@ pub(crate) mod cli {
 mod test {
     use crate::net::p2p::test_suit::setup_default;
     use libp2p::Multiaddr;
+    use serial_test::serial;
     use std::{thread, time::Duration};
     use tracing_log::log::trace;
 
     #[test]
+    #[serial]
     fn test() {
-        setup_logging();
         let (peer1_m, _) = setup_default();
         let (peer2_m, _) = setup_default();
         peer1_m
@@ -333,7 +339,10 @@ mod test {
         );
     }
 
+    // Attach when necessary
+    #[allow(unused)]
     fn setup_logging() {
+        use crate::net::p2p::protocols::SUBSCRIBER_CONFLICT_ERROR_MESSAGE;
         use std::sync::Mutex;
         use tracing::Level;
         use tracing_log::LogTracer;
@@ -349,7 +358,7 @@ mod test {
             .with_writer(Mutex::new(std::io::stdout()))
             .with_filter(filter);
         let reg = tracing_subscriber::registry().with(layer);
-        tracing::subscriber::set_global_default(reg).expect("you can only set global default once");
-        LogTracer::init().unwrap()
+        tracing::subscriber::set_global_default(reg).expect(SUBSCRIBER_CONFLICT_ERROR_MESSAGE);
+        LogTracer::init().unwrap();
     }
 }

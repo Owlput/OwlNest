@@ -115,7 +115,7 @@ pub fn handle_incoming_event(ev: Rx, swarm: &mut Swarm) {
         #[cfg(any(feature = "libp2p-protocols", feature = "libp2p-autonat"))]
         AutoNat(ev) => autonat::map_in_event(&mut swarm.behaviour_mut().autonat, ev),
         #[cfg(any(feature = "libp2p-protocols", feature = "libp2p-gossipsub"))]
-        Gossipsub(ev) => gossipsub::map_in_event(&mut swarm.behaviour_mut().gossipsub, ev)
+        Gossipsub(ev) => gossipsub::map_in_event(&mut swarm.behaviour_mut().gossipsub, ev),
     }
 }
 
