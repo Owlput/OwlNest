@@ -47,7 +47,7 @@ pub enum Swarm {
     },
 }
 
-pub(crate) fn handle_swarm(handle: &SwarmHandle, command: Swarm) {
+pub fn handle_swarm(handle: &SwarmHandle, command: Swarm) {
     use Swarm::*;
     match command {
         Dial { address } => {
@@ -153,7 +153,7 @@ pub mod external_address {
     }
 }
 
-pub(crate) fn format_transport_error(e: TransportError<std::io::Error>) -> String {
+pub fn format_transport_error(e: TransportError<std::io::Error>) -> String {
     match e {
         TransportError::MultiaddrNotSupported(addr) => {
             format!("Requested address {} is not supported.", addr)

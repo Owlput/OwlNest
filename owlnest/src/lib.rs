@@ -3,17 +3,14 @@
 #![feature(hash_extract_if)]
 #![feature(extract_if)]
 
-pub mod cli;
+
+/// Code related to networking.
+// #[deny(missing_docs)]
 pub mod net;
+
+/// Helper code. 
 pub mod utils;
 // pub mod db;
-
-pub mod logging_prelude {
-    pub use chrono;
-    pub use tracing::{level_filters::LevelFilter, Level};
-    pub use tracing_log::LogTracer;
-    pub use tracing_subscriber::prelude::__tracing_subscriber_SubscriberExt;
-}
 
 #[cfg(feature = "test-suits")]
 pub use net::p2p::test_suit;

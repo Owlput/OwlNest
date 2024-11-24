@@ -10,6 +10,7 @@ use tracing::{debug, trace, warn};
 
 use crate::net::p2p::identity::IdentityUnion;
 
+/// Config for `libp2p-identify` protocol that supports `serde`.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Config {
     /// Application-specific version of the protocol family used by the peer,
@@ -44,6 +45,7 @@ pub struct Config {
     pub cache_size: usize,
 }
 impl Config {
+    /// Convert into `libp2p::identify::Config` using an identity.
     pub fn into_config(self, ident: &IdentityUnion) -> libp2p::identify::Config {
         let Config {
             protocol_version,

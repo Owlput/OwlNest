@@ -11,11 +11,12 @@ use tracing::warn;
 
 type MessageStore = Box<dyn store::MessageStore + 'static + Send + Sync>;
 
+/// A handle that can communicate with the behaviour within the swarm.
 #[derive(Clone)]
 pub struct Handle {
     sender: mpsc::Sender<InEvent>,
     swarm_event_source: EventSender,
-    pub message_store: Arc<MessageStore>,
+    message_store: Arc<MessageStore>,
     counter: Arc<AtomicU64>,
 }
 impl Handle {
@@ -54,6 +55,9 @@ impl Handle {
             rx,
         )
     }
+    /// Send a message to the target peer.  
+    /// Will return the time taken between sending and acknowledgement. 
+    /// If the peer isn't connected, an error will be returned.
     pub async fn send_message(
         &self,
         peer_id: PeerId,
@@ -86,7 +90,7 @@ impl Handle {
     }
 }
 
-pub(crate) mod cli {
+pub mod cli {
     use clap::Subcommand;
     use libp2p::PeerId;
 
@@ -141,20 +145,34 @@ pub(crate) mod cli {
     }
 }
 
+/// Adapter trait for message store(on-disk or volatile)
 pub mod store {
     use dashmap::DashMap;
     use libp2p::PeerId;
     use owlnest_messaging::Message;
 
+    /// The trait a message store need to implement.
+    /// Currently the trait is modeled after volatile store.
     pub trait MessageStore {
+        /// Insert an empty record of a newly connected peer.
         fn insert_empty_record(&self, peer_id: &PeerId);
+        /// Get all message history of a peer.
         fn get_messages(&self, peer_id: &PeerId) -> Option<Box<[Message]>>;
+        /// Append a message to the history of the given peer.
         fn push_message(&self, remote: &PeerId, message: Message);
+        /// Get all peers that has a record in the store
         fn list_all_peers(&self) -> Box<[PeerId]>;
+        /// Clear the message history of the given peer permanently, 
+        /// but peer records will be retained.
+        /// Will clear all history if not supplied with a peer ID.
         fn clear_message(&self, peer_id: Option<&PeerId>);
+        /// Empty the message store, including peer records
         fn empty_store(&self);
     }
 
+    /// In-memory volatile message store.
+    /// All records will be lost permanently once the store is dropped 
+    /// e.g. the peer is shutdown or sudden power loss.
     #[derive(Debug, Clone, Default)]
     pub struct MemMessageStore {
         store: DashMap<PeerId, Vec<Message>>,

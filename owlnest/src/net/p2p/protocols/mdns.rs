@@ -56,6 +56,7 @@ pub(crate) enum InEvent {
     HasNode(PeerId, Sender<bool>),
 }
 
+/// A handle that can communicate with the behaviour within the swarm.
 #[derive(Debug, Clone)]
 pub struct Handle {
     sender: mpsc::Sender<InEvent>,
@@ -96,7 +97,7 @@ pub(crate) fn map_in_event(ev: InEvent, behav: &mut Behaviour) {
     }
 }
 
-pub fn ev_dispatch(ev: &OutEvent, swarm: &mut Swarm) {
+pub(crate) fn ev_dispatch(ev: &OutEvent, swarm: &mut Swarm) {
     #[cfg(any(feature = "libp2p-protocols", feature = "libp2p-kad"))]
     match ev.clone() {
         libp2p::mdns::Event::Discovered(list) => {
@@ -112,7 +113,7 @@ pub fn ev_dispatch(ev: &OutEvent, swarm: &mut Swarm) {
     }
 }
 
-pub(crate) mod cli {
+pub mod cli {
     use super::*;
     use clap::Subcommand;
 

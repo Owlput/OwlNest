@@ -12,6 +12,9 @@ use tracing::Level;
 use tracing_log::LogTracer;
 use tracing_subscriber::{prelude::__tracing_subscriber_SubscriberExt, Layer};
 
+/// Module for the intergrated command line interface.
+mod cli;
+
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let config = match read_config("./owlnest_config.toml") {
         Ok(v) => v,

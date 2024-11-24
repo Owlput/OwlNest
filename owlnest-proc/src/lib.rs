@@ -150,7 +150,7 @@ pub fn generate_manager(_attr: TokenStream, item: TokenStream) -> TokenStream {
             #(pub #idents3:#paths2::Handle,)*
         }
         impl HandleBundle{
-            pub fn new(buffer: usize,swarm_event_source:&EventSender)->(Self,RxBundle){
+            pub(crate) fn new(buffer: usize,swarm_event_source:&EventSender)->(Self,RxBundle){
                 let swarm = SwarmHandle::new(buffer);
                 #(let #idents4 = #paths3::Handle::new(buffer,swarm_event_source);)*
                 (Self{
@@ -162,6 +162,9 @@ pub fn generate_manager(_attr: TokenStream, item: TokenStream) -> TokenStream {
                 })
             }
         }
+        /// Manager of the entire libp2p swarm, including handles
+        /// for the swarm and its behaviours.  
+        /// The handle to the executor is also included.
         #[derive(Clone)]
         pub struct Manager{
             handle_bundle:Arc<HandleBundle>,
@@ -180,21 +183,28 @@ pub fn generate_manager(_attr: TokenStream, item: TokenStream) -> TokenStream {
             {
                 Self { handle_bundle,identity, executor, event_out}
             }
+            /// Get the handle to the executor.
             pub fn executor(&self)->&tokio::runtime::Handle{
                 &self.executor
             }
+            /// Get the identity of this swarm.
             pub fn identity(&self)->&IdentityUnion{
                 &self.identity
             }
+            /// Get the swarm handle.
             pub fn swarm(&self)-> &SwarmHandle{
                 &self.handle_bundle.swarm
             }
+            /// Get the event channel.
             pub fn event_subscriber(&self) -> tokio::sync::broadcast::Sender<Arc<super::SwarmEvent>>{
                 self.event_out.clone()
             }
-            #(pub fn #idents9(&self)->&#paths4::Handle{
+            #(
+            /// Get the corresponding handle to the behaviour.
+            pub fn #idents9(&self)->&#paths4::Handle{
                 &self.handle_bundle.#idents10
-            })*
+            }
+            )*
         }
     }
     .into()
