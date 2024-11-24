@@ -10,11 +10,14 @@ use tokio::sync::{mpsc, oneshot};
 use tracing::{debug, info, trace};
 
 pub use libp2p::kad;
+/// An alias to the behaviour with in-memory record store.
 pub type Behaviour = kad::Behaviour<kad::store::MemoryStore>;
+/// An ailas to `libp2p::kad::Event` for unified naming.
 pub type OutEvent = kad::Event;
 pub use libp2p::kad::PROTOCOL_NAME;
 
-#[derive(Debug, Serialize, Deserialize)]
+/// Equivalent to `libp2p::kad::Config` that supports `serde`.
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Config {
     max_packet_size: usize,
     query_config: config::QueryConfig,
@@ -30,6 +33,15 @@ pub struct Config {
     automatic_bootstrap_throttle: Option<Duration>,
 }
 impl Config {
+    /// Convert to `libp2p::kad::Config` with a ptotocol string.  
+    /// ### Protocol string  
+    /// The protocol string is used to distinguish between different
+    /// kadelima networks.
+    /// ### Prevent unnecessary network merging
+    /// If two kadelima networks are different enough
+    /// they should use different protocol string to prevent merging.  
+    /// Merging different kadlima networks will reduce effeciency of both
+    /// networks due to extra peers that aren't of help.
     pub fn into_config(self, protocol: String) -> kad::Config {
         let Config {
             max_packet_size,
@@ -84,6 +96,7 @@ impl Default for Config {
     }
 }
 
+/// Equivalent of `libp2p::kad::config` module with types that support `serde`.
 pub mod config {
     /// The `k` parameter of the Kademlia specification.
     ///
@@ -219,7 +232,10 @@ pub mod config {
         /// being looked up are tracked and returned in [`GetRecordOk::FinishedWithNoAdditionalRecord`].
         /// The write-back operation must be performed explicitly, if
         /// desired and after choosing a record from the results, via [`Behaviour::put_record_to`].
-        Enabled { max_peers: u16 },
+        Enabled {
+            /// Maximum amount of peers to store in the cache.
+            max_peers: u16,
+        },
     }
     impl From<Caching> for super::kad::Caching {
         fn from(value: Caching) -> Self {
@@ -239,6 +255,7 @@ pub(crate) enum InEvent {
     SetMode(Option<kad::Mode>),
 }
 
+/// A handle that can communicate with the behaviour within the swarm.
 #[derive(Debug, Clone)]
 pub struct Handle {
     sender: mpsc::Sender<InEvent>,
@@ -279,9 +296,31 @@ impl Handle {
         )
     }
     generate_handler_method!(
+        /// Mannually insert a record to the store.
         InsertNode:insert_node(peer_id:PeerId, address:Multiaddr)->kad::RoutingUpdate;
+        /// Start bootstrapping.
+        /// ## Bootstrapping in kadlima network
+        /// Bootstrapping means perform a walk-through of the network to gain
+        /// more information of the network. Between walk-throughs(bootstrappings),
+        /// some peer may join the network while others may leave, so regular 
+        /// bootstrapping will help maintain a healthy network with up-to-date
+        /// information.
+        /// ## Bootstrapping on a newly started peer
+        /// For a newly started peer, its kadlima record store is empty, which means
+        /// the new peer have no idea of the network, hence unable to query for
+        /// information of the network(there is no one to talk to). So you should
+        /// manually insert some record(at least one known and reachable peer) for 
+        /// bootstrapping.
+        /// ### Hijaking
+        /// If the node used for initial bootstrapping is malicious, the new peer
+        /// is vulnerable to [sybil attack](https://ssg.lancs.ac.uk/wp-content/uploads/ndss_preprint.pdf),
+        /// which means higher chances of encounting other malicious peers that
+        /// may breach trusts and consensus.   
+        /// So it is VERY important to choose bootstrapping nodes carefully and
+        /// only use those peers you trust rather than a random node.
         BootStrap:bootstrap()->Result<kad::QueryId,kad::NoKnownPeers>;
     );
+    /// Start a query that goes through the entire network.
     pub async fn query(&self, peer_id: PeerId) -> Vec<kad::QueryResult> {
         let mut listener = self.swarm_event_source.subscribe();
         let (callback_tx, callback_rx) = oneshot::channel();
@@ -313,6 +352,7 @@ impl Handle {
         ));
         handle.await.unwrap()
     }
+    /// Perform a lookup on local peer store.
     pub async fn lookup(&self, peer_id: &PeerId) -> Option<kad::Addresses> {
         self.tree_map
             .read()
@@ -320,9 +360,18 @@ impl Handle {
             .get(peer_id)
             .cloned()
     }
+    /// Get all records stored on local node.
     pub async fn all_records(&self) -> BTreeMap<PeerId, kad::Addresses> {
         self.tree_map.read().expect("Lock not poisoned.").clone()
     }
+    /// Set the current kadelima behaviour mode.
+    /// ### Client mode
+    /// Only listen on the network for updates without 
+    /// sharing the local peer store.
+    /// ### Server mode
+    /// Actively publish records in the local store.
+    /// ### Routing table
+    /// Only peers in `server` mode will be added to routing tables.
     pub async fn set_mode(&self, mode: Option<kad::Mode>) -> Result<kad::Mode, ()> {
         let ev = InEvent::SetMode(mode);
         let mut listener = self.swarm_event_source.subscribe();
@@ -357,7 +406,7 @@ pub(crate) fn map_in_event(ev: InEvent, behav: &mut Behaviour) {
     }
 }
 
-pub fn ev_dispatch(ev: &OutEvent) {
+pub(crate) fn ev_dispatch(ev: &OutEvent) {
     use kad::Event::*;
     match ev{
         InboundRequest { request } => info!("Incoming request: {:?}",request),
@@ -368,7 +417,7 @@ pub fn ev_dispatch(ev: &OutEvent) {
     }
 }
 
-pub(crate) mod cli {
+pub mod cli {
     use super::*;
     use clap::{Subcommand, ValueEnum};
 

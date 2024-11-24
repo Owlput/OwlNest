@@ -6,31 +6,53 @@ use std::{fmt::Debug, sync::Arc};
 use tokio::select;
 use tracing::{trace, trace_span, warn};
 
+/// Code used to compose the behaviour used in swarm.
+#[allow(missing_docs)]
 pub mod behaviour;
+
+/// Adapter for the internal command line interface.
 pub mod cli;
+
 mod event_handlers;
+
+/// Handle for the swarm itself.  
+/// Doesn't include handles for the behaviours inside of the swarm.
 pub mod handle;
+
+/// Code used to compose the swarm manager.
 pub mod manager;
+
+/// Events that can be emitted by the swarm.
 pub mod out_event;
 
 pub use libp2p::core::ConnectedPoint;
 pub use libp2p::swarm::ConnectionId;
 pub use manager::Manager;
+
+/// A broadcast sender that can be used to tap into swarm events.
 pub type EventSender = tokio::sync::broadcast::Sender<Arc<SwarmEvent>>;
 
 use super::{identity::IdentityUnion, SwarmConfig};
 pub use behaviour::BehaviourEvent;
 use event_handlers::*;
 
+/// The libp2p swarm with generics filled with the behaviour.
 pub type Swarm = libp2p::Swarm<behaviour::Behaviour>;
+/// Events emitted by swarm with generics filled with the behaviour.
 pub type SwarmEvent = libp2p::swarm::SwarmEvent<BehaviourEvent>;
 
+/// Config that is used to *setup* the swarm.  
+/// Don't confuse this with `libp2p::swarm::Config`, this doesn't contain
+/// configurations for the swarm itself.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Config {
     /// Path to identity file.  
     /// Will generate random identity if left blank.
     /// Will create the file if it doesn't exist.
     pub identity_path: String,
+    /// Buffer size for the inner swarm event queue waiting to be processed.  
+    /// Swarm events need to be consumed for the swarm to make progress,
+    /// setting this value too low may result in low throughput.
     pub swarm_event_buffer_size: usize,
     /// When swarm event buffer is almost full,
     /// the swarm won't be polled(backpressure).
@@ -48,13 +70,18 @@ impl Default for Config {
     }
 }
 
+/// Builder for the swarm.
+#[derive(Default)]
 pub struct Builder {
     config: SwarmConfig,
 }
 impl Builder {
+    /// Create a new builder with the given `SwarmConfig`.
     pub fn new(config: SwarmConfig) -> Self {
         Self { config }
     }
+    /// Build the swarm and expose the manager to the swarm.  
+    /// You should use different executor for different swarms.
     pub fn build(self, ident: IdentityUnion, executor: tokio::runtime::Handle) -> Manager {
         let span = trace_span!("Swarm Spawn");
         let entered = span.enter();
@@ -177,7 +204,7 @@ use libp2p_swarm::{derive_prelude::ListenerId, DialError};
 use tokio::sync::oneshot::*;
 
 #[derive(Debug)]
-pub enum InEvent {
+pub(crate) enum InEvent {
     Dial(Multiaddr, Sender<Result<(), DialError>>),
     Listen(
         Multiaddr,

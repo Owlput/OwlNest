@@ -1,6 +1,7 @@
 use owlnest_macro::behaviour_select;
 use owlnest_proc::{generate_behaviour_select, with_field};
 
+
 #[cfg_attr(any(feature = "owlnest-protocols", feature = "owlnest-messaging"), with_field({pub messaging:Messaging}))]
 #[cfg_attr(any(feature = "owlnest-protocols", feature = "owlnest-advertise"), with_field({pub advertise:Advertise}))]
 #[cfg_attr(any(feature = "owlnest-protocols", feature = "owlnest-blob"), with_field({pub blob:Blob}))]

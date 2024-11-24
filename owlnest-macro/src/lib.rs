@@ -18,8 +18,10 @@ pub mod utils {
     /// Variant can hold no data(except callback), which means leaving the function parameter blank.  
     #[macro_export]
     macro_rules! generate_handler_method_blocking {
-    {$($variant:ident:$name:ident($($params:ident:$param_type:ty)*)->$return_type:ty;)+} => {
-        $(pub fn $name(&self,$($params:$param_type)*)->$return_type{
+    {$($(#[$metas:meta])*$variant:ident:$name:ident($($params:ident:$param_type:ty)*)->$return_type:ty;)+} => {
+        $(
+            $(#[$metas])*
+            pub fn $name(&self,$($params:$param_type)*)->$return_type{
             use tokio::sync::oneshot::*;
             let (tx,rx) = channel();
             let ev = InEvent::$variant($($params,)*tx);

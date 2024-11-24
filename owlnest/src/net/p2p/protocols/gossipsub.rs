@@ -24,7 +24,7 @@ type TopicStore = Box<dyn store::TopicStore + Send + Sync>;
 type MessageStore = Box<dyn store::MessageStore + Send + Sync>;
 
 #[derive(Debug)]
-pub enum InEvent {
+pub(crate) enum InEvent {
     /// Subscribe to the topic.  
     /// Returns `Ok(true)` if the subscription worked. Returns `Ok(false)` if we were already
     /// subscribed.
@@ -55,12 +55,16 @@ pub enum InEvent {
     AllPeersWithTopic(oneshot::Sender<Box<[(PeerId, Box<[TopicHash]>)]>>),
 }
 
+/// Types of different supported hashers for the topic.
 #[derive(Debug, Copy, Clone, ValueEnum, PartialEq, Eq, Serialize, Deserialize)]
 pub enum HashType {
+    /// SHA256 algorithm.
     Sha256,
+    /// Equivalent to using no hasher.
     Identity,
 }
 impl HashType {
+    /// Hash the given topic string.
     pub fn hash(&self, topic_string: String) -> TopicHash {
         match self {
             Self::Sha256 => Sha256Hash::hash(topic_string),
@@ -133,13 +137,14 @@ impl ReadableTopic {
     }
 }
 
+/// A handle that can communicate with the behaviour within the swarm.
 #[allow(unused)]
 #[derive(Clone)]
 pub struct Handle {
     swarm_event_source: EventSender,
     sender: mpsc::Sender<InEvent>,
-    pub topic_store: Arc<TopicStore>,
-    pub message_store: Arc<MessageStore>,
+    topic_store: Arc<TopicStore>,
+    message_store: Arc<MessageStore>,
 }
 impl Handle {
     pub(crate) fn new(
@@ -409,7 +414,7 @@ mod config {
     }
 }
 
-pub(crate) mod cli {
+pub mod cli {
     use super::{Handle, HashType};
     use clap::Subcommand;
     use libp2p::{
@@ -637,6 +642,7 @@ pub(crate) mod cli {
     }
 }
 
+/// Traits and types related to storing string-hash map and messages.
 pub mod store {
     use dashmap::{DashMap, DashSet};
     use libp2p::{
@@ -646,25 +652,45 @@ pub mod store {
 
     use super::ReadableTopic;
 
+    /// Trait for topic stores.
     pub trait TopicStore {
+        /// Insert a topic record with only its string representation.
         fn insert_string(&self, topic_string: String);
+        /// Insert a topic record with only its string representation.
         fn insert_hash(&self, topic_hash: TopicHash) -> bool;
+        /// Try to get the string representation of the topic.
         fn try_map(&self, topic_hash: &TopicHash) -> Option<String>;
+        /// Get all participans of the topic.  
+        /// Will return `None` if the topic is not known.
         fn participants(&self, topic_hash: &TopicHash) -> Option<Box<[PeerId]>>;
+        /// Called when a new peer is subscribed to the topic.
         fn join_topic(&self, peer: &PeerId, topic_hash: &TopicHash) -> bool;
+        /// Called when a peer is unsubscribed from the topic.
         fn leave_topic(&self, peer: &PeerId, topic_hash: &TopicHash) -> bool;
+        /// Called when the local peer is subscribing to the topic.
         fn subscribe_topic(&self, topic: ReadableTopic) -> bool;
+        /// Called when the local peer is unsubscribing from the topic.
         fn unsubscribe_topic(&self, topic: &TopicHash) -> bool;
+        /// Get all topics that only has known hash
         fn hash_topics(&self) -> Box<[TopicHash]>;
+        /// Get all topics whose string repr and hash are both known.
         fn readable_topics(&self) -> Box<[(TopicHash, String)]>;
+        /// Get all subscribed topics.
         fn subscribed_topics(&self) -> Box<[ReadableTopic]>;
     }
+
+    /// Trait for message stores.
     pub trait MessageStore {
+        /// Get all messages related to the topic.
         fn get_messages(&self, topic_hash: &TopicHash) -> Option<Box<[Message]>>;
+        /// Called when a new message is received on the topic.
         fn insert_message(&self, message: Message) -> Result<(), ()>;
+        /// Clear the store of the topic.  
+        /// Will clear everything if not supplied with a topic hash.
         fn clear_message(&self, topic: Option<&TopicHash>);
     }
 
+    /// An in-memory message store.
     #[derive(Debug, Default)]
     pub struct MemTopicStore {
         populated: DashMap<TopicHash, (String, DashSet<PeerId>)>,
@@ -788,6 +814,8 @@ pub mod store {
                 .collect()
         }
     }
+
+    /// An in-memory message store.
     #[derive(Debug, Clone, Default)]
     pub struct MemMessageStore {
         inner: DashMap<TopicHash, Vec<super::Message>>,
@@ -817,24 +845,27 @@ pub mod store {
     }
 }
 
+/// Alternative types that support `serde`.
 pub mod serde_types {
     use libp2p::gossipsub;
     use serde::{Deserialize, Serialize};
 
+    /// Equivalent of `libp2p::gossipsub::TopicHash`.
     #[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
     pub struct TopicHash {
         /// The topic hash. Stored as a string to align with the protobuf API.
         hash: String,
     }
     impl TopicHash {
+        /// Build a `TopicHash` from raw string.
         pub fn from_raw(hash: impl Into<String>) -> TopicHash {
             TopicHash { hash: hash.into() }
         }
-
+        /// Get the internal representation of the `TopicHash`.
         pub fn into_string(self) -> String {
             self.hash
         }
-
+        /// Get a refrence to the internal.
         pub fn as_str(&self) -> &str {
             &self.hash
         }
@@ -849,6 +880,11 @@ pub mod serde_types {
     impl From<TopicHash> for gossipsub::TopicHash {
         fn from(value: TopicHash) -> Self {
             gossipsub::TopicHash::from_raw(value.hash)
+        }
+    }
+    impl AsRef<String> for TopicHash{
+        fn as_ref(&self) -> &String {
+            &self.hash
         }
     }
 }

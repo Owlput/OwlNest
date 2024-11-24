@@ -5,7 +5,7 @@ pub use client::Behaviour;
 pub use client::Event as OutEvent;
 
 #[allow(unused)]
-pub(crate) mod cli {
+pub mod cli {
     use super::*;
     use crate::net::p2p::swarm::{cli::format_transport_error, manager::Manager};
     use clap::Subcommand;

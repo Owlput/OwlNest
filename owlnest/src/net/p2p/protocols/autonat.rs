@@ -18,6 +18,7 @@ pub(crate) enum InEvent {
     GetNatStatus(oneshot::Sender<(NatStatus, usize)>),
 }
 
+/// A handle that can communicate with the behaviour within the swarm.
 #[derive(Debug, Clone)]
 #[allow(unused)]
 pub struct Handle {
@@ -39,8 +40,12 @@ impl Handle {
         )
     }
     generate_handler_method!(
+        /// Add a server(endpoint) that the behaviour can use to probe(test)
+        /// for public reachability.
         AddServer:add_server(peer:PeerId,address:Option<Multiaddr>,);
+        /// Remove a server(endpoint) the behaviour can use.
         RemoveServer:remove_server(peer:PeerId);
+        /// Tell the behaivour to probe the endpoint now.
         Probe:probe(candidate:Multiaddr);
     );
     generate_handler_method!(GetNatStatus:get_nat_status()->(NatStatus,usize););
@@ -67,6 +72,7 @@ pub(crate) fn ev_dispatch(ev: &OutEvent) {
     }
 }
 
+/// Adapter for the intergeated command line interface.
 pub mod cli {
     use clap::Subcommand;
     use libp2p::{Multiaddr, PeerId};
@@ -107,6 +113,7 @@ pub mod cli {
         GetNatStatus,
     }
 
+    /// The function used to handle the first level of `autonat` command.
     pub async fn handle_autonat(handle: &Handle, command: AutoNat) {
         match command {
             AutoNat::AddServer { peer_id, address } => {

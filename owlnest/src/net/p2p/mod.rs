@@ -1,5 +1,8 @@
+/// Code for importing and exporting identities(keypairs).
 pub mod identity;
+/// All protocols supported by OwlNest.
 pub mod protocols;
+/// The libp2p swarm that manages all connections.
 pub mod swarm;
 
 use std::sync::Arc;
@@ -14,23 +17,33 @@ use tokio::sync::Notify;
 pub use libp2p::Multiaddr;
 pub use libp2p::PeerId;
 
-#[derive(Debug, Default, Serialize, Deserialize)]
+/// Config struct for the libp2p swarm that can be read from or write into a file.
+#[derive(Debug, Default, Clone, Serialize, Deserialize)]
 pub struct SwarmConfig {
+    /// General config for the swarm. Please refer to the inner struct for more information.
     pub swarm: swarm::Config,
+    /// Config for `libp2p-kad`.
     #[cfg(any(feature = "libp2p-protocols", feature = "libp2p-kad"))]
     pub kad: kad::Config,
+    /// Config for `libp2p-identify`.
     #[cfg(any(feature = "libp2p-protocols", feature = "libp2p-identify"))]
     pub identify: identify::Config,
+    /// Config for `libp2p-mdns`.
     #[cfg(any(feature = "libp2p-protocols", feature = "libp2p-mdns"))]
     pub mdns: mdns::Config,
+    /// Config for `owlnest-messaging`.
     #[cfg(any(feature = "owlnest-protocols", feature = "owlnest-messaging"))]
     pub messaging: messaging::Config,
+    /// Config for `owlnest-blob`.
     #[cfg(any(feature = "owlnest-protocols", feature = "owlnest-blob"))]
     pub blob: blob::config::Config,
+    /// Config for `owlnest-advertise`
     #[cfg(any(feature = "owlnest-protocols", feature = "owlnest-advertise"))]
     pub advertise: advertise::config::Config,
+    /// Config for server part of `libp2p-relay`
     #[cfg(any(feature = "libp2p-protocols", feature = "libp2p-relay-server"))]
     pub relay_server: relay_server::Config,
+    /// Config for client part of `libp2p-relay`
     #[cfg(any(feature = "libp2p-protocols", feature = "libp2p-gossipsub"))]
     pub gossipsub: gossipsub::Config,
 }
@@ -48,9 +61,12 @@ mod handler_prelude {
     pub use std::task::Poll;
 }
 
+/// Some utility functions for setting up tests
 pub mod test_suit {
 
     use super::*;
+    /// Set up a swarm with default config and random identity
+    /// on a dedicated `tokio` runtime.
     pub fn setup_default() -> (Manager, Arc<Notify>) {
         let rt = tokio::runtime::Builder::new_multi_thread()
             .enable_all()

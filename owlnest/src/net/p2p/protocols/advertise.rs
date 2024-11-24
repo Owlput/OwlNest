@@ -5,6 +5,7 @@ use owlnest_macro::{generate_handler_method, listen_event, with_timeout};
 use std::sync::{atomic::AtomicU64, Arc};
 use tokio::sync::mpsc;
 
+/// A handle that can communicate with the behaviour within the swarm.
 #[derive(Debug, Clone)]
 pub struct Handle {
     sender: mpsc::Sender<InEvent>,
@@ -129,7 +130,7 @@ impl Handle {
     }
 }
 
-pub(crate) mod cli {
+pub mod cli {
 
     use super::*;
     use clap::Subcommand;

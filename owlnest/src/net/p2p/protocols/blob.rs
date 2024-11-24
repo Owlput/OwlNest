@@ -7,6 +7,8 @@ use std::path::Path;
 use std::time::Duration;
 use tokio::sync::{mpsc, oneshot};
 use tracing::{trace, warn};
+
+/// A handle that can communicate with the behaviour within the swarm.
 #[derive(Debug, Clone)]
 #[allow(dead_code)]
 pub struct Handle {
@@ -14,7 +16,7 @@ pub struct Handle {
     swarm_event_source: EventSender,
 }
 impl Handle {
-    pub fn new(buffer: usize, swarm_event_source: &EventSender) -> (Self, mpsc::Receiver<InEvent>) {
+    pub(crate) fn new(buffer: usize, swarm_event_source: &EventSender) -> (Self, mpsc::Receiver<InEvent>) {
         let (tx, rx) = mpsc::channel(buffer);
         (
             Self {
@@ -24,7 +26,10 @@ impl Handle {
             rx,
         )
     }
-
+    /// Send the file in the given path to the target peer.  
+    /// A request will be sent first, no chunk of the file will be sent
+    /// until the remote accepted the request.  
+    /// Folders are not allowed.  
     pub async fn send_file(
         &self,
         to: PeerId,
@@ -152,7 +157,7 @@ impl Handle {
     );
 }
 
-pub(crate) mod cli {
+pub mod cli {
     use super::Handle;
     use clap::Subcommand;
     use prettytable::table;
