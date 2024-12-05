@@ -16,7 +16,10 @@ pub struct Handle {
     swarm_event_source: EventSender,
 }
 impl Handle {
-    pub(crate) fn new(buffer: usize, swarm_event_source: &EventSender) -> (Self, mpsc::Receiver<InEvent>) {
+    pub(crate) fn new(
+        buffer: usize,
+        swarm_event_source: &EventSender,
+    ) -> (Self, mpsc::Receiver<InEvent>) {
         let (tx, rx) = mpsc::channel(buffer);
         (
             Self {

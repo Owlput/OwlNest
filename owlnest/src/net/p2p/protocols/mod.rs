@@ -44,7 +44,7 @@ pub mod messaging;
 /// ## About this protocol  
 /// Allow local peer to connect to a relay(lighthouse) to extend connectivity.
 /// ## Security & Privacy
-/// The relay cannot decrypt messages(bytes) send through the relay connection. 
+/// The relay cannot decrypt messages(bytes) send through the relay connection.
 /// But the IP addresses are known for both ends.
 #[cfg(any(feature = "libp2p-protocols", feature = "libp2p-relay-client"))]
 pub mod relay_client;
@@ -55,7 +55,7 @@ pub mod relay_client;
 /// Allow local peer to function as a relay(lighthouse) to provide
 /// extended connectivity for other peers.
 /// ## Security & Privacy
-/// The relay cannot decrypt messages(bytes) send through the relay connection. 
+/// The relay cannot decrypt messages(bytes) send through the relay connection.
 /// But the IP addresses are known for both ends.
 #[cfg(any(feature = "libp2p-protocols", feature = "libp2p-relay-server"))]
 pub mod relay_server;
