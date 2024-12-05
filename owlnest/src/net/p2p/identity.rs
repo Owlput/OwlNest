@@ -21,7 +21,7 @@ impl IdentityUnion {
         let peer_id = PeerId::from(keypair.public());
         Self { keypair, peer_id }
     }
-    
+
     /// Get the public key of the keypair.
     pub fn get_pubkey(&self) -> identity::PublicKey {
         self.keypair.public()

@@ -3,12 +3,11 @@
 #![feature(hash_extract_if)]
 #![feature(extract_if)]
 
-
 /// Code related to networking.
 // #[deny(missing_docs)]
 pub mod net;
 
-/// Helper code. 
+/// Helper code.
 pub mod utils;
 // pub mod db;
 

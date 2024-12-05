@@ -302,20 +302,20 @@ impl Handle {
         /// ## Bootstrapping in kadlima network
         /// Bootstrapping means perform a walk-through of the network to gain
         /// more information of the network. Between walk-throughs(bootstrappings),
-        /// some peer may join the network while others may leave, so regular 
+        /// some peer may join the network while others may leave, so regular
         /// bootstrapping will help maintain a healthy network with up-to-date
         /// information.
         /// ## Bootstrapping on a newly started peer
         /// For a newly started peer, its kadlima record store is empty, which means
         /// the new peer have no idea of the network, hence unable to query for
         /// information of the network(there is no one to talk to). So you should
-        /// manually insert some record(at least one known and reachable peer) for 
+        /// manually insert some record(at least one known and reachable peer) for
         /// bootstrapping.
         /// ### Hijaking
         /// If the node used for initial bootstrapping is malicious, the new peer
         /// is vulnerable to [sybil attack](https://ssg.lancs.ac.uk/wp-content/uploads/ndss_preprint.pdf),
         /// which means higher chances of encounting other malicious peers that
-        /// may breach trusts and consensus.   
+        /// may breach trusts and consensus.
         /// So it is VERY important to choose bootstrapping nodes carefully and
         /// only use those peers you trust rather than a random node.
         BootStrap:bootstrap()->Result<kad::QueryId,kad::NoKnownPeers>;
@@ -366,7 +366,7 @@ impl Handle {
     }
     /// Set the current kadelima behaviour mode.
     /// ### Client mode
-    /// Only listen on the network for updates without 
+    /// Only listen on the network for updates without
     /// sharing the local peer store.
     /// ### Server mode
     /// Actively publish records in the local store.

@@ -18,7 +18,7 @@ impl SwarmHandle {
         let (tx, rx) = mpsc::channel(buffer);
         (Self { sender: tx }, rx)
     }
-    
+
     /// Dial the address.  
     /// Should be used in synchronous contexts.
     pub fn dial_blocking(&self, addr: &Multiaddr) -> Result<(), DialError> {

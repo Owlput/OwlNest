@@ -56,7 +56,7 @@ impl Handle {
         )
     }
     /// Send a message to the target peer.  
-    /// Will return the time taken between sending and acknowledgement. 
+    /// Will return the time taken between sending and acknowledgement.
     /// If the peer isn't connected, an error will be returned.
     pub async fn send_message(
         &self,
@@ -85,6 +85,10 @@ impl Handle {
         }
     }
     generate_handler_method!(ListConnected:list_connected()->Box<[PeerId]>;);
+    /// Get a reference to the internal message store.
+    pub fn message_store(&self) -> &MessageStore {
+        &self.message_store
+    }
     fn next_id(&self) -> u64 {
         self.counter.fetch_add(1, Ordering::Relaxed)
     }
@@ -162,7 +166,7 @@ pub mod store {
         fn push_message(&self, remote: &PeerId, message: Message);
         /// Get all peers that has a record in the store
         fn list_all_peers(&self) -> Box<[PeerId]>;
-        /// Clear the message history of the given peer permanently, 
+        /// Clear the message history of the given peer permanently,
         /// but peer records will be retained.
         /// Will clear all history if not supplied with a peer ID.
         fn clear_message(&self, peer_id: Option<&PeerId>);
@@ -171,7 +175,7 @@ pub mod store {
     }
 
     /// In-memory volatile message store.
-    /// All records will be lost permanently once the store is dropped 
+    /// All records will be lost permanently once the store is dropped
     /// e.g. the peer is shutdown or sudden power loss.
     #[derive(Debug, Clone, Default)]
     pub struct MemMessageStore {
