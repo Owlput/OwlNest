@@ -85,6 +85,10 @@ impl Handle {
         }
     }
     generate_handler_method!(ListConnected:list_connected()->Box<[PeerId]>;);
+    /// Get a reference to the internal message store.
+    pub fn message_store(&self)->&MessageStore{
+        &self.message_store
+    }
     fn next_id(&self) -> u64 {
         self.counter.fetch_add(1, Ordering::Relaxed)
     }
