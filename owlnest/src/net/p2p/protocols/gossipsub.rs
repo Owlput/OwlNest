@@ -611,9 +611,11 @@ pub mod store {
     /// Trait for topic stores.
     pub trait TopicStore {
         /// Insert a topic record with only its string representation.
-        fn insert_topic(&self, topic_string: String, topic_hash: TopicHash);
+        /// Returns `true` when the topic is new, or `false` otherwise.
+        fn insert_topic(&self, topic_string: String, topic_hash: &TopicHash) -> bool;
         /// Insert a topic record with only its string representation.
-        fn insert_hash(&self, topic_hash: TopicHash) -> bool;
+        /// Returns `true` when the topic is new, or `false` otherwise.
+        fn insert_hash(&self, topic_hash: &TopicHash) -> bool;
         /// Try to get the string representation of the topic.
         fn try_map(&self, topic_hash: &TopicHash) -> Option<String>;
         /// Get all participans of the topic.  
@@ -704,20 +706,22 @@ pub mod mem_store {
         subscribed: DashSet<TopicHash>,
     }
     impl TopicStore for MemTopicStore {
-        fn insert_topic(&self, topic_string: String, topic_hash: TopicHash) {
-            if let Some((_, list)) = self.vacant.remove(&topic_hash) {
-                self.populated.insert(topic_hash, (topic_string, list));
-                return; // move the entry from vacant to populated if present.
+        fn insert_topic(&self, topic_string: String, topic_hash: &TopicHash) -> bool {
+            if let Some((hash, list)) = self.vacant.remove(&topic_hash) {
+                self.populated.insert(hash, (topic_string, list));
+                return false; // move the entry from vacant to populated if present.
             };
-            if self.populated.get_mut(&topic_hash).is_none() {
+            if self.populated.get_mut(topic_hash).is_none() {
                 // Only insert when not present.
                 self.populated
-                    .insert(topic_hash, (topic_string, Default::default()));
+                    .insert(topic_hash.clone(), (topic_string, Default::default()));
+                return true;
             }
+            false
         }
         /// Returns true when the topic is not present anywhere(false when already present or readable).
-        fn insert_hash(&self, topic_hash: TopicHash) -> bool {
-            if self.vacant.get(&topic_hash).is_some() || self.populated.get(&topic_hash).is_some() {
+        fn insert_hash(&self, topic_hash: &TopicHash) -> bool {
+            if self.vacant.get(topic_hash).is_some() || self.populated.get(topic_hash).is_some() {
                 return false; // The topic is present
             }
             self.vacant.insert(topic_hash.clone(), DashSet::default());
@@ -750,7 +754,7 @@ pub mod mem_store {
                     .map(|entry| entry.value().iter().map(|entry| *entry.key()).collect()))
         }
         fn join_topic(&self, peer: &PeerId, topic_hash: &TopicHash) -> bool {
-            self.insert_hash(topic_hash.clone());
+            self.insert_hash(topic_hash);
             if let Some(mut entry) = self.vacant.get_mut(topic_hash) {
                 return entry.value_mut().insert(*peer);
             }
@@ -772,9 +776,9 @@ pub mod mem_store {
         /// This will add to existing store if not presnet.
         fn subscribe_topic(&self, topic: TopicHash, topic_string: Option<String>) -> bool {
             if let Some(topic_string) = topic_string {
-                self.insert_topic(topic_string, topic.clone());
+                self.insert_topic(topic_string, &topic);
             } else {
-                self.insert_hash(topic.clone());
+                self.insert_hash(&topic);
             }
             self.subscribed.insert(topic)
         }
@@ -821,19 +825,28 @@ pub mod mem_store {
         use super::{store::TopicStore, MemTopicStore};
 
         #[test]
-        fn promote_when_string_is_available() {
+        fn fallthrough_and_promote_when_string_is_available() {
             let store = MemTopicStore::default();
+            // test promotion when using insert
             let string: String = "this is a topic hash".into();
             let hash = TopicHash::from_raw(string.clone());
-            store.insert_hash(hash.clone());
+            assert!(store.insert_hash(&hash));
             assert!(store.populated.get(&hash).is_none() && store.vacant.get(&hash).is_some());
-            store.insert_topic(string, hash.clone());
+            assert!(!store.insert_topic(string, &hash));
             assert!(store.populated.get(&hash).is_some() && store.vacant.get(&hash).is_none());
+            // don't demote
+            assert!(!store.insert_hash(&hash));
+            assert!(store.populated.get(&hash).is_some() && store.vacant.get(&hash).is_none());
+
+            // test promotion when using subscribe
             let string: String = "this is also a topic hash".into();
             let hash = TopicHash::from_raw(string.clone());
-            store.subscribe_topic(hash.clone(), None);
+            assert!(store.subscribe_topic(hash.clone(), None));
             assert!(store.populated.get(&hash).is_none() && store.vacant.get(&hash).is_some());
-            store.subscribe_topic(hash.clone(), Some(string));
+            assert!(!store.subscribe_topic(hash.clone(), Some(string)));
+            assert!(store.populated.get(&hash).is_some() && store.vacant.get(&hash).is_none());
+            // don't demote
+            assert!(!store.subscribe_topic(hash.clone(), None));
             assert!(store.populated.get(&hash).is_some() && store.vacant.get(&hash).is_none());
         }
     }
