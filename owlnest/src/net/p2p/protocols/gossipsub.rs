@@ -11,13 +11,13 @@ pub use libp2p::gossipsub::{Hasher, IdentityHash, Sha256Hash, TopicHash};
 pub use libp2p::gossipsub::{Message, MessageAuthenticity, MessageId};
 pub use libp2p::gossipsub::{PublishError, SubscriptionError};
 use libp2p::PeerId;
+use mem_store::MemMessageStore;
+use mem_store::MemTopicStore;
 use owlnest_macro::generate_handler_method;
 use owlnest_macro::handle_callback_sender;
 use owlnest_macro::with_timeout;
 use serde::Deserialize;
 use serde::Serialize;
-use store::MemMessageStore;
-use store::MemTopicStore;
 use tokio::sync::{mpsc, oneshot};
 
 type TopicStore = Box<dyn store::TopicStore + Send + Sync>;
@@ -606,11 +606,7 @@ pub mod cli {
 
 /// Traits and types related to storing string-hash map and messages.
 pub mod store {
-    use dashmap::{DashMap, DashSet};
-    use libp2p::{
-        gossipsub::{Message, TopicHash},
-        PeerId,
-    };
+    use super::*;
 
     /// Trait for topic stores.
     pub trait TopicStore {
@@ -649,7 +645,57 @@ pub mod store {
         /// Will clear everything if not supplied with a topic hash.
         fn clear_message(&self, topic: Option<&TopicHash>);
     }
+}
 
+/// Alternative types that support `serde`.
+pub mod serde_types {
+    use libp2p::gossipsub;
+    use serde::{Deserialize, Serialize};
+
+    /// Equivalent of `libp2p::gossipsub::TopicHash`.
+    #[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
+    pub struct TopicHash {
+        /// The topic hash. Stored as a string to align with the protobuf API.
+        hash: String,
+    }
+    impl TopicHash {
+        /// Build a `TopicHash` from raw string.
+        pub fn from_raw(hash: impl Into<String>) -> TopicHash {
+            TopicHash { hash: hash.into() }
+        }
+        /// Get the internal representation of the `TopicHash`.
+        pub fn into_string(self) -> String {
+            self.hash
+        }
+        /// Get a refrence to the internal.
+        pub fn as_str(&self) -> &str {
+            &self.hash
+        }
+    }
+    impl From<gossipsub::TopicHash> for TopicHash {
+        fn from(value: gossipsub::TopicHash) -> Self {
+            Self {
+                hash: value.into_string(),
+            }
+        }
+    }
+    impl From<TopicHash> for gossipsub::TopicHash {
+        fn from(value: TopicHash) -> Self {
+            gossipsub::TopicHash::from_raw(value.hash)
+        }
+    }
+    impl AsRef<String> for TopicHash {
+        fn as_ref(&self) -> &String {
+            &self.hash
+        }
+    }
+}
+
+pub mod mem_store {
+    use dashmap::{DashMap, DashSet};
+
+    use super::store::{MessageStore, TopicStore};
+    use super::*;
     /// An in-memory message store.
     #[derive(Debug, Default)]
     pub struct MemTopicStore {
@@ -671,10 +717,7 @@ pub mod store {
         }
         /// Returns true when the topic is not present anywhere(false when already present or readable).
         fn insert_hash(&self, topic_hash: TopicHash) -> bool {
-            if self.populated.get(&topic_hash).is_some() {
-                return false; // The topic is present
-            }
-            if self.vacant.get(&topic_hash).is_some() {
+            if self.vacant.get(&topic_hash).is_some() || self.populated.get(&topic_hash).is_some() {
                 return false; // The topic is present
             }
             self.vacant.insert(topic_hash.clone(), DashSet::default());
@@ -728,21 +771,12 @@ pub mod store {
         /// Returns `true` when we have not subscribed before.  
         /// This will add to existing store if not presnet.
         fn subscribe_topic(&self, topic: TopicHash, topic_string: Option<String>) -> bool {
-            let is_subscribed = self.subscribed.insert(topic.clone());
-            if topic_string.is_none() {
-                if self.vacant.get(&topic).is_none() {
-                    // insert if not present
-                    self.vacant.insert(topic, Default::default());
-                }
-                return is_subscribed;
+            if let Some(topic_string) = topic_string {
+                self.insert_topic(topic_string, topic.clone());
+            } else {
+                self.insert_hash(topic.clone());
             }
-            if self.populated.get(&topic).is_none() {
-                self.vacant.remove(&topic);
-                // insert if not present
-                self.populated
-                    .insert(topic, (topic_string.unwrap(), Default::default()));
-            }
-            is_subscribed
+            self.subscribed.insert(topic)
         }
         fn unsubscribe_topic(&self, topic_hash: &TopicHash) -> bool {
             self.subscribed.remove(topic_hash).is_some()
@@ -780,48 +814,27 @@ pub mod store {
             self.inner.remove(topic.unwrap());
         }
     }
-}
+    #[cfg(test)]
+    mod test {
+        use libp2p::gossipsub::TopicHash;
 
-/// Alternative types that support `serde`.
-pub mod serde_types {
-    use libp2p::gossipsub;
-    use serde::{Deserialize, Serialize};
+        use super::{store::TopicStore, MemTopicStore};
 
-    /// Equivalent of `libp2p::gossipsub::TopicHash`.
-    #[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
-    pub struct TopicHash {
-        /// The topic hash. Stored as a string to align with the protobuf API.
-        hash: String,
-    }
-    impl TopicHash {
-        /// Build a `TopicHash` from raw string.
-        pub fn from_raw(hash: impl Into<String>) -> TopicHash {
-            TopicHash { hash: hash.into() }
-        }
-        /// Get the internal representation of the `TopicHash`.
-        pub fn into_string(self) -> String {
-            self.hash
-        }
-        /// Get a refrence to the internal.
-        pub fn as_str(&self) -> &str {
-            &self.hash
-        }
-    }
-    impl From<gossipsub::TopicHash> for TopicHash {
-        fn from(value: gossipsub::TopicHash) -> Self {
-            Self {
-                hash: value.into_string(),
-            }
-        }
-    }
-    impl From<TopicHash> for gossipsub::TopicHash {
-        fn from(value: TopicHash) -> Self {
-            gossipsub::TopicHash::from_raw(value.hash)
-        }
-    }
-    impl AsRef<String> for TopicHash {
-        fn as_ref(&self) -> &String {
-            &self.hash
+        #[test]
+        fn promote_when_string_is_available() {
+            let store = MemTopicStore::default();
+            let string: String = "this is a topic hash".into();
+            let hash = TopicHash::from_raw(string.clone());
+            store.insert_hash(hash.clone());
+            assert!(store.populated.get(&hash).is_none() && store.vacant.get(&hash).is_some());
+            store.insert_topic(string, hash.clone());
+            assert!(store.populated.get(&hash).is_some() && store.vacant.get(&hash).is_none());
+            let string: String = "this is also a topic hash".into();
+            let hash = TopicHash::from_raw(string.clone());
+            store.subscribe_topic(hash.clone(), None);
+            assert!(store.populated.get(&hash).is_none() && store.vacant.get(&hash).is_some());
+            store.subscribe_topic(hash.clone(), Some(string));
+            assert!(store.populated.get(&hash).is_some() && store.vacant.get(&hash).is_none());
         }
     }
 }
