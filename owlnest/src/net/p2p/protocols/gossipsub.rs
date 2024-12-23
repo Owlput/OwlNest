@@ -40,11 +40,11 @@ pub(crate) enum InEvent {
     },
     /// Publishes the message with the given topic to the network.  
     /// Duplicate messages will not be published, resulting in `PublishError::Duplicate`
-    PublishMessage(
-        TopicHash,
-        Box<[u8]>,
-        oneshot::Sender<Result<MessageId, PublishError>>,
-    ),
+    PublishMessage {
+        topic: TopicHash,
+        message: Box<[u8]>,
+        callback: oneshot::Sender<Result<MessageId, PublishError>>,
+    },
     /// Reject all messages from this peer.
     BanPeer(PeerId),
     /// Remove the peer from ban list.
@@ -101,7 +101,7 @@ pub struct Handle {
     message_store: Arc<MessageStore>,
 }
 impl Handle {
-    pub(crate) fn new(
+    pub(crate) fn new_with_mem_store(
         buffer: usize,
         swarm_event_source: &EventSender,
     ) -> (Self, mpsc::Receiver<InEvent>) {
@@ -121,8 +121,14 @@ impl Handle {
         &self,
         topic_string: impl Into<String>,
     ) -> Result<bool, SubscriptionError> {
-        self.subscribe_topic_hash(H::hash(topic_string.into()))
-            .await
+        let topic_string = topic_string.into();
+        let topic_hash = H::hash(topic_string.clone());
+        let result = self.subscribe_topic_hash(topic_hash.clone()).await;
+        if let Ok(true) = result {
+            self.topic_store
+                .subscribe_topic(topic_hash, Some(topic_string));
+        }
+        result
     }
     /// Use a topic hash to subscribe to a topic. Any type of hash can be used here.  
     /// Returns `Ok(true)` if the subscription worked. Returns `Ok(false)` if we were already
@@ -133,11 +139,15 @@ impl Handle {
     ) -> Result<bool, SubscriptionError> {
         let (tx, rx) = oneshot::channel();
         let ev = InEvent::SubscribeTopic {
-            topic_hash,
+            topic_hash: topic_hash.clone(),
             callback: tx,
         };
         self.sender.send(ev).await.expect("Send to succeed");
-        rx.await.unwrap()
+        let result = rx.await.unwrap();
+        if let Ok(true) = result {
+            self.topic_store.subscribe_topic(topic_hash, None);
+        }
+        result
     }
     /// Use a topic string to unsubscribe from a topic.  
     /// Returns [`Ok(true)`] if we were subscribed to this topic.
@@ -156,11 +166,15 @@ impl Handle {
     ) -> Result<bool, PublishError> {
         let (tx, rx) = oneshot::channel();
         let ev = InEvent::UnsubscribeTopic {
-            topic_hash,
+            topic_hash: topic_hash.clone(),
             callback: tx,
         };
         self.sender.send(ev).await.expect("Send to succeed");
-        rx.await.unwrap()
+        let result = rx.await.unwrap();
+        if let Ok(true) = result {
+            self.topic_store.unsubscribe_topic(&topic_hash);
+        }
+        result
     }
     /// List all peers that interests in the topic. Any type of hash can be used here.  
     pub async fn mesh_peers_of_topic(&self, topic_hash: TopicHash) -> Box<[PeerId]> {
@@ -194,11 +208,32 @@ impl Handle {
     pub fn topic_store(&self) -> &TopicStore {
         &self.topic_store
     }
-    generate_handler_method!(
-        /// Publishes the message with the given topic to the network.
-        /// Duplicate messages will not be published, resulting in `PublishError::Duplicate`
-        PublishMessage:publish_message(topic_hash:TopicHash, message:Box<[u8]>)->Result<MessageId,PublishError>;
-    );
+    /// Publishes the message with the given topic to the network.
+    /// Duplicate messages will not be published, resulting in `PublishError::Duplicate`
+    pub async fn publish_message(
+        &self,
+        topic_hash: TopicHash,
+        message: Box<[u8]>,
+    ) -> Result<MessageId, PublishError> {
+        let (tx, rx) = oneshot::channel();
+        let ev = InEvent::PublishMessage {
+            topic: topic_hash.clone(),
+            message: message.clone(),
+            callback: tx,
+        };
+        self.sender
+            .send(ev)
+            .await
+            .expect("Swarm receiver to stay alive the entire time");
+        let result = with_timeout!(rx, 10)
+            .expect("future to complete within 10s")
+            .expect("callback to succeed");
+        if result.is_ok() {
+            self.message_store
+                .insert_message(&topic_hash, store::MessageRecord::Local(message));
+        }
+        result
+    }
     generate_handler_method!(
         /// Reject all messages from this peer.
         BanPeer:ban_peer(peer:PeerId);
@@ -240,7 +275,11 @@ pub(crate) fn map_in_event(behav: &mut Behaviour, ev: InEvent) {
                 .collect();
             handle_callback_sender!(list => callback);
         }
-        PublishMessage(topic, message, callback) => {
+        PublishMessage {
+            topic,
+            message,
+            callback,
+        } => {
             let result = behav.publish(topic, message);
             handle_callback_sender!(result => callback);
         }
@@ -637,12 +676,18 @@ pub mod store {
         fn subscribed_topics(&self) -> Box<[TopicHash]>;
     }
 
+    #[derive(Debug, Clone)]
+    pub enum MessageRecord {
+        Remote(super::Message),
+        Local(Box<[u8]>),
+    }
+
     /// Trait for message stores.
     pub trait MessageStore {
         /// Get all messages related to the topic.
-        fn get_messages(&self, topic_hash: &TopicHash) -> Option<Box<[Message]>>;
+        fn get_messages(&self, topic_hash: &TopicHash) -> Option<Box<[MessageRecord]>>;
         /// Called when a new message is received on the topic.
-        fn insert_message(&self, message: Message) -> Result<(), ()>;
+        fn insert_message(&self, topic_hash: &TopicHash, message: MessageRecord);
         /// Clear the store of the topic.  
         /// Will clear everything if not supplied with a topic hash.
         fn clear_message(&self, topic: Option<&TopicHash>);
@@ -695,6 +740,7 @@ pub mod serde_types {
 
 pub mod mem_store {
     use dashmap::{DashMap, DashSet};
+    use store::MessageRecord;
 
     use super::store::{MessageStore, TopicStore};
     use super::*;
@@ -791,25 +837,24 @@ pub mod mem_store {
     }
 
     /// An in-memory message store.
-    #[derive(Debug, Clone, Default)]
+    #[derive(Clone, Default)]
     pub struct MemMessageStore {
-        inner: DashMap<TopicHash, Vec<super::Message>>,
+        inner: DashMap<TopicHash, Vec<super::store::MessageRecord>>,
     }
     impl MessageStore for MemMessageStore {
-        fn get_messages(&self, topic_hash: &TopicHash) -> Option<Box<[Message]>> {
+        fn get_messages(&self, topic_hash: &TopicHash) -> Option<Box<[MessageRecord]>> {
             self.inner
                 .get(topic_hash)
                 .map(|entry| entry.value().clone().into_boxed_slice())
         }
 
-        fn insert_message(&self, message: Message) -> Result<(), ()> {
-            match self.inner.get_mut(&message.topic) {
+        fn insert_message(&self, topic: &TopicHash, message: MessageRecord) {
+            match self.inner.get_mut(topic) {
                 Some(mut entry) => entry.value_mut().push(message),
                 None => {
-                    self.inner.insert(message.topic.clone(), vec![message]);
+                    self.inner.insert(topic.clone(), vec![message]);
                 }
             }
-            Ok(())
         }
         fn clear_message(&self, topic: Option<&TopicHash>) {
             if topic.is_none() {
