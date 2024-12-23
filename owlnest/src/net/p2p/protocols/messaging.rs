@@ -1,6 +1,7 @@
 use crate::net::p2p::swarm::{BehaviourEvent, EventSender, SwarmEvent};
+use crate::with_timeout;
 use libp2p::PeerId;
-use owlnest_macro::{generate_handler_method, listen_event, with_timeout};
+use owlnest_macro::{generate_handler_method, listen_event};
 pub use owlnest_messaging::*;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;

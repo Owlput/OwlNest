@@ -2,8 +2,12 @@ use std::str::FromStr;
 use std::sync::Arc;
 
 use crate::net::p2p::swarm::EventSender;
+use crate::utils::ChannelError;
+use crate::utils::Error;
+use crate::with_timeout;
 use clap::ValueEnum;
 pub use config::Config;
+use derive_more::derive::From;
 pub use libp2p::gossipsub::Behaviour;
 pub use libp2p::gossipsub::Event as OutEvent;
 pub use libp2p::gossipsub::Topic;
@@ -11,13 +15,9 @@ pub use libp2p::gossipsub::{Hasher, IdentityHash, Sha256Hash, TopicHash};
 pub use libp2p::gossipsub::{Message, MessageAuthenticity, MessageId};
 pub use libp2p::gossipsub::{PublishError, SubscriptionError};
 use libp2p::PeerId;
-use mem_store::MemMessageStore;
-use mem_store::MemTopicStore;
 use owlnest_macro::generate_handler_method;
 use owlnest_macro::handle_callback_sender;
-use owlnest_macro::with_timeout;
-use serde::Deserialize;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use tokio::sync::{mpsc, oneshot};
 
 type TopicStore = Box<dyn store::TopicStore + Send + Sync>;
@@ -109,8 +109,8 @@ impl Handle {
         let handle = Self {
             swarm_event_source: swarm_event_source.clone(),
             sender: tx,
-            topic_store: Arc::new(Box::new(MemTopicStore::default())),
-            message_store: Arc::new(Box::new(MemMessageStore::default())),
+            topic_store: Arc::new(Box::new(mem_store::MemTopicStore::default())),
+            message_store: Arc::new(Box::new(mem_store::MemMessageStore::default())),
         };
         (handle, rx)
     }
@@ -120,7 +120,7 @@ impl Handle {
     pub async fn subscribe_topic<H: Hasher>(
         &self,
         topic_string: impl Into<String>,
-    ) -> Result<bool, SubscriptionError> {
+    ) -> Result<bool, Error<SubscriptionError>> {
         let topic_string = topic_string.into();
         let topic_hash = H::hash(topic_string.clone());
         let result = self.subscribe_topic_hash(topic_hash.clone()).await;
@@ -136,25 +136,25 @@ impl Handle {
     pub async fn subscribe_topic_hash(
         &self,
         topic_hash: TopicHash,
-    ) -> Result<bool, SubscriptionError> {
+    ) -> Result<bool, Error<SubscriptionError>> {
         let (tx, rx) = oneshot::channel();
         let ev = InEvent::SubscribeTopic {
             topic_hash: topic_hash.clone(),
             callback: tx,
         };
-        self.sender.send(ev).await.expect("Send to succeed");
-        let result = rx.await.unwrap();
-        if let Ok(true) = result {
+        self.sender.send(ev).await?;
+        let result = rx.await?.map_err(|e| Error::Err(e))?;
+        if result {
             self.topic_store.subscribe_topic(topic_hash, None);
         }
-        result
+        Ok(result)
     }
     /// Use a topic string to unsubscribe from a topic.  
     /// Returns [`Ok(true)`] if we were subscribed to this topic.
     pub async fn unsubscribe_topic<H: Hasher>(
         &self,
         topic_string: impl Into<String>,
-    ) -> Result<bool, PublishError> {
+    ) -> Result<bool, Error<PublishError>> {
         self.unsubscribe_topic_hash(H::hash(topic_string.into()))
             .await
     }
@@ -163,42 +163,37 @@ impl Handle {
     pub async fn unsubscribe_topic_hash(
         &self,
         topic_hash: TopicHash,
-    ) -> Result<bool, PublishError> {
+    ) -> Result<bool, Error<PublishError>> {
         let (tx, rx) = oneshot::channel();
         let ev = InEvent::UnsubscribeTopic {
             topic_hash: topic_hash.clone(),
             callback: tx,
         };
-        self.sender.send(ev).await.expect("Send to succeed");
-        let result = rx.await.unwrap();
-        if let Ok(true) = result {
+        self.sender.send(ev).await?;
+        let result = rx.await?.map_err(|e| Error::Err(e))?;
+        if result {
             self.topic_store.unsubscribe_topic(&topic_hash);
         }
-        result
+        Ok(result)
     }
     /// List all peers that interests in the topic. Any type of hash can be used here.  
-    pub async fn mesh_peers_of_topic(&self, topic_hash: TopicHash) -> Box<[PeerId]> {
+    pub async fn mesh_peers_of_topic(
+        &self,
+        topic_hash: TopicHash,
+    ) -> Result<Box<[PeerId]>, ChannelError> {
         let (tx, rx) = oneshot::channel();
         let ev = InEvent::MeshPeersOfTopic(topic_hash, tx);
-        self.sender
-            .send(ev)
-            .await
-            .expect("Swarm receiver to stay alive the entire time");
-        with_timeout!(rx, 10)
-            .expect("future to complete within 10s")
-            .expect("callback to succeed")
+        self.sender.send(ev).await?;
+        Ok(with_timeout!(rx, 10)??)
     }
     /// List all peers with their topics of interests.
-    pub async fn all_peers_with_topic(&self) -> Box<[(PeerId, Box<[TopicHash]>)]> {
+    pub async fn all_peers_with_topic(
+        &self,
+    ) -> Result<Box<[(PeerId, Box<[TopicHash]>)]>, ChannelError> {
         let (tx, rx) = oneshot::channel();
         let ev = InEvent::AllPeersWithTopic(tx);
-        self.sender
-            .send(ev)
-            .await
-            .expect("Swarm receiver to stay alive the entire time");
-        with_timeout!(rx, 10)
-            .expect("future to complete within 10s")
-            .expect("callback to succeed")
+        self.sender.send(ev).await?;
+        Ok(with_timeout!(rx, 10)??)
     }
     /// Get a reference to the internal message store.
     pub fn message_store(&self) -> &MessageStore {
@@ -509,7 +504,7 @@ pub mod cli {
         }
     }
 
-    pub async fn handle_gossipsub(handle: &Handle, command: Gossipsub) {
+    pub async fn handle_gossipsub(handle: &Handle, command: Gossipsub) -> Result<(), String> {
         match command {
             Gossipsub::Subscribe(command) => {
                 let result = match &command {
@@ -622,7 +617,10 @@ pub mod cli {
                 println!("OK")
             }
             Gossipsub::AllPeersWithTopic => {
-                let list = handle.all_peers_with_topic().await;
+                let list = handle
+                    .all_peers_with_topic()
+                    .await
+                    .map_err(|e| format!("Cannot get AllPeersWithTopic: {}", e))?;
                 let mut table = prettytable::Table::new();
                 table.add_row(row!["Peer ID", "Subscribed Topics"]);
                 list.iter().for_each(|(peer, topics)| {
@@ -631,7 +629,10 @@ pub mod cli {
                 table.printstd();
             }
             Gossipsub::MeshPeersOfTopic(topic) => {
-                let list = handle.mesh_peers_of_topic(topic.get_hash()).await;
+                let list = handle
+                    .mesh_peers_of_topic(topic.get_hash())
+                    .await
+                    .map_err(|e| format!("Cannot get MeshPeersOfTopic: {}", e))?;
                 let mut table = Table::new();
                 table.add_row(row![
                     format!("Peers associated with topic\n{}", topic.get_hash()),
@@ -640,6 +641,7 @@ pub mod cli {
                 table.printstd()
             }
         }
+        Ok(())
     }
 }
 

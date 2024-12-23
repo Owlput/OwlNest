@@ -1,6 +1,8 @@
 use crate::net::p2p::swarm::{behaviour::BehaviourEvent, EventSender, SwarmEvent};
+use crate::utils::ChannelError;
+use crate::with_timeout;
 use libp2p::{Multiaddr, PeerId, StreamProtocol};
-use owlnest_macro::{generate_handler_method, handle_callback_sender, listen_event, with_timeout};
+use owlnest_macro::{generate_handler_method, handle_callback_sender, listen_event};
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 use std::str::FromStr;
@@ -372,17 +374,14 @@ impl Handle {
     /// Actively publish records in the local store.
     /// ### Routing table
     /// Only peers in `server` mode will be added to routing tables.
-    pub async fn set_mode(&self, mode: Option<kad::Mode>) -> Result<kad::Mode, ()> {
+    pub async fn set_mode(&self, mode: Option<kad::Mode>) -> Result<kad::Mode, ChannelError> {
         let ev = InEvent::SetMode(mode);
         let mut listener = self.swarm_event_source.subscribe();
         self.sender.send(ev).await.expect("send to succeed");
         let fut = listen_event!(listener for Kad, OutEvent::ModeChanged { new_mode }=>{
             return *new_mode;
         });
-        match with_timeout!(fut, 10) {
-            Ok(result) => Ok(result),
-            Err(_) => Err(()),
-        }
+        with_timeout!(fut, 10)
     }
 }
 

@@ -2,6 +2,10 @@ pub mod behaviour_select;
 pub mod connection_handler_select;
 
 pub mod utils {
+
+    pub const SWARM_RECEIVER_KEPT_ALIVE_ERROR: &str =
+        "Receiver in the swarm should stay alive the entire lifetime of the app.";
+
     /// Less boilerplate for simple handler functions that use callback to return some data.
     ///
     /// Example:
@@ -22,13 +26,13 @@ pub mod utils {
         $(
             $(#[$metas])*
             pub fn $name(&self,$($params:$param_type)*)->$return_type{
-            use tokio::sync::oneshot::*;
-            let (tx,rx) = channel();
-            let ev = InEvent::$variant($($params,)*tx);
-            self.sender.blocking_send(ev).unwrap();
-            rx.blocking_recv().unwrap()
-        }
-    )*
+                use tokio::sync::oneshot::*;
+                let (tx,rx) = channel();
+                let ev = InEvent::$variant($($params,)*tx);
+                self.sender.blocking_send(ev).expect(owlnest_macro::utils::SWARM_RECEIVER_KEPT_ALIVE_ERROR);
+                rx.blocking_recv().unwrap()
+            }
+        )*
     };
 }
 
@@ -54,7 +58,7 @@ pub mod utils {
             $(#[$metas])*
             pub async fn $name(&self,$($params:$param_type,)*){
                 let ev = InEvent::$variant($($params,)*);
-                self.sender.send(ev).await.expect("Sender to swarm to stay alive the entire lifetime of the app");
+                self.sender.send(ev).await.expect(owlnest_macro::utils::SWARM_RECEIVER_KEPT_ALIVE_ERROR);
             }
         )*
     };
@@ -65,7 +69,7 @@ pub mod utils {
                 use tokio::sync::oneshot::*;
                 let (tx,rx) = channel();
                 let ev = InEvent::$variant($($params,)*tx);
-                self.sender.send(ev).await.expect("Sender to swarm to stay alive the entire lifetime of the app");
+                self.sender.send(ev).await.expect(owlnest_macro::utils::SWARM_RECEIVER_KEPT_ALIVE_ERROR);
                 rx.await.unwrap()
             }
         )*
@@ -77,7 +81,7 @@ pub mod utils {
                 use tokio::sync::oneshot::*;
                 let (tx,rx) = channel();
                 let ev = InEvent::$variant{$($params,)*callback:tx};
-                self.sender.send(ev).await.expect("Sender to swarm to stay alive the entire lifetime of the app");
+                self.sender.send(ev).await.expect(owlnest_macro::utils::SWARM_RECEIVER_KEPT_ALIVE_ERROR);
                 rx.await.unwrap()
             }
         )*
@@ -116,17 +120,9 @@ pub mod utils {
         };
     }
     #[macro_export]
-    macro_rules! with_timeout {
-        ($future:ident,$timeout:literal) => {{
-            let timer = futures_timer::Delay::new(std::time::Duration::from_secs($timeout));
-            tokio::select! {
-                _ = timer =>{
-                    Err(())
-                }
-                v = $future => {
-                    Ok(v)
-                }
-            }
-        }};
+    macro_rules! send_to_swam {
+        ($ev:ident) => {
+            self.sender.send(ev)
+        };
     }
 }

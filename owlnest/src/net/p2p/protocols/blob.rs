@@ -1,12 +1,14 @@
 use crate::net::p2p::swarm::EventSender;
+use crate::with_timeout;
 use libp2p::PeerId;
 pub use owlnest_blob::{config, error, Behaviour, InEvent, OutEvent};
 pub use owlnest_blob::{RecvInfo, SendInfo};
-use owlnest_macro::{generate_handler_method, with_timeout};
+use owlnest_macro::generate_handler_method;
 use std::path::Path;
 use std::time::Duration;
 use tokio::sync::{mpsc, oneshot};
 use tracing::{trace, warn};
+use crate::utils::Error;
 
 /// A handle that can communicate with the behaviour within the swarm.
 #[derive(Debug, Clone)]
@@ -37,7 +39,7 @@ impl Handle {
         &self,
         to: PeerId,
         path: impl AsRef<Path>,
-    ) -> Result<u64, error::FileSendError> {
+    ) -> Result<u64, Error<error::FileSendError>> {
         if path.as_ref().is_dir() {
             // Reject sending directory
             return Err(error::FileSendError::IsDirectory);
@@ -59,7 +61,7 @@ impl Handle {
             to,
             callback: tx,
         };
-        self.sender.send(ev).await.expect("send to succeed");
+        self.sender.send(ev).await?;
         match with_timeout!(rx, 10) {
             Ok(v) => v.expect("callback to succeed"),
             Err(_) => {
