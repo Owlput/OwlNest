@@ -56,7 +56,7 @@ pub struct Config {
     pub swarm_event_buffer_size: usize,
     /// When swarm event buffer is almost full,
     /// the swarm won't be polled(backpressure).
-    /// This timeout make sure that the swarm will
+    /// This timeout(in milliseconds) make sure that the swarm will
     /// be polled again once buffer cleared.
     pub swarm_event_timeout: u64,
 }
@@ -93,7 +93,7 @@ impl Builder {
         let (swarm_event_out, _) =
             tokio::sync::broadcast::channel(self.config.swarm.swarm_event_buffer_size);
         let (handle_bundle, mut rx_bundle) =
-            HandleBundle::new(self.config.swarm.swarm_event_buffer_size, &swarm_event_out);
+            HandleBundle::new(&self.config,&swarm_event_out);
         let manager = manager::Manager::new(
             Arc::new(handle_bundle),
             ident.clone(),

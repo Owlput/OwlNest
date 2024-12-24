@@ -22,10 +22,11 @@ pub struct Handle {
 }
 impl Handle {
     pub(crate) fn new(
-        buffer: usize,
+        _config: &Config,
+        buffer_size: usize,
         swarm_event_source: &EventSender,
     ) -> (Self, mpsc::Receiver<InEvent>) {
-        let (tx, rx) = mpsc::channel(buffer);
+        let (tx, rx) = mpsc::channel(buffer_size);
         let message_store = Arc::new(Box::new(MemMessageStore::default())
             as Box<dyn store::MessageStore + 'static + Send + Sync>);
         let mut listener = swarm_event_source.subscribe();
@@ -237,20 +238,18 @@ mod test {
 
     #[test]
     #[serial]
-    fn test_sigle_send_recv() {
+    fn test_sigle_send_recv() -> anyhow::Result<()> {
         let (peer1, _) = setup_default();
         let (peer2, _) = setup_default();
         peer1
             .swarm()
-            .listen_blocking(&"/ip4/127.0.0.1/tcp/0".parse::<Multiaddr>().unwrap())
-            .unwrap();
+            .listen_blocking(&"/ip4/127.0.0.1/tcp/0".parse::<Multiaddr>()?)?;
         let mut peer1_message_watcher = spawn_watcher(&peer1);
         let mut peer2_message_watcher = spawn_watcher(&peer2);
         thread::sleep(Duration::from_millis(100));
         peer2
             .swarm()
-            .dial_blocking(&peer1.swarm().list_listeners_blocking()[0])
-            .unwrap();
+            .dial_blocking(&peer1.swarm().list_listeners_blocking()[0])?;
         let peer1_id = peer1.identity().get_peer_id();
         let peer2_id = peer2.identity().get_peer_id();
         thread::sleep(Duration::from_millis(1000));
@@ -261,6 +260,7 @@ mod test {
         single_send_recv(&peer1, &peer2, &mut peer2_message_watcher);
         single_send_recv(&peer2, &peer1, &mut peer1_message_watcher);
         thread::sleep(Duration::from_millis(500));
+        Ok(())
     }
 
     fn eq_message(lhs: &Message, rhs: &Message) -> bool {

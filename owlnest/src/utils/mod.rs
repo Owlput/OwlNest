@@ -27,9 +27,9 @@ impl From<tokio::sync::oneshot::error::RecvError> for ChannelError {
         Self::ChannelClosed
     }
 }
-impl std::fmt::Display for ChannelError{
+impl std::fmt::Display for ChannelError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self{
+        match self {
             ChannelError::Timeout => write!(f, "Timeout waiting for response"),
             ChannelError::ChannelClosed => write!(f, "Channel closed unexpectedly"),
         }
@@ -59,6 +59,20 @@ impl<T, U> From<tokio::sync::mpsc::error::SendError<T>> for Error<U> {
 impl<T> From<tokio::sync::oneshot::error::RecvError> for Error<T> {
     fn from(_value: tokio::sync::oneshot::error::RecvError) -> Self {
         Self::Channel(ChannelError::ChannelClosed)
+    }
+}
+impl From<()> for Error<()> {
+    fn from(_value: ()) -> Self {
+        Self::Err(())
+    }
+}
+impl<T> std::error::Error for Error<T> where T: std::error::Error {}
+impl<T> std::fmt::Display for Error<T> where T: std::fmt::Display{
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self{
+            Self::Err(e)=> e.fmt(f),
+            Self::Channel(e) => e.fmt(f),
+        }
     }
 }
 

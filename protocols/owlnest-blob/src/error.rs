@@ -39,6 +39,22 @@ pub enum FileSendError {
     Timeout,
     PeerNotFound,
 }
+impl std::error::Error for FileSendError {}
+impl Display for FileSendError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        use FileSendError::*;
+        match self {
+            IsDirectory => write!(f, "The target to send to is a directory"),
+            FileNotFound => write!(f, "The target file is not found"),
+            PermissionDenied => write!(f, "Permission denied"),
+            OtherFsError(error_kind) => {
+                write!(f, "Other file system error: {}", error_kind.to_string())
+            }
+            Timeout => write!(f, "Operation has timed out"),
+            PeerNotFound => write!(f, "Target peer is not found"),
+        }
+    }
+}
 
 #[derive(Debug)]
 pub enum FileRecvError {
@@ -49,6 +65,7 @@ pub enum FileRecvError {
         error: std::io::ErrorKind,
     },
 }
+impl std::error::Error for FileRecvError {}
 impl Display for FileRecvError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self{
@@ -61,6 +78,22 @@ impl Display for FileRecvError {
                     e => write!(f,"OS reported OtherError {}", e)
                 }
             },
+        }
+    }
+}
+
+#[derive(Debug, PartialEq, Eq)]
+pub enum CancellationError {
+    IdNotFound,
+    PeerNotFound,
+}
+impl std::error::Error for CancellationError {}
+impl Display for CancellationError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        use CancellationError::*;
+        match self {
+            IdNotFound => write!(f, "ID not found"),
+            PeerNotFound => write!(f, "Peer not found"),
         }
     }
 }

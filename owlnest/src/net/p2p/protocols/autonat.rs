@@ -1,13 +1,12 @@
-use crate::net::p2p::swarm::SwarmEvent;
+use crate::net::p2p::swarm::EventSender;
+pub use config::Config;
 pub use libp2p::autonat::Behaviour;
-pub use libp2p::autonat::Config;
 pub use libp2p::autonat::Event as OutEvent;
 pub use libp2p::autonat::NatStatus;
 use libp2p::{Multiaddr, PeerId};
 use owlnest_macro::generate_handler_method;
 use owlnest_macro::handle_callback_sender;
-use std::sync::Arc;
-use tokio::sync::{broadcast, mpsc, oneshot};
+use tokio::sync::{mpsc, oneshot};
 use tracing::info;
 
 #[derive(Debug)]
@@ -22,18 +21,19 @@ pub(crate) enum InEvent {
 #[derive(Debug, Clone)]
 #[allow(unused)]
 pub struct Handle {
-    swarm_source: broadcast::Sender<Arc<SwarmEvent>>,
+    swarm_source: EventSender,
     sender: mpsc::Sender<InEvent>,
 }
 impl Handle {
     pub(crate) fn new(
-        buffer: usize,
-        swarm_source: &broadcast::Sender<Arc<SwarmEvent>>,
+        _config: &Config,
+        buffer_size: usize,
+        swarm_event_source: &EventSender,
     ) -> (Self, mpsc::Receiver<InEvent>) {
-        let (tx, rx) = mpsc::channel(buffer);
+        let (tx, rx) = mpsc::channel(buffer_size);
         (
             Self {
-                swarm_source: swarm_source.clone(),
+                swarm_source: swarm_event_source.clone(),
                 sender: tx,
             },
             rx,
@@ -139,6 +139,101 @@ pub mod cli {
                     ),
                     Unknown => println!("NAT status: Unknown"),
                 }
+            }
+        }
+    }
+}
+
+pub mod config {
+    use serde::{Deserialize, Serialize};
+    use std::time::Duration;
+
+    /// Config for the [`Behaviour`].
+    #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+    pub struct Config {
+        /// Timeout for requests.
+        pub timeout: Duration,
+
+        // Client Config
+        /// Delay on init before starting the fist probe.
+        pub boot_delay: Duration,
+        /// Interval in which the NAT should be tested again if max confidence was reached in a status.
+        pub refresh_interval: Duration,
+        /// Interval in which the NAT status should be re-tried if it is currently unknown
+        /// or max confidence was not reached yet.
+        pub retry_interval: Duration,
+        /// Throttle period for re-using a peer as server for a dial-request.
+        pub throttle_server_period: Duration,
+        /// Use connected peers as servers for probes.
+        pub use_connected: bool,
+        /// Max confidence that can be reached in a public / private NAT status.
+        /// Note: for [`NatStatus::Unknown`] the confidence is always 0.
+        pub confidence_max: usize,
+
+        // Server Config
+        /// Max addresses that are tried per peer.
+        pub max_peer_addresses: usize,
+        /// Max total dial requests done in `[Config::throttle_clients_period`].
+        pub throttle_clients_global_max: usize,
+        /// Max dial requests done in `[Config::throttle_clients_period`] for a peer.
+        pub throttle_clients_peer_max: usize,
+        /// Period for throttling clients requests.
+        pub throttle_clients_period: Duration,
+        /// As a server reject probes for clients that are observed at a non-global ip address.
+        /// Correspondingly as a client only pick peers as server that are not observed at a
+        /// private ip address. Note that this does not apply for servers that are added via
+        /// [`Behaviour::add_server`].
+        pub only_global_ips: bool,
+    }
+
+    impl Default for Config {
+        fn default() -> Self {
+            Config {
+                timeout: Duration::from_secs(30),
+                boot_delay: Duration::from_secs(15),
+                retry_interval: Duration::from_secs(90),
+                refresh_interval: Duration::from_secs(15 * 60),
+                throttle_server_period: Duration::from_secs(90),
+                use_connected: true,
+                confidence_max: 3,
+                max_peer_addresses: 16,
+                throttle_clients_global_max: 30,
+                throttle_clients_peer_max: 3,
+                throttle_clients_period: Duration::from_secs(1),
+                only_global_ips: true,
+            }
+        }
+    }
+
+    impl From<libp2p::autonat::Config> for Config {
+        fn from(value: libp2p::autonat::Config) -> Self {
+            let libp2p::autonat::Config {
+                timeout,
+                boot_delay,
+                refresh_interval,
+                retry_interval,
+                throttle_server_period,
+                use_connected,
+                confidence_max,
+                max_peer_addresses,
+                throttle_clients_global_max,
+                throttle_clients_peer_max,
+                throttle_clients_period,
+                only_global_ips,
+            } = value;
+            Self {
+                timeout,
+                boot_delay,
+                refresh_interval,
+                retry_interval,
+                throttle_server_period,
+                use_connected,
+                confidence_max,
+                max_peer_addresses,
+                throttle_clients_global_max,
+                throttle_clients_peer_max,
+                throttle_clients_period,
+                only_global_ips,
             }
         }
     }

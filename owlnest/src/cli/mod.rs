@@ -22,7 +22,9 @@ pub fn setup_interactive_shell(
     shutdown_notifier: Arc<Notify>,
 ) {
     std::thread::spawn(move || {
-        stdout().execute(Clear(ClearType::All)).unwrap();
+        stdout()
+            .execute(Clear(ClearType::All))
+            .expect("clean up of terminal to succeed");
         println!("OwlNest is now running in interactive mode, type \"help\" for more information.");
         #[cfg(any(feature = "owlnest-protocols", feature = "owlnest-messaging"))]
         messaging::cli::setup(&manager);
@@ -32,7 +34,8 @@ pub fn setup_interactive_shell(
             let line_read = rl.readline(">> ");
             match line_read {
                 Ok(line) => {
-                    rl.add_history_entry(line.as_str()).unwrap();
+                    rl.add_history_entry(line.as_str())
+                        .expect("append history to succeed");
                     handle_command(line, &manager, &ident, &shutdown_notifier)
                 }
                 Err(e) => {
@@ -124,10 +127,15 @@ fn handle_command(
         #[cfg(any(feature = "libp2p-protocols", feature = "libp2p-relay-client"))]
         RelayClient(command) => relay_client::cli::handle_relay_client(manager, command),
         #[cfg(any(feature = "libp2p-protocols", feature = "libp2p-gossipsub"))]
-        Gossipsub(command) => executor.block_on(gossipsub::cli::handle_gossipsub(
-            manager.gossipsub(),
-            command,
-        )),
+        Gossipsub(command) => {
+            let result = executor.block_on(gossipsub::cli::handle_gossipsub(
+                manager.gossipsub(),
+                command,
+            ));
+            if let Err(e) = result {
+                println!("{}", e)
+            }
+        }
         Utils(command) => handle_utils(command),
     }
 }

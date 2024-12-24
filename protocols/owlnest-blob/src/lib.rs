@@ -1,7 +1,7 @@
 #![feature(extract_if)]
 #![feature(hash_extract_if)]
 
-use error::FileSendError;
+use error::{CancellationError, FileSendError};
 use owlnest_prelude::lib_prelude::*;
 use serde::{Deserialize, Serialize};
 use std::{fs::File, path::PathBuf, time::Duration};
@@ -54,13 +54,13 @@ pub enum InEvent {
     /// No more bytes will be written upon seen by the behaviour
     CancelRecv {
         local_recv_id: u64,
-        callback: oneshot::Sender<Result<(), ()>>,
+        callback: oneshot::Sender<Result<(), CancellationError>>,
     },
     /// Cancel a send operation associated with the give ID.
     /// No more bytes will be read upon seen by the behaviour
     CancelSend {
         local_send_id: u64,
-        callback: oneshot::Sender<Result<(), ()>>,
+        callback: oneshot::Sender<Result<(), CancellationError>>,
     },
 }
 

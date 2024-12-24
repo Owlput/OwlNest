@@ -247,7 +247,7 @@ impl Behaviour {
                     handle_callback_sender!(Ok(())=>callback);
                     return;
                 }
-                handle_callback_sender!(Err(())=>callback);
+                handle_callback_sender!(Err(CancellationError::IdNotFound)=>callback);
             }
             CancelSend {
                 local_send_id,
@@ -257,7 +257,7 @@ impl Behaviour {
                     handle_callback_sender!(Ok(())=>callback);
                     return;
                 }
-                handle_callback_sender!(Err(())=>callback);
+                handle_callback_sender!(Err(CancellationError::IdNotFound)=>callback);
             }
             ListConnected(callback) => {
                 handle_callback_sender!(self.connected_peers.iter().copied().collect() => callback)

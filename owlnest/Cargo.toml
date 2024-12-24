@@ -42,6 +42,7 @@ derive_more = { workspace = true }
 xxhash-rust = { version = "*", features = ["xxh3"] }
 serial_test = "3"
 temp-dir = "*"
+anyhow = "*"
 
 [features]
 full = ["owlnest-protocols", "libp2p-protocols"]

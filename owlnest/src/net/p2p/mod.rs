@@ -22,6 +22,9 @@ pub use libp2p::PeerId;
 pub struct SwarmConfig {
     /// General config for the swarm. Please refer to the inner struct for more information.
     pub swarm: swarm::Config,
+    /// Config for `libp2p-autonat`.
+    #[cfg(any(feature = "libp2p-protocols", feature = "libp2p-autonat"))]
+    pub autonat: autonat::Config,
     /// Config for `libp2p-kad`.
     #[cfg(any(feature = "libp2p-protocols", feature = "libp2p-kad"))]
     pub kad: kad::Config,
@@ -76,6 +79,8 @@ pub mod test_suit {
         let guard = rt.enter();
         let swarm_config = SwarmConfig {
             swarm: Default::default(),
+            #[cfg(any(feature = "libp2p-protocols", feature = "libp2p-autonat"))]
+            autonat: protocols::autonat::Config::default(),
             #[cfg(any(feature = "libp2p-protocols", feature = "libp2p-kad"))]
             kad: protocols::kad::Config::default(),
             #[cfg(any(feature = "libp2p-protocols", feature = "libp2p-identify"))]

@@ -3,6 +3,38 @@ identity_path = ""
 swarm_event_buffer_size = 16
 swarm_event_timeout = 200
 
+[autonat]
+use_connected = true
+confidence_max = 3
+max_peer_addresses = 16
+throttle_clients_global_max = 30
+throttle_clients_peer_max = 3
+only_global_ips = true
+
+[autonat.timeout]
+secs = 30
+nanos = 0
+
+[autonat.boot_delay]
+secs = 15
+nanos = 0
+
+[autonat.refresh_interval]
+secs = 900
+nanos = 0
+
+[autonat.retry_interval]
+secs = 90
+nanos = 0
+
+[autonat.throttle_server_period]
+secs = 90
+nanos = 0
+
+[autonat.throttle_clients_period]
+secs = 1
+nanos = 0
+
 [kad]
 max_packet_size = 16384
 record_filtering = "Unfiltered"
@@ -66,6 +98,9 @@ nanos = 0
 secs = 300
 nanos = 0
 
+[messaging]
+store = "Volatile"
+
 [messaging.timeout]
 secs = 30
 nanos = 0
@@ -112,6 +147,7 @@ allow_self_origin = false
 gossip_retransimission = 3
 max_ihave_length = 5000
 max_ihave_messages = 10
+store = "Volatile"
 
 [gossipsub.heartbeat_interval]
 secs = 1

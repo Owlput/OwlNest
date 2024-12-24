@@ -7,7 +7,6 @@ use crate::utils::Error;
 use crate::with_timeout;
 use clap::ValueEnum;
 pub use config::Config;
-use derive_more::derive::From;
 pub use libp2p::gossipsub::Behaviour;
 pub use libp2p::gossipsub::Event as OutEvent;
 pub use libp2p::gossipsub::Topic;
@@ -101,16 +100,23 @@ pub struct Handle {
     message_store: Arc<MessageStore>,
 }
 impl Handle {
-    pub(crate) fn new_with_mem_store(
-        buffer: usize,
+    pub(crate) fn new(
+        config: &Config,
+        buffer_size: usize,
         swarm_event_source: &EventSender,
     ) -> (Self, mpsc::Receiver<InEvent>) {
-        let (tx, rx) = mpsc::channel(buffer);
+        let (tx, rx) = mpsc::channel(buffer_size);
+        let (topic_store, message_store) = match config.store {
+            config::Store::Volatile => (
+                Arc::new(Box::new(mem_store::MemTopicStore::default()) as TopicStore),
+                Arc::new(Box::new(mem_store::MemMessageStore::default()) as MessageStore),
+            ),
+        };
         let handle = Self {
             swarm_event_source: swarm_event_source.clone(),
             sender: tx,
-            topic_store: Arc::new(Box::new(mem_store::MemTopicStore::default())),
-            message_store: Arc::new(Box::new(mem_store::MemMessageStore::default())),
+            topic_store,
+            message_store,
         };
         (handle, rx)
     }
@@ -290,23 +296,24 @@ mod config {
     /// Configuration parameters that define the performance of the gossipsub network.
     #[derive(Debug, Clone, Serialize, Deserialize)]
     pub struct Config {
-        validation_mode: ValidationMode,
-        max_transmit_size: usize,
-        history_length: usize,
-        history_gossip: usize,
-        mesh_n: usize,
-        mesh_n_low: usize,
-        mesh_n_high: usize,
-        retain_scores: usize,
-        gossip_lazy: usize,
-        gossip_factor: f64,
-        heartbeat_interval: Duration,
-        duplicate_cache_time: Duration,
-        allow_self_origin: bool,
-        gossip_retransimission: u32,
-        max_messages_per_rpc: Option<usize>,
-        max_ihave_length: usize,
-        max_ihave_messages: usize,
+        pub validation_mode: ValidationMode,
+        pub max_transmit_size: usize,
+        pub history_length: usize,
+        pub history_gossip: usize,
+        pub mesh_n: usize,
+        pub mesh_n_low: usize,
+        pub mesh_n_high: usize,
+        pub retain_scores: usize,
+        pub gossip_lazy: usize,
+        pub gossip_factor: f64,
+        pub heartbeat_interval: Duration,
+        pub duplicate_cache_time: Duration,
+        pub allow_self_origin: bool,
+        pub gossip_retransimission: u32,
+        pub max_messages_per_rpc: Option<usize>,
+        pub max_ihave_length: usize,
+        pub max_ihave_messages: usize,
+        pub store: Store,
     }
     impl Default for Config {
         fn default() -> Self {
@@ -328,6 +335,7 @@ mod config {
                 max_messages_per_rpc: None,
                 max_ihave_length: 5000,
                 max_ihave_messages: 10,
+                store: Store::Volatile,
             }
         }
     }
@@ -351,6 +359,7 @@ mod config {
                 max_messages_per_rpc,
                 max_ihave_length,
                 max_ihave_messages,
+                ..
             } = value;
             let mut builder = libp2p::gossipsub::ConfigBuilder::default();
             builder
@@ -407,6 +416,11 @@ mod config {
                 ValidationMode::None => None,
             }
         }
+    }
+
+    #[derive(Debug, Clone, Serialize, Deserialize)]
+    pub enum Store {
+        Volatile,
     }
 }
 

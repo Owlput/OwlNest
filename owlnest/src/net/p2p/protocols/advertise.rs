@@ -1,4 +1,5 @@
 use crate::{net::p2p::swarm::EventSender, utils::ChannelError, with_timeout};
+use config::Config;
 use libp2p::PeerId;
 pub use owlnest_advertise::*;
 use owlnest_macro::{generate_handler_method, listen_event};
@@ -14,10 +15,11 @@ pub struct Handle {
 }
 impl Handle {
     pub(crate) fn new(
-        buffer: usize,
+        _config: &Config,
+        buffer_size: usize,
         swarm_event_source: &EventSender,
     ) -> (Self, mpsc::Receiver<InEvent>) {
-        let (tx, rx) = mpsc::channel(buffer);
+        let (tx, rx) = mpsc::channel(buffer_size);
         (
             Self {
                 sender: tx,
@@ -231,24 +233,30 @@ pub mod cli {
         pub async fn handle_provider(handle: &Handle, command: Provider) {
             use Provider::*;
             match command {
-                Start => {
-                    handle.set_provider_state(true).await;
-                    println!("Local provider is now providing advertisement");
-                }
+                Start => match handle.set_provider_state(true).await {
+                    Ok(v) => println!("Local provider state is set to: {}", v),
+                    Err(e) => println!("Cannot set local provider state: {}", e),
+                },
                 Stop => {
-                    handle.set_provider_state(false).await;
+                    match handle.set_provider_state(false).await {
+                        Ok(v) => println!("Local provider state is set to: {}", v),
+                        Err(e) => println!("Cannot set local provider state: {}", e),
+                    }
                     println!("Local provider has stopped providing advertisement")
                 }
                 State => match handle.provider_state().await {
                     Ok(state) => println!("isProviding:{}", state),
-                    Err(e) => println!("Unable to set state: {:?}", e),
+                    Err(e) => println!("Unable to get state: {}", e),
                 },
                 ListAdvertised => {
                     let list = handle.list_advertised().await;
                     println!("Advertising: \n{:?}", list);
                 }
                 RemoveAdvertise { peer } => {
-                    handle.remove_advertised(&peer).await;
+                    match handle.remove_advertised(&peer).await {
+                        Ok(v) => println!("Local provider state is set to: {}", v),
+                        Err(e) => println!("Cannot RemoveAdvertise: {}", e),
+                    }
                     println!("Advertisement for peer {} is removed", peer)
                 }
                 ClearAdvertised => {
@@ -263,6 +271,7 @@ pub mod cli {
 #[cfg(test)]
 mod test {
     use crate::net::p2p::test_suit::setup_default;
+    use anyhow::Ok;
     use libp2p::Multiaddr;
     use serial_test::serial;
     use std::{thread, time::Duration};
@@ -270,27 +279,24 @@ mod test {
 
     #[test]
     #[serial]
-    fn test() {
+    fn test() -> anyhow::Result<()> {
         let (peer1_m, _) = setup_default();
         let (peer2_m, _) = setup_default();
         peer1_m
             .swarm()
-            .listen_blocking(&"/ip4/127.0.0.1/tcp/0".parse::<Multiaddr>().unwrap())
-            .unwrap();
+            .listen_blocking(&"/ip4/127.0.0.1/tcp/0".parse::<Multiaddr>()?)?;
         trace!("peer 1 is listening");
         thread::sleep(Duration::from_millis(100));
         let peer1_id = peer1_m.identity().get_peer_id();
         let peer2_id = peer2_m.identity().get_peer_id();
         peer2_m
             .swarm()
-            .dial_blocking(&peer1_m.swarm().list_listeners_blocking()[0])
-            .unwrap();
+            .dial_blocking(&peer1_m.swarm().list_listeners_blocking()[0])?;
         trace!("peer 1 dialed");
         thread::sleep(Duration::from_millis(200));
         assert!(peer1_m
             .executor()
-            .block_on(peer1_m.advertise().set_provider_state(true))
-            .unwrap());
+            .block_on(peer1_m.advertise().set_provider_state(true))?);
         trace!("provider state set");
         thread::sleep(Duration::from_millis(200));
         peer2_m
@@ -301,22 +307,19 @@ mod test {
         thread::sleep(Duration::from_millis(200));
         assert!(peer2_m
             .executor()
-            .block_on(peer2_m.advertise().query_advertised_peer(peer1_id))
-            .unwrap()
-            .unwrap()
+            .block_on(peer2_m.advertise().query_advertised_peer(peer1_id))?
+            .expect("peer to exist")
             .contains(&peer2_id));
         trace!("found advertisement for peer2 on peer1");
         assert!(!peer1_m
             .executor()
-            .block_on(peer1_m.advertise().set_provider_state(false))
-            .unwrap());
+            .block_on(peer1_m.advertise().set_provider_state(false))?);
         thread::sleep(Duration::from_millis(200));
         trace!("provider state of peer1 set to false");
         assert!(
             peer2_m
                 .executor()
-                .block_on(peer2_m.advertise().query_advertised_peer(peer1_id))
-                .unwrap()
+                .block_on(peer2_m.advertise().query_advertised_peer(peer1_id))?
                 == None
         );
         trace!("advertisement no longer available");
@@ -328,19 +331,18 @@ mod test {
         trace!("removed advertisement on peer1(testing presistence)");
         assert!(peer1_m
             .executor()
-            .block_on(peer1_m.advertise().set_provider_state(true))
-            .unwrap());
+            .block_on(peer1_m.advertise().set_provider_state(true))?);
         thread::sleep(Duration::from_millis(200));
         trace!("turned peer1 provider back on");
         assert!(
             peer2_m
                 .executor()
-                .block_on(peer2_m.advertise().query_advertised_peer(peer1_id))
-                .unwrap()
-                .unwrap()
+                .block_on(peer2_m.advertise().query_advertised_peer(peer1_id))?
+                .expect("peer to exist")
                 .len()
                 == 0
         );
+        Ok(())
     }
 
     // Attach when necessary
