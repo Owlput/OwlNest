@@ -1,10 +1,10 @@
 use std::str::FromStr;
 use std::sync::Arc;
 
+use crate::channel_timeout;
 use crate::net::p2p::swarm::EventSender;
 use crate::utils::ChannelError;
-use crate::utils::Error;
-use crate::with_timeout;
+use crate::utils::AsyncErr;
 use clap::ValueEnum;
 pub use config::Config;
 pub use libp2p::gossipsub::Behaviour;
@@ -126,7 +126,7 @@ impl Handle {
     pub async fn subscribe_topic<H: Hasher>(
         &self,
         topic_string: impl Into<String>,
-    ) -> Result<bool, Error<SubscriptionError>> {
+    ) -> Result<bool, AsyncErr<SubscriptionError>> {
         let topic_string = topic_string.into();
         let topic_hash = H::hash(topic_string.clone());
         let result = self.subscribe_topic_hash(topic_hash.clone()).await;
@@ -142,14 +142,14 @@ impl Handle {
     pub async fn subscribe_topic_hash(
         &self,
         topic_hash: TopicHash,
-    ) -> Result<bool, Error<SubscriptionError>> {
+    ) -> Result<bool, AsyncErr<SubscriptionError>> {
         let (tx, rx) = oneshot::channel();
         let ev = InEvent::SubscribeTopic {
             topic_hash: topic_hash.clone(),
             callback: tx,
         };
         self.sender.send(ev).await?;
-        let result = rx.await?.map_err(|e| Error::Err(e))?;
+        let result = rx.await?.map_err(|e| AsyncErr::Err(e))?;
         if result {
             self.topic_store.subscribe_topic(topic_hash, None);
         }
@@ -160,7 +160,7 @@ impl Handle {
     pub async fn unsubscribe_topic<H: Hasher>(
         &self,
         topic_string: impl Into<String>,
-    ) -> Result<bool, Error<PublishError>> {
+    ) -> Result<bool, AsyncErr<PublishError>> {
         self.unsubscribe_topic_hash(H::hash(topic_string.into()))
             .await
     }
@@ -169,14 +169,14 @@ impl Handle {
     pub async fn unsubscribe_topic_hash(
         &self,
         topic_hash: TopicHash,
-    ) -> Result<bool, Error<PublishError>> {
+    ) -> Result<bool, AsyncErr<PublishError>> {
         let (tx, rx) = oneshot::channel();
         let ev = InEvent::UnsubscribeTopic {
             topic_hash: topic_hash.clone(),
             callback: tx,
         };
         self.sender.send(ev).await?;
-        let result = rx.await?.map_err(|e| Error::Err(e))?;
+        let result = rx.await?.map_err(|e| AsyncErr::Err(e))?;
         if result {
             self.topic_store.unsubscribe_topic(&topic_hash);
         }
@@ -190,7 +190,7 @@ impl Handle {
         let (tx, rx) = oneshot::channel();
         let ev = InEvent::MeshPeersOfTopic(topic_hash, tx);
         self.sender.send(ev).await?;
-        Ok(with_timeout!(rx, 10)??)
+        Ok(channel_timeout!(rx, 10)??)
     }
     /// List all peers with their topics of interests.
     pub async fn all_peers_with_topic(
@@ -199,7 +199,7 @@ impl Handle {
         let (tx, rx) = oneshot::channel();
         let ev = InEvent::AllPeersWithTopic(tx);
         self.sender.send(ev).await?;
-        Ok(with_timeout!(rx, 10)??)
+        Ok(channel_timeout!(rx, 10)??)
     }
     /// Get a reference to the internal message store.
     pub fn message_store(&self) -> &MessageStore {
@@ -226,7 +226,7 @@ impl Handle {
             .send(ev)
             .await
             .expect("Swarm receiver to stay alive the entire time");
-        let result = with_timeout!(rx, 10)
+        let result = channel_timeout!(rx, 10)
             .expect("future to complete within 10s")
             .expect("callback to succeed");
         if result.is_ok() {
@@ -623,11 +623,15 @@ pub mod cli {
                 }
             }
             Gossipsub::Ban { peer } => {
-                handle.ban_peer(peer).await;
+                if let Err(e) = handle.ban_peer(peer).await {
+                    return Err(format!("Err during Ban: {}", e));
+                };
                 println!("OK")
             }
             Gossipsub::Unban { peer } => {
-                handle.unban_peer(peer).await;
+                if let Err(e) = handle.unban_peer(peer).await {
+                    return Err(format!("Err during Unban: {}", e));
+                };
                 println!("OK")
             }
             Gossipsub::AllPeersWithTopic => {

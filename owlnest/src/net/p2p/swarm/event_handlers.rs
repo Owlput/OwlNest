@@ -44,7 +44,7 @@ pub async fn handle_swarm_event(ev: &super::SwarmEvent, swarm: &mut Swarm) {
         ),
         OutgoingConnectionError { peer_id, error, .. } => {
             use libp2p::TransportError;
-            if let libp2p_swarm::DialError::Transport(transport_err) = error {
+            if let libp2p::swarm::DialError::Transport(transport_err) = error {
                 let closure =
                     |err: &(Multiaddr, libp2p::TransportError<std::io::Error>)| match &err.1 {
                         TransportError::MultiaddrNotSupported(addr) => {

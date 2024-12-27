@@ -141,7 +141,11 @@ pub mod cli {
             ListDiscovered => println!("{:?}", handle.list_discovered_node().await),
             HasNode { peer_id } => {
                 let result = handle.has_node(peer_id).await;
-                println!("Peer {} discovered? {}", peer_id, result);
+                if let Err(e) = result {
+                    return println!("Cannot get HasNode: {}", e);
+                }
+                let result = result.expect("already handled");
+                println!("Is peer {} discovered through mDNS: {}", peer_id, result);
             }
         }
     }

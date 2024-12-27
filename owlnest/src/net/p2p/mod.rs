@@ -74,7 +74,7 @@ pub mod test_suit {
         let rt = tokio::runtime::Builder::new_multi_thread()
             .enable_all()
             .build()
-            .unwrap();
+            .expect("Tokio runtime to be created successfully");
         let ident = IdentityUnion::generate();
         let guard = rt.enter();
         let swarm_config = SwarmConfig {

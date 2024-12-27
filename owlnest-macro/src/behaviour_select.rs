@@ -78,7 +78,7 @@ macro_rules! behaviour_select {
                 connection_id: ::libp2p::swarm::ConnectionId,
                 maybe_peer: Option<::libp2p::PeerId>,
                 addresses: &[::libp2p::Multiaddr],
-                effective_role: ::libp2p_swarm::derive_prelude::Endpoint,
+                effective_role: ::libp2p::swarm::derive_prelude::Endpoint,
             ) -> Result<
                 ::std::vec::Vec<::libp2p::Multiaddr>,
                 ::libp2p::swarm::ConnectionDenied,
@@ -102,7 +102,7 @@ macro_rules! behaviour_select {
                 connection_id: ::libp2p::swarm::ConnectionId,
                 peer: ::libp2p::PeerId,
                 addr: &::libp2p::Multiaddr,
-                role_override: ::libp2p_swarm::derive_prelude::Endpoint,
+                role_override: ::libp2p::swarm::derive_prelude::Endpoint,
                 port_use: ::libp2p::core::transport::PortUse,
             ) -> Result<
                 Self::ConnectionHandler,

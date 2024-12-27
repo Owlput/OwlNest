@@ -40,10 +40,10 @@ impl Handle {
         )
     }
     generate_handler_method!(
-        /// Add a server(endpoint) that the behaviour can use to probe(test)
+        /// Add a server(peer) that the behaviour can use to probe
         /// for public reachability.
         AddServer:add_server(peer:PeerId,address:Option<Multiaddr>,);
-        /// Remove a server(endpoint) the behaviour can use.
+        /// Remove a server(peer) the behaviour can use.
         RemoveServer:remove_server(peer:PeerId);
         /// Tell the behaivour to probe the endpoint now.
         Probe:probe(candidate:Multiaddr);
@@ -117,19 +117,29 @@ pub mod cli {
     pub async fn handle_autonat(handle: &Handle, command: AutoNat) {
         match command {
             AutoNat::AddServer { peer_id, address } => {
-                handle.add_server(peer_id, address).await;
+                if let Err(e) = handle.add_server(peer_id, address).await {
+                    return println!("Err during AddServer: {}", e);
+                }
                 println!("OK.");
             }
             AutoNat::RemoveServer { peer_id } => {
-                handle.remove_server(peer_id).await;
+                if let Err(e) = handle.remove_server(peer_id).await {
+                    return println!("Err during RemoveServer: {}", e);
+                }
                 println!("OK.");
             }
             AutoNat::Probe { address } => {
-                handle.probe(address).await;
+                if let Err(e) = handle.probe(address).await {
+                    return println!("Err during Probe: {}", e);
+                };
                 println!("OK.");
             }
             AutoNat::GetNatStatus => {
-                let (status, confidence) = handle.get_nat_status().await;
+                let status = handle.get_nat_status().await;
+                if let Err(e) = status {
+                    return println!("Cannot GetNatStatus: {}", e);
+                }
+                let (status, confidence) = status.expect("already handled");
                 use super::NatStatus::*;
                 match status {
                     Private => println!("NAT status: Private; Confidence: {}", confidence),

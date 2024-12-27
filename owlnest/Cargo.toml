@@ -9,9 +9,6 @@ crate-type = ["lib"]
 [dependencies]
 tokio = { workspace = true, features = ["full"] }
 libp2p = { workspace = true, default-features = false }
-libp2p-swarm = { workspace = true }
-libp2p-noise = { workspace = true }
-libp2p-yamux = { workspace = true }
 tracing = { workspace = true }
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 tracing-log = "0.2"

@@ -1,4 +1,8 @@
-use crate::{net::p2p::swarm::EventSender, utils::ChannelError, with_timeout};
+use crate::{
+    net::p2p::swarm::EventSender,
+    utils::{AsyncErr, ChannelError},
+    with_timeout,
+};
 use config::Config;
 use libp2p::PeerId;
 pub use owlnest_advertise::*;
@@ -61,17 +65,22 @@ impl Handle {
     /// - peers that are not connected
     /// - peers that don't support this protocol
     /// - peers that are not providing
-    pub async fn set_remote_advertisement(&self, remote: PeerId, state: bool) {
+    pub async fn set_remote_advertisement(
+        &self,
+        remote: PeerId,
+        state: bool,
+    ) -> Result<(), ChannelError> {
         let ev = InEvent::SetRemoteAdvertisement {
             remote,
             state,
             id: self.next_id(),
         };
-        self.sender.send(ev).await.unwrap();
+        self.sender.send(ev).await?;
+        Ok(())
     }
     /// Set provider state of local peer.
     /// Will return a recent(not immediate) state change.
-    pub async fn set_provider_state(&self, state: bool) -> Result<bool, ChannelError> {
+    pub async fn set_provider_state(&self, state: bool) -> Result<bool, AsyncErr<()>> {
         let op_id = self.next_id();
         let mut listener = self.swarm_event_source.subscribe();
         let fut = listen_event!(
@@ -84,11 +93,11 @@ impl Handle {
         );
         let ev = InEvent::SetProviderState(state, op_id);
         self.sender.send(ev).await?;
-        with_timeout!(fut, 10)
+        Ok(with_timeout!(fut, 10)?)
     }
     /// Get provider state of local peer.
     /// Will return a immediate state report, e.g. only changes caused by this operation.
-    pub async fn provider_state(&self) -> Result<bool, ChannelError> {
+    pub async fn provider_state(&self) -> Result<bool, AsyncErr<()>> {
         let op_id = self.next_id();
         let mut listener = self.swarm_event_source.subscribe();
         let fut = listen_event!(listener for Advertise, OutEvent::ProviderState(state, id)=> {
@@ -98,11 +107,11 @@ impl Handle {
         });
         let ev = InEvent::GetProviderState(op_id);
         self.sender.send(ev).await?;
-        with_timeout!(fut, 10)
+        Ok(with_timeout!(fut, 10)?)
     }
     /// Remove advertisement on local peer.
     /// Will return a recent(not immediate) state change.
-    pub async fn remove_advertised(&self, peer_id: &PeerId) -> Result<bool, ChannelError> {
+    pub async fn remove_advertised(&self, peer_id: &PeerId) -> Result<bool, AsyncErr<()>> {
         let ev = InEvent::RemoveAdvertised(*peer_id);
         let mut listener = self.swarm_event_source.subscribe();
         let fut = listen_event!(listener for Advertise,
@@ -112,18 +121,16 @@ impl Handle {
                 }
         });
         self.sender.send(ev).await?;
-        with_timeout!(fut, 10)
+        Ok(with_timeout!(fut, 10)?)
     }
     generate_handler_method!(
         /// List all peers that supports and connected to this peer.
-        /// This call cannot fail.
         ListConnected:list_connected()->Box<[PeerId]>;
         /// List all advertisement on local peer.
         ListAdvertised:list_advertised()->Box<[PeerId]>;
     );
     generate_handler_method!(
         /// Clear all advertisements on local peer.
-        /// This call cannot fail.
         ClearAdvertised:clear_advertised();
     );
     fn next_id(&self) -> u64 {
@@ -174,7 +181,9 @@ pub mod cli {
         match command {
             Provider(command) => provider::handle_provider(handle, command).await,
             SetRemoteAdvertisement { remote, state } => {
-                handle.set_remote_advertisement(remote, state).await;
+                if let Err(e) = handle.set_remote_advertisement(remote, state).await {
+                    return println!("Err during SetRemoteAdvertisement: {}", e);
+                };
                 println!("OK")
             }
             QueryAdvertised { remote } => {
@@ -260,7 +269,9 @@ pub mod cli {
                     println!("Advertisement for peer {} is removed", peer)
                 }
                 ClearAdvertised => {
-                    handle.clear_advertised().await;
+                    if let Err(e) = handle.clear_advertised().await {
+                        return println!("Cannot ClearAdvertised: {}", e);
+                    }
                     println!("All ADs has been cleared.")
                 }
             }
@@ -301,7 +312,7 @@ mod test {
         thread::sleep(Duration::from_millis(200));
         peer2_m
             .executor()
-            .block_on(peer2_m.advertise().set_remote_advertisement(peer1_id, true));
+            .block_on(peer2_m.advertise().set_remote_advertisement(peer1_id, true))?;
         assert!(peer2_m.swarm().is_connected_blocking(peer1_id));
         trace!("peer 1 connected and advertisement set");
         thread::sleep(Duration::from_millis(200));
@@ -327,7 +338,7 @@ mod test {
             peer2_m
                 .advertise()
                 .set_remote_advertisement(peer1_id, false),
-        );
+        )?;
         trace!("removed advertisement on peer1(testing presistence)");
         assert!(peer1_m
             .executor()
@@ -365,6 +376,6 @@ mod test {
             .with_filter(filter);
         let reg = tracing_subscriber::registry().with(layer);
         tracing::subscriber::set_global_default(reg).expect(SUBSCRIBER_CONFLICT_ERROR_MESSAGE);
-        LogTracer::init().unwrap();
+        LogTracer::init().expect("log integration to be initialized correctly");
     }
 }

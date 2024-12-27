@@ -28,7 +28,7 @@ pub fn setup_interactive_shell(
         println!("OwlNest is now running in interactive mode, type \"help\" for more information.");
         #[cfg(any(feature = "owlnest-protocols", feature = "owlnest-messaging"))]
         messaging::cli::setup(&manager);
-        let mut rl = DefaultEditor::new().unwrap();
+        let mut rl = DefaultEditor::new().expect("CLI editor to be created successfully");
         let mut retry_times = 0u32;
         loop {
             let line_read = rl.readline(">> ");

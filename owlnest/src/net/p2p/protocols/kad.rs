@@ -1,6 +1,6 @@
+use crate::channel_timeout;
 use crate::net::p2p::swarm::{behaviour::BehaviourEvent, EventSender, SwarmEvent};
 use crate::utils::ChannelError;
-use crate::with_timeout;
 use libp2p::{Multiaddr, PeerId, StreamProtocol};
 use owlnest_macro::{generate_handler_method, handle_callback_sender, listen_event};
 use serde::{Deserialize, Serialize};
@@ -59,15 +59,18 @@ impl Config {
             periodic_bootstrap_interval,
             automatic_bootstrap_throttle,
         } = self;
-        let mut config = kad::Config::new(StreamProtocol::try_from_owned(protocol).unwrap())
-            .disjoint_query_paths(query_config.disjoint_query_paths)
-            .set_automatic_bootstrap_throttle(automatic_bootstrap_throttle)
-            .set_parallelism(query_config.parallelism)
-            .set_periodic_bootstrap_interval(periodic_bootstrap_interval)
-            .set_provider_record_ttl(provider_record_ttl)
-            .set_query_timeout(query_config.timeout)
-            .set_record_filtering(record_filtering.into())
-            .set_record_ttl(record_ttl);
+        let mut config = kad::Config::new(
+            StreamProtocol::try_from_owned(protocol)
+                .expect("protocol string start with a slash('/')"),
+        )
+        .disjoint_query_paths(query_config.disjoint_query_paths)
+        .set_automatic_bootstrap_throttle(automatic_bootstrap_throttle)
+        .set_parallelism(query_config.parallelism)
+        .set_periodic_bootstrap_interval(periodic_bootstrap_interval)
+        .set_provider_record_ttl(provider_record_ttl)
+        .set_query_timeout(query_config.timeout)
+        .set_record_filtering(record_filtering.into())
+        .set_record_ttl(record_ttl);
         config
             .set_replication_factor(query_config.replication_factor)
             .set_caching(caching.into())
@@ -382,7 +385,7 @@ impl Handle {
         let fut = listen_event!(listener for Kad, OutEvent::ModeChanged { new_mode }=>{
             return *new_mode;
         });
-        with_timeout!(fut, 10)
+        channel_timeout!(fut, 10)
     }
 }
 
@@ -541,8 +544,11 @@ pub mod cli {
             InsertDefault => {
                 let result = handle
                     .insert_node(
-                        PeerId::from_str("QmNnooDu7bfjPFoTZYxMNLWUQJyrVwtbZg5gBMjTezGAJN").unwrap(),
-                        "/dnsaddr/bootstrap.libp2p.io".parse::<Multiaddr>().unwrap(),
+                        PeerId::from_str("QmNnooDu7bfjPFoTZYxMNLWUQJyrVwtbZg5gBMjTezGAJN")
+                            .expect("parsing to succeed"),
+                        "/dnsaddr/bootstrap.libp2p.io"
+                            .parse::<Multiaddr>()
+                            .expect("parsing to succeed"),
                     )
                     .await;
                 println!(
@@ -551,8 +557,11 @@ pub mod cli {
                 );
                 let result = handle
                     .insert_node(
-                        PeerId::from_str("QmQCU2EcMqAqQPR2i9bChDtGNJchTbq5TbXJJ16u19uLTa").unwrap(),
-                        "/dnsaddr/bootstrap.libp2p.io".parse::<Multiaddr>().unwrap(),
+                        PeerId::from_str("QmQCU2EcMqAqQPR2i9bChDtGNJchTbq5TbXJJ16u19uLTa")
+                            .expect("parsing to succeed"),
+                        "/dnsaddr/bootstrap.libp2p.io"
+                            .parse::<Multiaddr>()
+                            .expect("parsing to succeed"),
                     )
                     .await;
                 println!(
@@ -561,8 +570,11 @@ pub mod cli {
                 );
                 let result = handle
                     .insert_node(
-                        PeerId::from_str("QmbLHAnMoJPWSCR5Zhtx6BHJX9KiKNN6tpvbUcqanj75Nb").unwrap(),
-                        "/dnsaddr/bootstrap.libp2p.io".parse::<Multiaddr>().unwrap(),
+                        PeerId::from_str("QmbLHAnMoJPWSCR5Zhtx6BHJX9KiKNN6tpvbUcqanj75Nb")
+                            .expect("parsing to succeed"),
+                        "/dnsaddr/bootstrap.libp2p.io"
+                            .parse::<Multiaddr>()
+                            .expect("parsing to succeed"),
                     )
                     .await;
                 println!(
@@ -571,8 +583,11 @@ pub mod cli {
                 );
                 let result = handle
                     .insert_node(
-                        PeerId::from_str("QmcZf59bWwK5XFi76CZX8cbJ4BhTzzA3gU1ZjYZcYW3dwt").unwrap(),
-                        "/dnsaddr/bootstrap.libp2p.io".parse::<Multiaddr>().unwrap(),
+                        PeerId::from_str("QmcZf59bWwK5XFi76CZX8cbJ4BhTzzA3gU1ZjYZcYW3dwt")
+                            .expect("parsing to succeed"),
+                        "/dnsaddr/bootstrap.libp2p.io"
+                            .parse::<Multiaddr>()
+                            .expect("parsing to succeed"),
                     )
                     .await;
                 println!(
@@ -581,8 +596,11 @@ pub mod cli {
                 );
                 let result = handle
                     .insert_node(
-                        PeerId::from_str("QmaCpDMGvV2BGHeYERUEnRQAwe3N8SzbUtfsmvsqQLuvuJ").unwrap(),
-                        "/ip4/104.131.131.82/tcp/4001".parse::<Multiaddr>().unwrap(),
+                        PeerId::from_str("QmaCpDMGvV2BGHeYERUEnRQAwe3N8SzbUtfsmvsqQLuvuJ")
+                            .expect("parsing to succeed"),
+                        "/ip4/104.131.131.82/tcp/4001"
+                            .parse::<Multiaddr>()
+                            .expect("parsing to succeed"),
                     )
                     .await;
                 println!(

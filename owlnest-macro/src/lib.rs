@@ -56,33 +56,33 @@ pub mod utils {
     {$($(#[$metas:meta])*$variant:ident:$name:ident($($params:ident:$param_type:ty$(,)?)*);)+} => {
         $(
             $(#[$metas])*
-            pub async fn $name(&self,$($params:$param_type,)*){
+            pub async fn $name(&self,$($params:$param_type,)*)->Result<(), crate::utils::ChannelError>{
                 let ev = InEvent::$variant($($params,)*);
-                self.sender.send(ev).await.expect(owlnest_macro::utils::SWARM_RECEIVER_KEPT_ALIVE_ERROR);
+                Ok(self.sender.send(ev).await?)
             }
         )*
     };
     {$($(#[$metas:meta])*$variant:ident:$name:ident($($params:ident:$param_type:ty$(,)?)*)->$return_type:ty;)+} => {
         $(
             $(#[$metas])*
-            pub async fn $name(&self,$($params:$param_type,)*)->$return_type{
+            pub async fn $name(&self,$($params:$param_type,)*)->Result<$return_type, crate::utils::ChannelError>{
                 use tokio::sync::oneshot::*;
                 let (tx,rx) = channel();
                 let ev = InEvent::$variant($($params,)*tx);
-                self.sender.send(ev).await.expect(owlnest_macro::utils::SWARM_RECEIVER_KEPT_ALIVE_ERROR);
-                rx.await.unwrap()
+                self.sender.send(ev).await?;
+                Ok(rx.await?)
             }
         )*
     };
     {$($(#[$metas:meta])*$variant:ident:$name:ident({$($params:ident:$param_type:ty$(,)?)*});)+} => {
         $(
             $(#[$metas])*
-            pub async fn $name(&self,$($params:$param_type,)*){
+            pub async fn $name(&self,$($params:$param_type,)*)->Result<(), crate::utils::ChannelError>{
                 use tokio::sync::oneshot::*;
                 let (tx,rx) = channel();
                 let ev = InEvent::$variant{$($params,)*callback:tx};
-                self.sender.send(ev).await.expect(owlnest_macro::utils::SWARM_RECEIVER_KEPT_ALIVE_ERROR);
-                rx.await.unwrap()
+                self.sender.send(ev).await?;
+                Ok(rx.await?)
             }
         )*
     };
