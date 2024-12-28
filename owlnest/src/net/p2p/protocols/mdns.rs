@@ -1,17 +1,9 @@
-use std::time::Duration;
-
-use crate::net::p2p::swarm::EventSender;
+use super::*;
 use crate::net::p2p::swarm::Swarm;
+use std::time::Duration;
 
 pub use libp2p::mdns::tokio::Behaviour;
 pub use libp2p::mdns::Event as OutEvent;
-use libp2p::PeerId;
-use owlnest_core::alias::Callback;
-use owlnest_macro::generate_handler_method;
-use owlnest_macro::handle_callback_sender;
-use serde::Deserialize;
-use serde::Serialize;
-use tokio::sync::mpsc;
 
 /// Configuration for mDNS.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -80,7 +72,10 @@ impl Handle {
         )
     }
     generate_handler_method! {
+        /// List all discovered nodes from mDNS.
         ListDiscoveredNodes:list_discovered_node()->Box<[PeerId]>;
+        /// Check if the peer can be discovered through mDNS
+        /// e.g. accessible from your local network without internet.
         HasNode:has_node(peer_id:PeerId)->bool;
     }
 }

@@ -1,11 +1,8 @@
-use std::time::Duration;
-
+use super::*;
 pub use libp2p::identify::Behaviour;
 pub use libp2p::identify::Event as OutEvent;
 pub use libp2p::identify::Info;
 pub use libp2p::identify::PROTOCOL_NAME;
-use serde::Deserialize;
-use serde::Serialize;
 use tracing::{debug, trace, warn};
 
 use crate::net::p2p::identity::IdentityUnion;
@@ -47,6 +44,7 @@ pub struct Config {
 impl Config {
     /// Convert into `libp2p::identify::Config` using an identity.
     pub fn into_config(self, ident: &IdentityUnion) -> libp2p::identify::Config {
+        use std::time::Duration;
         let Config {
             protocol_version,
             agent_version,

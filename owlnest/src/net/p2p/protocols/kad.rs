@@ -1,12 +1,8 @@
-use crate::future_timeout;
-use crate::net::p2p::swarm::{behaviour::BehaviourEvent, EventSender, SwarmEvent};
-use libp2p::{Multiaddr, PeerId, StreamProtocol};
-use owlnest_core::alias::Callback;
+use super::*;
+use crate::net::p2p::swarm::{behaviour::BehaviourEvent, SwarmEvent};
+use libp2p::StreamProtocol;
 use owlnest_core::error::OperationError;
-use owlnest_macro::{generate_handler_method, handle_callback_sender, listen_event};
-use serde::{Deserialize, Serialize};
 use std::str::FromStr;
-use tokio::sync::mpsc;
 use tracing::{debug, info, trace};
 
 pub use libp2p::kad;
@@ -514,10 +510,18 @@ pub mod cli {
         InsertDefault,
     }
 
+    /// The mode kadelima is currently working at.
     #[derive(Debug, PartialEq, Eq, Copy, Clone, ValueEnum)]
     pub enum KadMode {
+        /// Local node only listens to other record providers and don't
+        /// publish records it has.
         Client,
+        /// Local node will actively provide records to other peers.
+        /// Only peers in `Server` mode will be put into the routing table.
         Server,
+        /// The mode will be determined automatically: 
+        /// - `Client` when local node is not publicly reachable.
+        /// - `Server` when local node is publicly reachable.
         Default,
     }
     impl From<KadMode> for Option<kad::Mode> {

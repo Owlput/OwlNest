@@ -1,9 +1,4 @@
-use std::str::FromStr;
-use std::sync::Arc;
-
-use crate::handle_callback;
-use crate::net::p2p::swarm::EventSender;
-use crate::send_swarm;
+use super::*;
 use clap::ValueEnum;
 pub use config::Config;
 pub use libp2p::gossipsub::Behaviour;
@@ -12,12 +7,8 @@ pub use libp2p::gossipsub::Topic;
 pub use libp2p::gossipsub::{Hasher, IdentityHash, Sha256Hash, TopicHash};
 pub use libp2p::gossipsub::{Message, MessageAuthenticity, MessageId};
 pub use libp2p::gossipsub::{PublishError, SubscriptionError};
-use libp2p::PeerId;
-use owlnest_core::alias::Callback;
-use owlnest_macro::generate_handler_method;
-use owlnest_macro::handle_callback_sender;
-use serde::{Deserialize, Serialize};
-use tokio::sync::{mpsc, oneshot};
+use std::str::FromStr;
+use std::sync::Arc;
 
 type TopicStore = Box<dyn store::TopicStore + Send + Sync>;
 type MessageStore = Box<dyn store::MessageStore + Send + Sync>;
@@ -283,23 +274,63 @@ mod config {
     /// Configuration parameters that define the performance of the gossipsub network.
     #[derive(Debug, Clone, Serialize, Deserialize)]
     pub struct Config {
+        /// The types of message validation that can be employed by gossipsub.
+        /// for the available types. The default is ValidationMode::Strict.
         pub validation_mode: ValidationMode,
+        /// The maximum amount of bytes a message can carry without being rejected.
         pub max_transmit_size: usize,
+        /// Number of heartbeats to keep in the `memcache` (default to 5).
         pub history_length: usize,
+        /// Number of past heartbeats to gossip about (default to 3).
         pub history_gossip: usize,
+        /// Target number of peers for the mesh network (D in the spec, default to 6).
         pub mesh_n: usize,
+        /// Minimum number of peers in mesh network before adding more (D_lo in the spec, default to 4).
         pub mesh_n_low: usize,
+        /// Maximum number of peers in mesh network before removing some (D_high in the spec, default
+        /// to 12).
         pub mesh_n_high: usize,
+        /// Affects how peers are selected when pruning a mesh due to over subscription.
+        ///
+        /// At least [`Self::retain_scores`] of the retained peers will be high-scoring, while the remainder are
+        /// chosen randomly (D_score in the spec, default to 4).
         pub retain_scores: usize,
+        /// Minimum number of peers to emit gossip to during a heartbeat (D_lazy in the spec,
+        /// default to 6).
         pub gossip_lazy: usize,
+        /// Affects how many peers we will emit gossip to at each heartbeat.
+        ///
+        /// We will send gossip to `gossip_factor * (total number of non-mesh peers)`, or
+        /// `gossip_lazy`, whichever is greater. The default is 0.25.
         pub gossip_factor: f64,
+        /// Time between each heartbeat (default to 1000 ms).
         pub heartbeat_interval_ms: u64,
+        /// Duplicates are prevented by storing message id's of known messages in an LRU time cache.
+        /// This settings sets the time period that messages are stored in the cache. Duplicates can be
+        /// received if duplicate messages are sent at a time greater than this setting apart. The
+        /// default is 1 minute.
         pub duplicate_cache_time_ms: u64,
+        /// By default, gossipsub will reject messages that are sent to us that have the same message
+        /// source as we have specified locally. Enabling this, allows these messages and prevents
+        /// penalizing the peer that sent us the message. Default is false.
         pub allow_self_origin: bool,
+        /// Times we will allow a peer to request the same message id through IWANT
+        /// gossip before we start ignoring them. This is designed to prevent peers from spamming us
+        /// with requests and wasting our resources. The default is 3.
         pub gossip_retransimission: u32,
+        /// The maximum number of messages we will process in a given RPC. If this is unset, there is
+        /// no limit. The default is None.
         pub max_messages_per_rpc: Option<usize>,
+        /// The maximum number of messages to include in an IHAVE message.
+        /// Also controls the maximum number of IHAVE ids we will accept and request with IWANT from a
+        /// peer within a heartbeat, to protect from IHAVE floods. You should adjust this value from the
+        /// default if your system is pushing more than 5000 messages in GossipSubHistoryGossip
+        /// heartbeats; with the defaults this is 1666 messages/s. The default is 5000.
         pub max_ihave_length: usize,
+        /// GossipSubMaxIHaveMessages is the maximum number of IHAVE messages to accept from a peer
+        /// within a heartbeat.
         pub max_ihave_messages: usize,
+        /// External stores used for messages and topics.
         pub store: Store,
     }
     impl Default for Config {
@@ -672,9 +703,12 @@ pub mod store {
         fn subscribed_topics(&self) -> Box<[TopicHash]>;
     }
 
+    /// The kind of message.
     #[derive(Debug, Clone)]
     pub enum MessageRecord {
+        /// Message published by a remote node.
         Remote(super::Message),
+        /// Message published by local node.
         Local(Box<[u8]>),
     }
 
@@ -734,6 +768,7 @@ pub mod serde_types {
     }
 }
 
+/// Volatile in-memory stores
 pub mod mem_store {
     use dashmap::{DashMap, DashSet};
     use store::MessageRecord;

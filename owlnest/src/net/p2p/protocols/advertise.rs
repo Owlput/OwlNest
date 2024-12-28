@@ -1,11 +1,8 @@
-use crate::{net::p2p::swarm::EventSender, send_swarm, with_timeout};
+use super::*;
 use config::Config;
-use libp2p::PeerId;
 pub use owlnest_advertise::*;
 use owlnest_core::error::OperationError;
-use owlnest_macro::{generate_handler_method, listen_event};
 use std::sync::{atomic::AtomicU64, Arc};
-use tokio::sync::mpsc;
 
 /// A handle that can communicate with the behaviour within the swarm.
 #[derive(Debug, Clone)]
@@ -52,7 +49,7 @@ impl Handle {
         );
         let ev = InEvent::QueryAdvertisedPeer(relay);
         self.sender.send(ev).await.expect("");
-        match with_timeout!(fut, 10) {
+        match future_timeout!(fut, 10) {
             Ok(v) => v,
             Err(_) => Err(Error::Timeout),
         }
@@ -69,7 +66,7 @@ impl Handle {
                 }
         });
         send_swarm!(self.sender, ev);
-        Ok(with_timeout!(fut, 10)?)
+        Ok(future_timeout!(fut, 10)?)
     }
     generate_handler_method!(
         /// List all peers that supports and connected to this peer.

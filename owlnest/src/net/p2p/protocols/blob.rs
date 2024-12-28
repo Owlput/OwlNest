@@ -1,15 +1,11 @@
-use crate::net::p2p::swarm::EventSender;
-use crate::{future_timeout, handle_callback, send_swarm};
-use libp2p::PeerId;
+use super::*;
 use owlnest_blob::error::{CancellationError, FileRecvError, FileSendError};
 use owlnest_blob::Config;
 pub use owlnest_blob::{config, error, Behaviour, InEvent, OutEvent};
 pub use owlnest_blob::{RecvInfo, SendInfo};
 use owlnest_core::error::OperationError;
-use owlnest_macro::generate_handler_method;
 use std::path::Path;
 use std::time::Duration;
-use tokio::sync::{mpsc, oneshot};
 use tracing::trace;
 
 /// A handle that can communicate with the behaviour within the swarm.

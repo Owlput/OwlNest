@@ -1,14 +1,11 @@
-use crate::net::p2p::swarm::{BehaviourEvent, EventSender, SwarmEvent};
-use crate::{handle_callback, send_swarm};
-use libp2p::PeerId;
-use owlnest_macro::generate_handler_method;
-pub use owlnest_messaging::*;
+use super::*;
+use crate::net::p2p::swarm::{BehaviourEvent, SwarmEvent};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
 use store::MemMessageStore;
-use tokio::sync::mpsc;
-use tokio::sync::oneshot::channel;
+
+pub use owlnest_messaging::*;
 
 type MessageStore = Box<dyn store::MessageStore + 'static + Send + Sync>;
 
@@ -67,7 +64,7 @@ impl Handle {
         peer_id: PeerId,
         message: Message,
     ) -> Result<Duration, error::SendError> {
-        let (tx, rx) = channel();
+        let (tx, rx) = oneshot::channel();
         let ev = InEvent::SendMessage {
             peer: peer_id,
             message,
@@ -76,7 +73,10 @@ impl Handle {
         send_swarm!(self.sender, ev);
         handle_callback!(rx)
     }
-    generate_handler_method!(ListConnected:list_connected()->Box<[PeerId]>;);
+    generate_handler_method!(
+        /// List all peers that is connected and supports this protocol.
+        ListConnected:list_connected()->Box<[PeerId]>;
+    );
     /// Get a reference to the internal message store.
     pub fn message_store(&self) -> &MessageStore {
         &self.message_store

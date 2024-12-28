@@ -1,13 +1,8 @@
-use crate::net::p2p::swarm::EventSender;
+use super::*;
 pub use config::Config;
 pub use libp2p::autonat::Behaviour;
 pub use libp2p::autonat::Event as OutEvent;
 pub use libp2p::autonat::NatStatus;
-use libp2p::{Multiaddr, PeerId};
-use owlnest_core::alias::Callback;
-use owlnest_macro::generate_handler_method;
-use owlnest_macro::handle_callback_sender;
-use tokio::sync::mpsc;
 use tracing::info;
 
 #[derive(Debug)]
@@ -49,7 +44,17 @@ impl Handle {
         /// Tell the behaivour to probe the endpoint now.
         Probe:probe(candidate:Multiaddr);
     );
-    generate_handler_method!(GetNatStatus:get_nat_status()->(NatStatus,usize););
+    generate_handler_method!(
+        /// Get current NAT(Network Address Translation) status: 
+        /// - `NatStatus::Private`: the IP address you currently have 
+        /// is a translated address, meaning that others cannot connect 
+        /// to you directly using the address you have for your self.  
+        /// - `NatStatus::Public`: the IP address you currently have
+        /// can be reached by others directly(no translation required).
+        /// - `NatStatus::Unknown`: the status cannot be determined
+        /// due to conflicting information.
+        GetNatStatus:get_nat_status()->(NatStatus,usize);
+    );
     generate_handler_method!(
         /// Add a server(peer) that the behaviour can use to probe
         /// for public reachability.
@@ -150,6 +155,7 @@ pub mod cli {
     }
 }
 
+/// Config for `libp2p-autonat`
 pub mod config {
     use serde::{Deserialize, Serialize};
 

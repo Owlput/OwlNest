@@ -1,8 +1,9 @@
-pub use libp2p::relay::Behaviour;
-pub use libp2p::relay::{HOP_PROTOCOL_NAME, STOP_PROTOCOL_NAME};
-use serde::{Deserialize, Serialize};
 use std::time::Duration;
 use tracing::{debug, info};
+use super::*;
+
+pub use libp2p::relay::Behaviour;
+pub use libp2p::relay::{HOP_PROTOCOL_NAME, STOP_PROTOCOL_NAME};
 
 /// An ailas to `libp2p::relay::Event` for unified naming.
 pub type OutEvent = libp2p::relay::Event;

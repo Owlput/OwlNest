@@ -93,7 +93,7 @@ pub fn generate_manager(_attr: TokenStream, item: TokenStream) -> TokenStream {
         use crate::net::p2p::swarm::{self, EventSender};
         use super::handle::SwarmHandle;
         use std::sync::Arc;
-        use crate::net::p2p::IdentityUnion;
+        use crate::net::p2p::identity::IdentityUnion;
         use tracing::trace;
 
         pub(crate) struct RxBundle {
