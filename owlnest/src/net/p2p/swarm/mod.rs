@@ -92,8 +92,7 @@ impl Builder {
         let kad_store = libp2p::kad::store::MemoryStore::new(ident.get_peer_id());
         let (swarm_event_out, _) =
             tokio::sync::broadcast::channel(self.config.swarm.swarm_event_buffer_size);
-        let (handle_bundle, mut rx_bundle) =
-            HandleBundle::new(&self.config,&swarm_event_out);
+        let (handle_bundle, mut rx_bundle) = HandleBundle::new(&self.config, &swarm_event_out);
         let manager = manager::Manager::new(
             Arc::new(handle_bundle),
             ident.clone(),
@@ -199,8 +198,8 @@ impl Builder {
     }
 }
 
-use libp2p::{Multiaddr, TransportError};
 use libp2p::swarm::{derive_prelude::ListenerId, DialError};
+use libp2p::{Multiaddr, TransportError};
 use tokio::sync::oneshot::*;
 
 #[derive(Debug)]

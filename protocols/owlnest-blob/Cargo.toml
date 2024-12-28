@@ -14,7 +14,8 @@ xxhash-rust = { version = "*", features = ["xxh3"] }
 futures-timer = { workspace = true }
 prost = "0.13"
 toml = "*"
-
+derive_more = { workspace = true }
+owlnest-core = { path = "../../owlnest-core" }
 
 [dev-dependencies]
 serial_test = "3"

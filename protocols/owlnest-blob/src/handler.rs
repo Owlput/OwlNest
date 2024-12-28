@@ -1,5 +1,5 @@
 use super::error::{FileRecvError, FileSendError};
-use super::{error::Error, protocol, Config, PROTOCOL_NAME};
+use super::{error::Error, protocol, PROTOCOL_NAME};
 use futures_timer::Delay;
 use owlnest_macro::handle_callback_sender;
 use owlnest_prelude::handler_prelude::*;
@@ -128,12 +128,12 @@ pub struct Handler {
 }
 
 impl Handler {
-    pub(crate) fn new(config: Config) -> Self {
+    pub(crate) fn new(config: super::Config) -> Self {
         Self {
             state: State::Active,
             pending_in_events: VecDeque::new(),
             pending_out_events: VecDeque::new(),
-            timeout: config.timeout,
+            timeout: Duration::from_millis(config.timeout_ms),
             inbound: None,
             outbound: None,
         }

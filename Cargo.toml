@@ -9,7 +9,7 @@ members = [
     "protocols/owlnest-hyper",
     "protocols/owlnest-messaging",
     "protocols/owlnest-advertise",
-    "protocols/template",
+    "protocols/template", "owlnest-core",
 ]
 default_member = ["owlnest"]
 resolver = "2"

@@ -6,11 +6,12 @@ use crate::net::p2p::swarm::Swarm;
 pub use libp2p::mdns::tokio::Behaviour;
 pub use libp2p::mdns::Event as OutEvent;
 use libp2p::PeerId;
+use owlnest_core::alias::Callback;
 use owlnest_macro::generate_handler_method;
 use owlnest_macro::handle_callback_sender;
 use serde::Deserialize;
 use serde::Serialize;
-use tokio::sync::{mpsc, oneshot::*};
+use tokio::sync::mpsc;
 
 /// Configuration for mDNS.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -52,8 +53,8 @@ impl Default for Config {
 
 #[derive(Debug)]
 pub(crate) enum InEvent {
-    ListDiscoveredNodes(Sender<Box<[PeerId]>>),
-    HasNode(PeerId, Sender<bool>),
+    ListDiscoveredNodes(Callback<Box<[PeerId]>>),
+    HasNode(PeerId, Callback<bool>),
 }
 
 /// A handle that can communicate with the behaviour within the swarm.
@@ -141,10 +142,6 @@ pub mod cli {
             ListDiscovered => println!("{:?}", handle.list_discovered_node().await),
             HasNode { peer_id } => {
                 let result = handle.has_node(peer_id).await;
-                if let Err(e) = result {
-                    return println!("Cannot get HasNode: {}", e);
-                }
-                let result = result.expect("already handled");
                 println!("Is peer {} discovered through mDNS: {}", peer_id, result);
             }
         }

@@ -1,10 +1,9 @@
 use std::str::FromStr;
 use std::sync::Arc;
 
-use crate::channel_timeout;
+use crate::handle_callback;
 use crate::net::p2p::swarm::EventSender;
-use crate::utils::ChannelError;
-use crate::utils::AsyncErr;
+use crate::send_swarm;
 use clap::ValueEnum;
 pub use config::Config;
 pub use libp2p::gossipsub::Behaviour;
@@ -14,6 +13,7 @@ pub use libp2p::gossipsub::{Hasher, IdentityHash, Sha256Hash, TopicHash};
 pub use libp2p::gossipsub::{Message, MessageAuthenticity, MessageId};
 pub use libp2p::gossipsub::{PublishError, SubscriptionError};
 use libp2p::PeerId;
+use owlnest_core::alias::Callback;
 use owlnest_macro::generate_handler_method;
 use owlnest_macro::handle_callback_sender;
 use serde::{Deserialize, Serialize};
@@ -28,30 +28,33 @@ pub(crate) enum InEvent {
     /// Returns `Ok(true)` if the subscription worked. Returns `Ok(false)` if we were already
     /// subscribed.
     SubscribeTopic {
-        topic_hash: TopicHash,
-        callback: oneshot::Sender<Result<bool, SubscriptionError>>,
+        topic: TopicHash,
+        callback: Callback<Result<bool, SubscriptionError>>,
     },
     /// Unsubscribe from the topic.  
     /// Returns [`Ok(true)`] if we were subscribed to this topic.
     UnsubscribeTopic {
-        topic_hash: TopicHash,
-        callback: oneshot::Sender<Result<bool, PublishError>>,
+        topic: TopicHash,
+        callback: Callback<Result<bool, PublishError>>,
     },
     /// Publishes the message with the given topic to the network.  
     /// Duplicate messages will not be published, resulting in `PublishError::Duplicate`
     PublishMessage {
         topic: TopicHash,
         message: Box<[u8]>,
-        callback: oneshot::Sender<Result<MessageId, PublishError>>,
+        callback: Callback<Result<MessageId, PublishError>>,
     },
+    /// List all peers that interests in the topic.
+    MeshPeersOfTopic {
+        topic: TopicHash,
+        callback: Callback<Box<[PeerId]>>,
+    },
+    /// List all peers with their topics of interests.
+    AllPeersWithTopic(Callback<Box<[(PeerId, Box<[TopicHash]>)]>>),
     /// Reject all messages from this peer.
     BanPeer(PeerId),
     /// Remove the peer from ban list.
     UnbanPeer(PeerId),
-    /// List all peers that interests in the topic.
-    MeshPeersOfTopic(TopicHash, oneshot::Sender<Box<[PeerId]>>),
-    /// List all peers with their topics of interests.
-    AllPeersWithTopic(oneshot::Sender<Box<[(PeerId, Box<[TopicHash]>)]>>),
 }
 
 /// Types of different supported hashers for the topic.
@@ -126,7 +129,7 @@ impl Handle {
     pub async fn subscribe_topic<H: Hasher>(
         &self,
         topic_string: impl Into<String>,
-    ) -> Result<bool, AsyncErr<SubscriptionError>> {
+    ) -> Result<bool, SubscriptionError> {
         let topic_string = topic_string.into();
         let topic_hash = H::hash(topic_string.clone());
         let result = self.subscribe_topic_hash(topic_hash.clone()).await;
@@ -142,25 +145,25 @@ impl Handle {
     pub async fn subscribe_topic_hash(
         &self,
         topic_hash: TopicHash,
-    ) -> Result<bool, AsyncErr<SubscriptionError>> {
+    ) -> Result<bool, SubscriptionError> {
         let (tx, rx) = oneshot::channel();
         let ev = InEvent::SubscribeTopic {
-            topic_hash: topic_hash.clone(),
+            topic: topic_hash.clone(),
             callback: tx,
         };
-        self.sender.send(ev).await?;
-        let result = rx.await?.map_err(|e| AsyncErr::Err(e))?;
-        if result {
+        send_swarm!(self.sender, ev);
+        let result = handle_callback!(rx);
+        if let Ok(true) = result {
             self.topic_store.subscribe_topic(topic_hash, None);
         }
-        Ok(result)
+        result
     }
     /// Use a topic string to unsubscribe from a topic.  
     /// Returns [`Ok(true)`] if we were subscribed to this topic.
     pub async fn unsubscribe_topic<H: Hasher>(
         &self,
         topic_string: impl Into<String>,
-    ) -> Result<bool, AsyncErr<PublishError>> {
+    ) -> Result<bool, PublishError> {
         self.unsubscribe_topic_hash(H::hash(topic_string.into()))
             .await
     }
@@ -169,37 +172,18 @@ impl Handle {
     pub async fn unsubscribe_topic_hash(
         &self,
         topic_hash: TopicHash,
-    ) -> Result<bool, AsyncErr<PublishError>> {
+    ) -> Result<bool, PublishError> {
         let (tx, rx) = oneshot::channel();
         let ev = InEvent::UnsubscribeTopic {
-            topic_hash: topic_hash.clone(),
+            topic: topic_hash.clone(),
             callback: tx,
         };
-        self.sender.send(ev).await?;
-        let result = rx.await?.map_err(|e| AsyncErr::Err(e))?;
-        if result {
+        send_swarm!(self.sender, ev);
+        let result = handle_callback!(rx);
+        if let Ok(true) = result {
             self.topic_store.unsubscribe_topic(&topic_hash);
         }
-        Ok(result)
-    }
-    /// List all peers that interests in the topic. Any type of hash can be used here.  
-    pub async fn mesh_peers_of_topic(
-        &self,
-        topic_hash: TopicHash,
-    ) -> Result<Box<[PeerId]>, ChannelError> {
-        let (tx, rx) = oneshot::channel();
-        let ev = InEvent::MeshPeersOfTopic(topic_hash, tx);
-        self.sender.send(ev).await?;
-        Ok(channel_timeout!(rx, 10)??)
-    }
-    /// List all peers with their topics of interests.
-    pub async fn all_peers_with_topic(
-        &self,
-    ) -> Result<Box<[(PeerId, Box<[TopicHash]>)]>, ChannelError> {
-        let (tx, rx) = oneshot::channel();
-        let ev = InEvent::AllPeersWithTopic(tx);
-        self.sender.send(ev).await?;
-        Ok(channel_timeout!(rx, 10)??)
+        result
     }
     /// Get a reference to the internal message store.
     pub fn message_store(&self) -> &MessageStore {
@@ -222,13 +206,8 @@ impl Handle {
             message: message.clone(),
             callback: tx,
         };
-        self.sender
-            .send(ev)
-            .await
-            .expect("Swarm receiver to stay alive the entire time");
-        let result = channel_timeout!(rx, 10)
-            .expect("future to complete within 10s")
-            .expect("callback to succeed");
+        send_swarm!(self.sender, ev);
+        let result = handle_callback!(rx);
         if result.is_ok() {
             self.message_store
                 .insert_message(&topic_hash, store::MessageRecord::Local(message));
@@ -241,6 +220,14 @@ impl Handle {
         /// Remove the peer from ban list.
         UnbanPeer:unban_peer(peer:PeerId);
     );
+    generate_handler_method!(
+        /// List all peers that interests in the topic. Any type of hash can be used here.
+        MeshPeersOfTopic:mesh_peers_of_topic{topic: TopicHash} -> Box<[PeerId]>;
+    );
+    generate_handler_method!(
+        /// List all peers with their topics of interests.
+        AllPeersWithTopic:all_peers_with_topic() -> Box<[(PeerId, Box<[TopicHash]>)]>;
+    );
 }
 impl std::fmt::Debug for Handle {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -252,21 +239,21 @@ pub(crate) fn map_in_event(behav: &mut Behaviour, ev: InEvent) {
     use InEvent::*;
     match ev {
         SubscribeTopic {
-            topic_hash,
+            topic: topic_hash,
             callback,
         } => {
             let result = behav.subscribe(&topic_hash);
             handle_callback_sender!(result => callback);
         }
         UnsubscribeTopic {
-            topic_hash,
+            topic: topic_hash,
             callback,
         } => {
             let result = behav.unsubscribe(&topic_hash);
             handle_callback_sender!(result => callback)
         }
-        MeshPeersOfTopic(topic_hash, callback) => {
-            let list = behav.mesh_peers(&topic_hash).copied().collect();
+        MeshPeersOfTopic { topic, callback } => {
+            let list = behav.mesh_peers(&topic).copied().collect();
             handle_callback_sender!(list => callback);
         }
         AllPeersWithTopic(callback) => {
@@ -306,8 +293,8 @@ mod config {
         pub retain_scores: usize,
         pub gossip_lazy: usize,
         pub gossip_factor: f64,
-        pub heartbeat_interval: Duration,
-        pub duplicate_cache_time: Duration,
+        pub heartbeat_interval_ms: u64,
+        pub duplicate_cache_time_ms: u64,
         pub allow_self_origin: bool,
         pub gossip_retransimission: u32,
         pub max_messages_per_rpc: Option<usize>,
@@ -328,8 +315,8 @@ mod config {
                 retain_scores: 4,
                 gossip_lazy: 6,
                 gossip_factor: 0.25,
-                heartbeat_interval: Duration::from_secs(1),
-                duplicate_cache_time: Duration::from_secs(60),
+                heartbeat_interval_ms: 1 * 1000,
+                duplicate_cache_time_ms: 60 * 1000,
                 allow_self_origin: false,
                 gossip_retransimission: 3,
                 max_messages_per_rpc: None,
@@ -352,8 +339,8 @@ mod config {
                 retain_scores,
                 gossip_lazy,
                 gossip_factor,
-                heartbeat_interval,
-                duplicate_cache_time,
+                heartbeat_interval_ms,
+                duplicate_cache_time_ms,
                 allow_self_origin,
                 gossip_retransimission,
                 max_messages_per_rpc,
@@ -371,8 +358,8 @@ mod config {
                 .retain_scores(retain_scores)
                 .gossip_lazy(gossip_lazy)
                 .gossip_factor(gossip_factor)
-                .heartbeat_interval(heartbeat_interval)
-                .duplicate_cache_time(duplicate_cache_time)
+                .heartbeat_interval(Duration::from_millis(heartbeat_interval_ms))
+                .duplicate_cache_time(Duration::from_millis(duplicate_cache_time_ms))
                 .allow_self_origin(allow_self_origin)
                 .gossip_retransimission(gossip_retransimission)
                 .max_messages_per_rpc(max_messages_per_rpc)
@@ -518,7 +505,7 @@ pub mod cli {
         }
     }
 
-    pub async fn handle_gossipsub(handle: &Handle, command: Gossipsub) -> Result<(), String> {
+    pub async fn handle_gossipsub(handle: &Handle, command: Gossipsub) {
         match command {
             Gossipsub::Subscribe(command) => {
                 let result = match &command {
@@ -623,22 +610,15 @@ pub mod cli {
                 }
             }
             Gossipsub::Ban { peer } => {
-                if let Err(e) = handle.ban_peer(peer).await {
-                    return Err(format!("Err during Ban: {}", e));
-                };
+                handle.ban_peer(peer).await;
                 println!("OK")
             }
             Gossipsub::Unban { peer } => {
-                if let Err(e) = handle.unban_peer(peer).await {
-                    return Err(format!("Err during Unban: {}", e));
-                };
+                handle.unban_peer(peer).await;
                 println!("OK")
             }
             Gossipsub::AllPeersWithTopic => {
-                let list = handle
-                    .all_peers_with_topic()
-                    .await
-                    .map_err(|e| format!("Cannot get AllPeersWithTopic: {}", e))?;
+                let list = handle.all_peers_with_topic().await;
                 let mut table = prettytable::Table::new();
                 table.add_row(row!["Peer ID", "Subscribed Topics"]);
                 list.iter().for_each(|(peer, topics)| {
@@ -647,10 +627,7 @@ pub mod cli {
                 table.printstd();
             }
             Gossipsub::MeshPeersOfTopic(topic) => {
-                let list = handle
-                    .mesh_peers_of_topic(topic.get_hash())
-                    .await
-                    .map_err(|e| format!("Cannot get MeshPeersOfTopic: {}", e))?;
+                let list = handle.mesh_peers_of_topic(topic.get_hash()).await;
                 let mut table = Table::new();
                 table.add_row(row![
                     format!("Peers associated with topic\n{}", topic.get_hash()),
@@ -659,7 +636,6 @@ pub mod cli {
                 table.printstd()
             }
         }
-        Ok(())
     }
 }
 

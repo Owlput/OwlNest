@@ -69,7 +69,10 @@ impl IdentityUnion {
     /// NOTE: You should NEVER share this file with ANYONE. This is the
     /// only proof that you are actually you.
     pub fn export_keypair(&self, path: impl AsRef<Path>) -> Result<(), std::io::Error> {
-        Self::export_to_file(path, &self.keypair.to_protobuf_encoding().expect("Not a RSA key"))
+        Self::export_to_file(
+            path,
+            &self.keypair.to_protobuf_encoding().expect("Not a RSA key"),
+        )
     }
     fn export_to_file<P>(path: P, buf: &[u8]) -> Result<(), std::io::Error>
     where

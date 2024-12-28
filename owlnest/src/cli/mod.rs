@@ -80,13 +80,13 @@ fn handle_command(
         ))),
         Id => println!("Local peer ID: {}", ident.get_peer_id()),
         Dial { address } => {
-            if let Err(e) = handle.dial_blocking(&address) {
+            if let Err(e) = handle.dial_blocking(address.clone()) {
                 println!("Failed to initiate dial {} with error: {:?}", address, e);
             } else {
                 println!("Dialing {}", address);
             }
         }
-        Listen { address } => match handle.listen_blocking(&address) {
+        Listen { address } => match handle.listen_blocking(address.clone()) {
             Ok(listener_id) => println!(
                 "Successfully listening on {} with listener ID {:?}",
                 address, listener_id
@@ -128,13 +128,10 @@ fn handle_command(
         RelayClient(command) => relay_client::cli::handle_relay_client(manager, command),
         #[cfg(any(feature = "libp2p-protocols", feature = "libp2p-gossipsub"))]
         Gossipsub(command) => {
-            let result = executor.block_on(gossipsub::cli::handle_gossipsub(
+            executor.block_on(gossipsub::cli::handle_gossipsub(
                 manager.gossipsub(),
                 command,
             ));
-            if let Err(e) = result {
-                println!("{}", e)
-            }
         }
         Utils(command) => handle_utils(command),
     }

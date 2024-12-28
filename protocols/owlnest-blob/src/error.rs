@@ -1,5 +1,8 @@
 use std::{fmt::Display, io::ErrorKind};
 
+use derive_more::derive::From;
+use owlnest_core::error::{ChannelError, OperationError};
+
 use super::*;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -7,7 +10,6 @@ pub enum Error {
     UnrecognizedMessage(String), // Serialzied not available on the original type
     IO(String),                  // Serialize not available on the original type
     Channel,
-    SendIdNotFound(u64),
     UnexpectedEOF(u64),
 }
 impl std::fmt::Display for Error {
@@ -17,7 +19,6 @@ impl std::fmt::Display for Error {
             UnrecognizedMessage(msg) => f.write_str(msg),
             IO(msg) => f.write_str(msg),
             Channel => f.write_str("Callback channel closed unexpectedly"),
-            SendIdNotFound(id) => write!(f, "Send ID {} not found", id),
             UnexpectedEOF(recv_id) => {
                 write!(f, "The file of recv ID {} meets an unexpected EOF", recv_id)
             }
@@ -30,14 +31,18 @@ impl std::error::Error for Error {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, From)]
 pub enum FileSendError {
     IsDirectory,
     FileNotFound,
     PermissionDenied,
+    #[from]
     OtherFsError(std::io::ErrorKind),
-    Timeout,
     PeerNotFound,
+    #[from]
+    Channel(ChannelError),
+    #[from]
+    Operation(OperationError),
 }
 impl std::error::Error for FileSendError {}
 impl Display for FileSendError {
@@ -50,34 +55,43 @@ impl Display for FileSendError {
             OtherFsError(error_kind) => {
                 write!(f, "Other file system error: {}", error_kind.to_string())
             }
-            Timeout => write!(f, "Operation has timed out"),
             PeerNotFound => write!(f, "Target peer is not found"),
+            Channel(e) => e.fmt(f),
+            Operation(e) => e.fmt(f),
         }
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, From)]
 pub enum FileRecvError {
+    #[from]
     PendingRecvNotFound(u64),
     Timeout,
     FsError {
         path: String,
         error: std::io::ErrorKind,
     },
+    #[from]
+    Channel(ChannelError),
+    #[from]
+    Operation(OperationError),
 }
 impl std::error::Error for FileRecvError {}
 impl Display for FileRecvError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        use FileRecvError::*;
         match self{
-            FileRecvError::PendingRecvNotFound(id) => write!(f,"Cannot find operation associated with recv ID {}, is the request already accepted or cancaled?", id),
-            FileRecvError::Timeout => write!(f,"Timeout when waiting response from remote."),
-            FileRecvError::FsError{path,error} => {
+            PendingRecvNotFound(id) => write!(f,"Cannot find operation associated with recv ID {}, is the request already accepted or cancaled?", id),
+            Timeout => write!(f,"Timeout when waiting response from remote."),
+            FsError{path,error} => {
                 match error {
                     ErrorKind::AlreadyExists => write!(f,"File(or folder) {} already exists. Overwritting is not allowed. Please delete the file before accepting the request.", path),
                     ErrorKind::PermissionDenied => write!(f, "Cannot write to file(or folder) {}: Permission denied. Please make sure you have properly set the permission.", path),
                     e => write!(f,"OS reported OtherError {}", e)
                 }
             },
+            Channel(e) => e.fmt(f),
+            Operation(e) => e.fmt(f),
         }
     }
 }

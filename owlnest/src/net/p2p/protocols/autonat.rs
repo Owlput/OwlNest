@@ -4,17 +4,21 @@ pub use libp2p::autonat::Behaviour;
 pub use libp2p::autonat::Event as OutEvent;
 pub use libp2p::autonat::NatStatus;
 use libp2p::{Multiaddr, PeerId};
+use owlnest_core::alias::Callback;
 use owlnest_macro::generate_handler_method;
 use owlnest_macro::handle_callback_sender;
-use tokio::sync::{mpsc, oneshot};
+use tokio::sync::mpsc;
 use tracing::info;
 
 #[derive(Debug)]
 pub(crate) enum InEvent {
-    AddServer(PeerId, Option<Multiaddr>),
+    AddServer {
+        peer_id: PeerId,
+        address: Option<Multiaddr>,
+    },
     RemoveServer(PeerId),
     Probe(Multiaddr),
-    GetNatStatus(oneshot::Sender<(NatStatus, usize)>),
+    GetNatStatus(Callback<(NatStatus, usize)>),
 }
 
 /// A handle that can communicate with the behaviour within the swarm.
@@ -40,20 +44,22 @@ impl Handle {
         )
     }
     generate_handler_method!(
-        /// Add a server(peer) that the behaviour can use to probe
-        /// for public reachability.
-        AddServer:add_server(peer:PeerId,address:Option<Multiaddr>,);
         /// Remove a server(peer) the behaviour can use.
         RemoveServer:remove_server(peer:PeerId);
         /// Tell the behaivour to probe the endpoint now.
         Probe:probe(candidate:Multiaddr);
     );
     generate_handler_method!(GetNatStatus:get_nat_status()->(NatStatus,usize););
+    generate_handler_method!(
+        /// Add a server(peer) that the behaviour can use to probe
+        /// for public reachability.
+        AddServer:add_server{peer_id:PeerId,address:Option<Multiaddr>};
+    );
 }
 
 pub(crate) fn map_in_event(behaviour: &mut Behaviour, ev: InEvent) {
     match ev {
-        InEvent::AddServer(peer, address) => behaviour.add_server(peer, address),
+        InEvent::AddServer { peer_id, address } => behaviour.add_server(peer_id, address),
         InEvent::RemoveServer(peer) => behaviour.remove_server(&peer),
         InEvent::GetNatStatus(callback) => {
             handle_callback_sender!((behaviour.nat_status(),behaviour.confidence())=>callback)
@@ -117,29 +123,19 @@ pub mod cli {
     pub async fn handle_autonat(handle: &Handle, command: AutoNat) {
         match command {
             AutoNat::AddServer { peer_id, address } => {
-                if let Err(e) = handle.add_server(peer_id, address).await {
-                    return println!("Err during AddServer: {}", e);
-                }
+                handle.add_server(peer_id, address).await;
                 println!("OK.");
             }
             AutoNat::RemoveServer { peer_id } => {
-                if let Err(e) = handle.remove_server(peer_id).await {
-                    return println!("Err during RemoveServer: {}", e);
-                }
+                handle.remove_server(peer_id).await;
                 println!("OK.");
             }
             AutoNat::Probe { address } => {
-                if let Err(e) = handle.probe(address).await {
-                    return println!("Err during Probe: {}", e);
-                };
+                handle.probe(address).await;
                 println!("OK.");
             }
             AutoNat::GetNatStatus => {
-                let status = handle.get_nat_status().await;
-                if let Err(e) = status {
-                    return println!("Cannot GetNatStatus: {}", e);
-                }
-                let (status, confidence) = status.expect("already handled");
+                let (status, confidence) = handle.get_nat_status().await;
                 use super::NatStatus::*;
                 match status {
                     Private => println!("NAT status: Private; Confidence: {}", confidence),
@@ -156,24 +152,23 @@ pub mod cli {
 
 pub mod config {
     use serde::{Deserialize, Serialize};
-    use std::time::Duration;
 
     /// Config for the [`Behaviour`].
     #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
     pub struct Config {
         /// Timeout for requests.
-        pub timeout: Duration,
+        pub timeout_sec: u64,
 
         // Client Config
         /// Delay on init before starting the fist probe.
-        pub boot_delay: Duration,
+        pub boot_delay_sec: u64,
         /// Interval in which the NAT should be tested again if max confidence was reached in a status.
-        pub refresh_interval: Duration,
+        pub refresh_interval_sec: u64,
         /// Interval in which the NAT status should be re-tried if it is currently unknown
         /// or max confidence was not reached yet.
-        pub retry_interval: Duration,
+        pub retry_interval_sec: u64,
         /// Throttle period for re-using a peer as server for a dial-request.
-        pub throttle_server_period: Duration,
+        pub throttle_server_period_sec: u64,
         /// Use connected peers as servers for probes.
         pub use_connected: bool,
         /// Max confidence that can be reached in a public / private NAT status.
@@ -188,7 +183,7 @@ pub mod config {
         /// Max dial requests done in `[Config::throttle_clients_period`] for a peer.
         pub throttle_clients_peer_max: usize,
         /// Period for throttling clients requests.
-        pub throttle_clients_period: Duration,
+        pub throttle_clients_period_sec: u64,
         /// As a server reject probes for clients that are observed at a non-global ip address.
         /// Correspondingly as a client only pick peers as server that are not observed at a
         /// private ip address. Note that this does not apply for servers that are added via
@@ -199,17 +194,17 @@ pub mod config {
     impl Default for Config {
         fn default() -> Self {
             Config {
-                timeout: Duration::from_secs(30),
-                boot_delay: Duration::from_secs(15),
-                retry_interval: Duration::from_secs(90),
-                refresh_interval: Duration::from_secs(15 * 60),
-                throttle_server_period: Duration::from_secs(90),
+                timeout_sec: 30,                // 30 sec
+                boot_delay_sec: 15,             // 15 sec
+                retry_interval_sec: 90,         // 90 sec
+                refresh_interval_sec: 15 * 60,  // 15 min
+                throttle_server_period_sec: 90, // 90 sec
                 use_connected: true,
                 confidence_max: 3,
                 max_peer_addresses: 16,
                 throttle_clients_global_max: 30,
                 throttle_clients_peer_max: 3,
-                throttle_clients_period: Duration::from_secs(1),
+                throttle_clients_period_sec: 1, // 1 sec
                 only_global_ips: true,
             }
         }
@@ -232,17 +227,17 @@ pub mod config {
                 only_global_ips,
             } = value;
             Self {
-                timeout,
-                boot_delay,
-                refresh_interval,
-                retry_interval,
-                throttle_server_period,
+                timeout_sec: timeout.as_secs(),
+                boot_delay_sec: boot_delay.as_secs(),
+                refresh_interval_sec: refresh_interval.as_secs(),
+                retry_interval_sec: retry_interval.as_secs(),
+                throttle_server_period_sec: throttle_server_period.as_secs(),
                 use_connected,
                 confidence_max,
                 max_peer_addresses,
                 throttle_clients_global_max,
                 throttle_clients_peer_max,
-                throttle_clients_period,
+                throttle_clients_period_sec: throttle_clients_period.as_secs(),
                 only_global_ips,
             }
         }

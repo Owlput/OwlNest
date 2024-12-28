@@ -27,6 +27,7 @@ either = "*"
 owlnest-blob = { path = "../protocols/owlnest-blob", optional = true }
 owlnest-messaging = { path = "../protocols/owlnest-messaging", optional = true }
 owlnest-advertise = { path = "../protocols/owlnest-advertise", optional = true }
+owlnest-core = { path = "../owlnest-core" }
 toml = "*"
 clap = { version = "4.5", features = ["derive"] }
 shlex = "1.3"

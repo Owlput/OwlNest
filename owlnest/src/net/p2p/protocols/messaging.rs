@@ -1,14 +1,14 @@
 use crate::net::p2p::swarm::{BehaviourEvent, EventSender, SwarmEvent};
-use crate::with_timeout;
+use crate::{handle_callback, send_swarm};
 use libp2p::PeerId;
-use owlnest_macro::{generate_handler_method, listen_event};
+use owlnest_macro::generate_handler_method;
 pub use owlnest_messaging::*;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
 use store::MemMessageStore;
 use tokio::sync::mpsc;
-use tracing::warn;
+use tokio::sync::oneshot::channel;
 
 type MessageStore = Box<dyn store::MessageStore + 'static + Send + Sync>;
 
@@ -16,8 +16,10 @@ type MessageStore = Box<dyn store::MessageStore + 'static + Send + Sync>;
 #[derive(Clone)]
 pub struct Handle {
     sender: mpsc::Sender<InEvent>,
+    #[allow(unused)]
     swarm_event_source: EventSender,
     message_store: Arc<MessageStore>,
+    #[allow(unused)]
     counter: Arc<AtomicU64>,
 }
 impl Handle {
@@ -65,32 +67,21 @@ impl Handle {
         peer_id: PeerId,
         message: Message,
     ) -> Result<Duration, error::SendError> {
-        let op_id = self.next_id();
-        let ev = InEvent::SendMessage(peer_id, message.clone(), op_id);
-        let mut listener = self.swarm_event_source.subscribe();
-        let fut = listen_event!(listener for Messaging, OutEvent::SendResult(result, id)=>{
-            if *id != op_id {
-                continue;
-            }
-            return result.clone();
-        });
-        self.sender.send(ev).await.expect("send to succeed");
-        match with_timeout!(fut, 10) {
-            Ok(v) => {
-                self.message_store.push_message(&peer_id, message.clone());
-                v
-            }
-            Err(_) => {
-                warn!("timeout reached for a timed future");
-                Err(error::SendError::Timeout)
-            }
-        }
+        let (tx, rx) = channel();
+        let ev = InEvent::SendMessage {
+            peer: peer_id,
+            message,
+            callback: tx,
+        };
+        send_swarm!(self.sender, ev);
+        handle_callback!(rx)
     }
     generate_handler_method!(ListConnected:list_connected()->Box<[PeerId]>;);
     /// Get a reference to the internal message store.
     pub fn message_store(&self) -> &MessageStore {
         &self.message_store
     }
+    #[allow(unused)]
     fn next_id(&self) -> u64 {
         self.counter.fetch_add(1, Ordering::Relaxed)
     }
@@ -233,8 +224,9 @@ mod test {
     use super::*;
     use crate::net::p2p::{swarm::Manager, test_suit::setup_default};
     use libp2p::Multiaddr;
+    use owlnest_macro::listen_event;
     use serial_test::serial;
-    use std::{io::stdout, thread};
+    use std::{io::stdout, thread::sleep};
 
     #[test]
     #[serial]
@@ -243,23 +235,23 @@ mod test {
         let (peer2, _) = setup_default();
         peer1
             .swarm()
-            .listen_blocking(&"/ip4/127.0.0.1/tcp/0".parse::<Multiaddr>()?)?;
+            .listen_blocking("/ip4/127.0.0.1/tcp/0".parse::<Multiaddr>()?)?;
         let mut peer1_message_watcher = spawn_watcher(&peer1);
         let mut peer2_message_watcher = spawn_watcher(&peer2);
-        thread::sleep(Duration::from_millis(100));
+        sleep(Duration::from_millis(100));
         peer2
             .swarm()
-            .dial_blocking(&peer1.swarm().list_listeners_blocking()[0])?;
+            .dial_blocking(peer1.swarm().list_listeners_blocking()[0].clone())?;
         let peer1_id = peer1.identity().get_peer_id();
         let peer2_id = peer2.identity().get_peer_id();
-        thread::sleep(Duration::from_millis(1000));
+        sleep(Duration::from_millis(1000));
         assert!(
             peer2.swarm().is_connected_blocking(peer1_id)
                 && peer1.swarm().is_connected_blocking(peer2_id)
         );
         single_send_recv(&peer1, &peer2, &mut peer2_message_watcher);
         single_send_recv(&peer2, &peer1, &mut peer1_message_watcher);
-        thread::sleep(Duration::from_millis(500));
+        sleep(Duration::from_millis(500));
         Ok(())
     }
 
@@ -305,7 +297,7 @@ mod test {
     // Attach when necessary
     #[allow(unused)]
     fn setup_logging() {
-        use crate::net::p2p::protocols::SUBSCRIBER_CONFLICT_ERROR_MESSAGE;
+        use owlnest_core::expect::GLOBAL_DEFAULT_SINGLETON;
         use std::sync::Mutex;
         use tracing::Level;
         use tracing_log::LogTracer;
@@ -324,7 +316,7 @@ mod test {
             .with_writer(Mutex::new(stdout()))
             .with_filter(filter);
         let reg = tracing_subscriber::registry().with(layer);
-        tracing::subscriber::set_global_default(reg).expect(SUBSCRIBER_CONFLICT_ERROR_MESSAGE);
+        tracing::subscriber::set_global_default(reg).expect(GLOBAL_DEFAULT_SINGLETON);
         LogTracer::init().unwrap()
     }
 }

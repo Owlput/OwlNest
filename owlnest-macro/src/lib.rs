@@ -3,9 +3,6 @@ pub mod connection_handler_select;
 
 pub mod utils {
 
-    pub const SWARM_RECEIVER_KEPT_ALIVE_ERROR: &str =
-        "Receiver in the swarm should stay alive the entire lifetime of the app.";
-
     /// Less boilerplate for simple handler functions that use callback to return some data.
     ///
     /// Example:
@@ -29,8 +26,8 @@ pub mod utils {
                 use tokio::sync::oneshot::*;
                 let (tx,rx) = channel();
                 let ev = InEvent::$variant($($params,)*tx);
-                self.sender.blocking_send(ev).expect(owlnest_macro::utils::SWARM_RECEIVER_KEPT_ALIVE_ERROR);
-                rx.blocking_recv().unwrap()
+                self.sender.blocking_send(ev).expect(owlnest_core::expect::SWARM_RECEIVER_KEPT_ALIVE);
+                rx.blocking_recv().expect(owlnest_core::expect::CALLBACK_CLEAR)
             }
         )*
     };
@@ -56,24 +53,52 @@ pub mod utils {
     {$($(#[$metas:meta])*$variant:ident:$name:ident($($params:ident:$param_type:ty$(,)?)*);)+} => {
         $(
             $(#[$metas])*
-            pub async fn $name(&self,$($params:$param_type,)*)->Result<(), crate::utils::ChannelError>{
+            pub async fn $name(&self,$($params:$param_type,)*){
                 let ev = InEvent::$variant($($params,)*);
-                Ok(self.sender.send(ev).await?)
+                self.sender.send(ev).await.expect(owlnest_core::expect::SWARM_RECEIVER_KEPT_ALIVE)
             }
         )*
     };
+
     {$($(#[$metas:meta])*$variant:ident:$name:ident($($params:ident:$param_type:ty$(,)?)*)->$return_type:ty;)+} => {
         $(
             $(#[$metas])*
-            pub async fn $name(&self,$($params:$param_type,)*)->Result<$return_type, crate::utils::ChannelError>{
+            pub async fn $name(&self,$($params:$param_type,)*)->$return_type{
                 use tokio::sync::oneshot::*;
                 let (tx,rx) = channel();
                 let ev = InEvent::$variant($($params,)*tx);
-                self.sender.send(ev).await?;
-                Ok(rx.await?)
+                self.sender.send(ev).await.expect(owlnest_core::expect::SWARM_RECEIVER_KEPT_ALIVE);
+                rx.await.expect(owlnest_core::expect::CALLBACK_CLEAR)
             }
         )*
     };
+    {$($(#[$metas:meta])*$variant:ident:$name:ident{$($params:ident:$param_type:ty$(,)?)*};)+} => {
+        $(
+            $(#[$metas])*
+            pub async fn $name(&self,$($params:$param_type,)*){
+                use tokio::sync::oneshot::*;
+                let ev = InEvent::$variant{
+                    $($params,)*
+                };
+                self.sender.send(ev).await.expect(owlnest_core::expect::SWARM_RECEIVER_KEPT_ALIVE);
+            }
+        )*
+    };
+    {$($(#[$metas:meta])*$variant:ident:$name:ident{$($params:ident:$param_type:ty$(,)?)*}->$return_type:ty;)+} => {
+        $(
+            $(#[$metas])*
+            pub async fn $name(&self,$($params:$param_type,)*)->$return_type{
+                use tokio::sync::oneshot::*;
+                let (tx,rx) = channel();
+                let ev = InEvent::$variant{
+                    $($params,)*
+                    callback: tx,
+                };
+                self.sender.send(ev).await.expect(owlnest_core::expect::SWARM_RECEIVER_KEPT_ALIVE);
+                rx.await.expect(owlnest_core::expect::CALLBACK_CLEAR)
+            }
+        )*
+   };
     {$($(#[$metas:meta])*$variant:ident:$name:ident({$($params:ident:$param_type:ty$(,)?)*});)+} => {
         $(
             $(#[$metas])*
@@ -81,8 +106,8 @@ pub mod utils {
                 use tokio::sync::oneshot::*;
                 let (tx,rx) = channel();
                 let ev = InEvent::$variant{$($params,)*callback:tx};
-                self.sender.send(ev).await?;
-                Ok(rx.await?)
+                self.sender.send(ev).await.await.expect(owlnest_core::expect::SWARM_RECEIVER_KEPT_ALIVE);
+                rx.await.expect(owlnest_core::expect::CALLBACK_CLEAR)
             }
         )*
     };

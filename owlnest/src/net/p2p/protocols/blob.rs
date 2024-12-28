@@ -1,11 +1,11 @@
 use crate::net::p2p::swarm::EventSender;
-use crate::utils::AsyncErr;
-use crate::with_timeout;
+use crate::{future_timeout, handle_callback, send_swarm};
 use libp2p::PeerId;
-use owlnest_blob::error::CancellationError;
+use owlnest_blob::error::{CancellationError, FileRecvError, FileSendError};
 use owlnest_blob::Config;
 pub use owlnest_blob::{config, error, Behaviour, InEvent, OutEvent};
 pub use owlnest_blob::{RecvInfo, SendInfo};
+use owlnest_core::error::OperationError;
 use owlnest_macro::generate_handler_method;
 use std::path::Path;
 use std::time::Duration;
@@ -42,23 +42,20 @@ impl Handle {
         &self,
         to: PeerId,
         path: impl AsRef<Path>,
-    ) -> Result<u64, AsyncErr<error::FileSendError>> {
+    ) -> Result<u64, FileSendError> {
         if path.as_ref().is_dir() {
             // Reject sending directory
-            return Err(AsyncErr::Err(error::FileSendError::IsDirectory));
+            return Err(FileSendError::IsDirectory);
         }
         // Get the handle to the file(locking)
         let file = std::fs::OpenOptions::new()
             .read(true)
             .write(false)
             .open(path.as_ref())
-            .map_err(|e| {
-                let e = match e.kind() {
-                    std::io::ErrorKind::NotFound => error::FileSendError::FileNotFound,
-                    std::io::ErrorKind::PermissionDenied => error::FileSendError::PermissionDenied,
-                    e => error::FileSendError::OtherFsError(e),
-                };
-                AsyncErr::Err(e)
+            .map_err(|e| match e.kind() {
+                std::io::ErrorKind::NotFound => FileSendError::FileNotFound,
+                std::io::ErrorKind::PermissionDenied => FileSendError::PermissionDenied,
+                e => FileSendError::OtherFsError(e),
             })?;
         let (tx, rx) = oneshot::channel();
         let ev = InEvent::SendFile {
@@ -67,8 +64,10 @@ impl Handle {
             to,
             callback: tx,
         };
-        self.sender.send(ev).await?;
-        with_timeout!(rx, 10)??.map_err(|e| AsyncErr::Err(e))
+        send_swarm!(self.sender, ev);
+        future_timeout!(rx, 1000)
+            .map_err(OperationError::from)?
+            .expect(owlnest_core::expect::CALLBACK_CLEAR)
     }
     /// Accept a pending recv.
     /// If the path provided is an existing directory, the file will be written
@@ -78,7 +77,7 @@ impl Handle {
         &self,
         recv_id: u64,
         path_to_write: impl AsRef<Path>,
-    ) -> Result<Duration, AsyncErr<error::FileRecvError>> {
+    ) -> Result<Duration, FileRecvError> {
         trace!("Accepting recv id {}", recv_id);
         let path_to_write = path_to_write.as_ref();
         let file = std::fs::OpenOptions::new()
@@ -86,11 +85,9 @@ impl Handle {
             .read(true)
             .write(true)
             .open(path_to_write)
-            .map_err(|e| {
-                AsyncErr::Err(error::FileRecvError::FsError {
-                    path: path_to_write.to_string_lossy().to_string(),
-                    error: e.kind(),
-                })
+            .map_err(|e| FileRecvError::FsError {
+                path: path_to_write.to_string_lossy().to_string(),
+                error: e.kind(),
             })?;
 
         let (tx, rx) = oneshot::channel();
@@ -100,34 +97,34 @@ impl Handle {
             callback: tx,
             path: path_to_write.into(),
         };
-        self.sender.send(ev).await?;
-        with_timeout!(rx, 10)??.map_err(|e| AsyncErr::Err(e))
+        send_swarm!(self.sender, ev);
+        handle_callback!(rx)
     }
     /// Cancel a send operation on local node.
     /// Remote will be notified.
     /// Return an error if the send operation is not found.
     /// If `Ok(())` is returned, it is guaranteed that no more bytes will be sent to remote.
-    pub async fn cancel_send(&self, local_send_id: u64) -> Result<(), AsyncErr<CancellationError>> {
+    pub async fn cancel_send(&self, local_send_id: u64) -> Result<(), CancellationError> {
         let (tx, rx) = oneshot::channel();
         let ev = InEvent::CancelSend {
             local_send_id,
             callback: tx,
         };
-        self.sender.send(ev).await?;
-        with_timeout!(rx, 10)??.map_err(|e| AsyncErr::Err(e))
+        send_swarm!(self.sender, ev);
+        handle_callback!(rx)
     }
     /// Cancel a recv operation on local node.
     /// Remote will be notified.
     /// Return an error if the recv operation is not found.
     /// If `Ok(())` is returned, it is guaranteed that no more bytes will be written to the file.
-    pub async fn cancel_recv(&self, local_recv_id: u64) -> Result<(), AsyncErr<CancellationError>> {
+    pub async fn cancel_recv(&self, local_recv_id: u64) -> Result<(), CancellationError> {
         let (tx, rx) = oneshot::channel();
         let ev = InEvent::CancelRecv {
             local_recv_id,
             callback: tx,
         };
-        self.sender.send(ev).await?;
-        with_timeout!(rx, 10)??.map_err(|e| AsyncErr::Err(e))
+        send_swarm!(self.sender, ev);
+        handle_callback!(rx)
     }
     generate_handler_method!(
         /// List receives that are still in pending phase.
@@ -198,10 +195,6 @@ pub mod cli {
         match command {
             ListSend => {
                 let list = handle.list_pending_send().await;
-                if let Err(e) = list {
-                    return println!("Cannot ListSend: {}", e);
-                }
-                let list = list.expect("already handled");
                 let print_pending = list
                     .iter()
                     .filter(|v| !v.started)
@@ -258,12 +251,15 @@ pub mod cli {
 #[cfg(test)]
 mod test {
     use super::*;
-    use crate::net::p2p::swarm::{behaviour::BehaviourEvent, Manager, SwarmEvent};
     #[allow(unused)]
     use crate::net::p2p::test_suit::setup_default;
+    use crate::{
+        net::p2p::swarm::{behaviour::BehaviourEvent, Manager, SwarmEvent},
+        sleep,
+    };
     use libp2p::Multiaddr;
     use serial_test::serial;
-    use std::{io::Read, str::FromStr, thread};
+    use std::{io::Read, str::FromStr};
     use temp_dir::TempDir;
     const SOURCE_FILE: &str = "../Cargo.lock";
 
@@ -293,13 +289,13 @@ mod test {
         send(&peer1_m, peer2_m.identity().get_peer_id(), SOURCE_FILE);
         let _ = &peer2_m
             .executor()
-            .block_on(peer2_m.blob().list_pending_recv())?[0];
+            .block_on(peer2_m.blob().list_pending_recv())[0];
         peer1_m.executor().block_on(peer1_m.blob().cancel_send(0))?;
-        thread::sleep(Duration::from_millis(200));
+        sleep!(100);
         assert!(
             peer2_m
                 .executor()
-                .block_on(peer2_m.blob().list_pending_recv())?
+                .block_on(peer2_m.blob().list_pending_recv())
                 .len()
                 == 0
         );
@@ -316,19 +312,19 @@ mod test {
         send(&peer1_m, peer2_m.identity().get_peer_id(), SOURCE_FILE);
         let _ = peer2_m
             .executor()
-            .block_on(peer2_m.blob().list_pending_recv())?[2];
+            .block_on(peer2_m.blob().list_pending_recv())[2];
         peer1_m.executor().block_on(peer1_m.blob().cancel_send(2))?;
-        thread::sleep(Duration::from_millis(200));
+        sleep!(100);
         assert!(
             peer2_m
                 .executor()
-                .block_on(peer2_m.blob().list_pending_recv())?
+                .block_on(peer2_m.blob().list_pending_recv())
                 .len()
                 == 3
         );
         assert!(!peer2_m
             .executor()
-            .block_on(peer2_m.blob().list_pending_recv())?
+            .block_on(peer2_m.blob().list_pending_recv())
             .iter()
             .any(|v| v.local_recv_id == 2)); // Check if the recv_id increments linearly
         anyhow::Result::Ok(())
@@ -341,16 +337,16 @@ mod test {
         send(&peer1_m, peer2_m.identity().get_peer_id(), SOURCE_FILE);
         let recv_id = peer2_m
             .executor()
-            .block_on(peer2_m.blob().list_pending_recv())?[0]
+            .block_on(peer2_m.blob().list_pending_recv())[0]
             .local_recv_id;
         peer2_m
             .executor()
             .block_on(peer2_m.blob().cancel_recv(recv_id))?;
-        thread::sleep(Duration::from_millis(200));
+        sleep!(100);
         assert!(
             peer1_m
                 .executor()
-                .block_on(peer1_m.blob().list_pending_send())?
+                .block_on(peer1_m.blob().list_pending_send())
                 .len()
                 == 0
         );
@@ -367,19 +363,19 @@ mod test {
         send(&peer1_m, peer2_m.identity().get_peer_id(), SOURCE_FILE);
         let _ = peer1_m
             .executor()
-            .block_on(peer1_m.blob().list_pending_send())?[2];
+            .block_on(peer1_m.blob().list_pending_send())[2];
         peer2_m.executor().block_on(peer2_m.blob().cancel_recv(2))?;
-        thread::sleep(Duration::from_millis(200));
+        sleep!(100);
         assert!(
             peer1_m
                 .executor()
-                .block_on(peer1_m.blob().list_pending_send())?
+                .block_on(peer1_m.blob().list_pending_send())
                 .len()
                 == 3
         );
         assert!(!peer1_m
             .executor()
-            .block_on(peer1_m.blob().list_pending_send())?
+            .block_on(peer1_m.blob().list_pending_send())
             .iter()
             .any(|v| v.local_send_id == 2)); // Check if the send_id increments linearly
         Ok(())
@@ -391,13 +387,13 @@ mod test {
         peer1_m.executor().block_on(
             peer1_m
                 .swarm()
-                .listen(&Multiaddr::from_str("/ip4/127.0.0.1/tcp/0")?),
+                .listen(Multiaddr::from_str("/ip4/127.0.0.1/tcp/0")?),
         )?;
-        thread::sleep(Duration::from_millis(200));
+        sleep!(100);
         let peer1_listen = &peer1_m.swarm().list_listeners_blocking()[0];
-        thread::sleep(Duration::from_millis(100));
-        peer2_m.swarm().dial_blocking(peer1_listen)?;
-        thread::sleep(Duration::from_millis(200));
+        sleep!(100);
+        peer2_m.swarm().dial_blocking(peer1_listen.clone())?;
+        sleep!(100);
         Ok((peer1_m, peer2_m))
     }
 
@@ -407,7 +403,7 @@ mod test {
             .executor()
             .block_on(manager.blob().send_file(to, file))
             .unwrap();
-        thread::sleep(Duration::from_millis(200));
+        sleep!(100);
     }
 
     fn wait_recv(manager: &Manager, recv_id: u64, dir: &TempDir) -> anyhow::Result<()> {
@@ -442,14 +438,14 @@ mod test {
         assert_eq!(
             peer1
                 .executor()
-                .block_on(peer1.blob().list_pending_send())?
+                .block_on(peer1.blob().list_pending_send())
                 .len(),
             1
         );
-        thread::sleep(Duration::from_millis(100));
+        sleep!(100);
         wait_recv(
             &peer2,
-            peer2.executor().block_on(peer2.blob().list_pending_recv())?[0].local_recv_id,
+            peer2.executor().block_on(peer2.blob().list_pending_recv())[0].local_recv_id,
             &dest,
         )?;
         assert!(verify_file(

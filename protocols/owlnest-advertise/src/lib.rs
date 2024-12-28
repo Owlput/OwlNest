@@ -1,3 +1,4 @@
+use owlnest_core::alias::Callback;
 use owlnest_prelude::lib_prelude::*;
 use serde::{Deserialize, Serialize};
 
@@ -7,7 +8,6 @@ mod handler;
 
 pub use behaviour::Behaviour;
 pub use protocol::PROTOCOL_NAME;
-use tokio::sync::oneshot;
 
 #[derive(Debug, Clone)]
 pub enum OutEvent {
@@ -22,7 +22,7 @@ pub enum OutEvent {
         result: Result<(), ()>,
     },
     /// Local provider state.
-    ProviderState(bool, u64),
+    ProviderState(bool),
     AdvertisedPeerChanged(PeerId, bool),
     Error(Error),
 }
@@ -62,22 +62,24 @@ mod protocol {
 #[derive(Debug)]
 pub enum InEvent {
     /// Set local provider state.
-    SetProviderState(bool, u64),
+    SetProviderState {
+        target_state: bool,
+        callback: Callback<bool>,
+    },
     /// Get local provider state.
-    GetProviderState(u64),
+    GetProviderState(Callback<bool>),
     /// Send a query to a remote peer for advertised peers.
     QueryAdvertisedPeer(PeerId),
     /// Set remote provider state to advertise or stop advertising local peer.
     SetRemoteAdvertisement {
         remote: PeerId,
         state: bool,
-        /// Unique identifier of this operation.
-        id: u64,
+        callback: Callback<()>,
     },
     /// Remove a advertised peer from local provider.
     RemoveAdvertised(PeerId),
     /// Remove all advertised peers from local provider.
     ClearAdvertised(),
-    ListAdvertised(oneshot::Sender<Box<[PeerId]>>),
-    ListConnected(oneshot::Sender<Box<[PeerId]>>),
+    ListAdvertised(Callback<Box<[PeerId]>>),
+    ListConnected(Callback<Box<[PeerId]>>),
 }

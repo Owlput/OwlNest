@@ -4,7 +4,7 @@ use libp2p::{
     Multiaddr, PeerId, TransportError,
 };
 use owlnest_macro::{generate_handler_method, generate_handler_method_blocking};
-use tokio::sync::{mpsc, oneshot::*};
+use tokio::sync::mpsc;
 
 /// The handle to the swarm.  
 /// This handle may be used to manage connections,
@@ -18,49 +18,13 @@ impl SwarmHandle {
         let (tx, rx) = mpsc::channel(buffer);
         (Self { sender: tx }, rx)
     }
-
-    /// Dial the address.  
-    /// Should be used in synchronous contexts.
-    pub fn dial_blocking(&self, addr: &Multiaddr) -> Result<(), DialError> {
-        let (tx, rx) = channel();
-        let ev = InEvent::Dial(addr.clone(), tx);
-        self.sender.blocking_send(ev).unwrap();
-        rx.blocking_recv().unwrap()
-    }
-
-    /// Listion on the address.
-    /// Should be used in synchronous contexts.
-    pub fn listen_blocking(
-        &self,
-        addr: &Multiaddr,
-    ) -> Result<ListenerId, TransportError<std::io::Error>> {
-        let (tx, rx) = channel();
-        let ev = InEvent::Listen(addr.clone(), tx);
-        self.sender.blocking_send(ev).unwrap();
-        rx.blocking_recv().unwrap()
-    }
-
-    /// Dial the address.  
-    /// Should be used in asynchronous contexts.
-    pub async fn dial(&self, addr: &Multiaddr) -> Result<(), DialError> {
-        let (tx, rx) = channel();
-        let ev = InEvent::Dial(addr.clone(), tx);
-        self.sender.send(ev).await.unwrap();
-        rx.await.unwrap()
-    }
-
-    /// Listion on the address.
-    /// Should be used in asynchronous contexts.
-    pub async fn listen(
-        &self,
-        addr: &Multiaddr,
-    ) -> Result<ListenerId, TransportError<std::io::Error>> {
-        let (tx, rx) = channel();
-        let ev = InEvent::Listen(addr.clone(), tx);
-        self.sender.send(ev).await.unwrap();
-        rx.await.unwrap()
-    }
     generate_handler_method_blocking!(
+        /// Dial the address.
+        /// Should be used in synchronous contexts.
+        Dial:dial_blocking(addr: Multiaddr) -> Result<(), DialError>;
+        /// Listion on the address.
+        /// Should be used in synchronous contexts.
+        Listen:listen_blocking(addr: Multiaddr) -> Result<ListenerId, TransportError<std::io::Error>>;
         /// Manually confirm the address to be publicly reachable.
         /// Should be used in sychronous contexts
         AddExternalAddress:add_external_address_blocking(addr:Multiaddr)->();
@@ -81,6 +45,12 @@ impl SwarmHandle {
         RemoveExternalAddress:remove_external_address_blocking(addr:Multiaddr)->();
     );
     generate_handler_method!(
+        /// Dial the address.
+        /// Should be used in asynchronous contexts.
+        Dial:dial(addr: Multiaddr) -> Result<(), DialError>;
+        /// Listion on the address.
+        /// Should be used in asynchronous contexts.
+        Listen:listen(addr: Multiaddr) -> Result<ListenerId, TransportError<std::io::Error>>;
         /// Manually confirm the address to be publicly reachable.
         /// Should be used in asychronous contexts
         AddExternalAddress:add_external_address(addr:Multiaddr)->();

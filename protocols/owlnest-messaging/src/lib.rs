@@ -1,7 +1,8 @@
+use error::SendError;
+use owlnest_core::alias::Callback;
 use owlnest_prelude::lib_prelude::*;
 use serde::{Deserialize, Serialize};
 use std::time::Duration;
-use tokio::sync::oneshot;
 use tracing::trace;
 
 mod behaviour;
@@ -19,14 +20,17 @@ pub use protocol::PROTOCOL_NAME;
 
 #[derive(Debug)]
 pub enum InEvent {
-    SendMessage(PeerId, Message, u64),
-    ListConnected(oneshot::Sender<Box<[PeerId]>>),
+    SendMessage {
+        peer: PeerId,
+        message: Message,
+        callback: Callback<Result<Duration, SendError>>,
+    },
+    ListConnected(Callback<Box<[PeerId]>>),
 }
 
 #[derive(Debug)]
 pub enum OutEvent {
     IncomingMessage { from: PeerId, msg: Message },
-    SendResult(Result<Duration, error::SendError>, u64),
     Error(Error),
     InboundNegotiated(PeerId),
     OutboundNegotiated(PeerId),
