@@ -26,7 +26,7 @@ pub(crate) enum InEvent {
     /// Returns [`Ok(true)`] if we were subscribed to this topic.
     UnsubscribeTopic {
         topic: TopicHash,
-        callback: Callback<Result<bool, PublishError>>,
+        callback: Callback<bool>,
     },
     /// Publishes the message with the given topic to the network.  
     /// Duplicate messages will not be published, resulting in `PublishError::Duplicate`
@@ -151,19 +151,13 @@ impl Handle {
     }
     /// Use a topic string to unsubscribe from a topic.  
     /// Returns [`Ok(true)`] if we were subscribed to this topic.
-    pub async fn unsubscribe_topic<H: Hasher>(
-        &self,
-        topic_string: impl Into<String>,
-    ) -> Result<bool, PublishError> {
+    pub async fn unsubscribe_topic<H: Hasher>(&self, topic_string: impl Into<String>) -> bool {
         self.unsubscribe_topic_hash(H::hash(topic_string.into()))
             .await
     }
     /// Use a topic hash to unsubscribe from a topic. Any type of hash can be used here.  
-    /// Returns [`Ok(true)`] if we were subscribed to this topic.
-    pub async fn unsubscribe_topic_hash(
-        &self,
-        topic_hash: TopicHash,
-    ) -> Result<bool, PublishError> {
+    /// Returns [`true`] if we were subscribed to this topic.
+    pub async fn unsubscribe_topic_hash(&self, topic_hash: TopicHash) -> bool {
         let (tx, rx) = oneshot::channel();
         let ev = InEvent::UnsubscribeTopic {
             topic: topic_hash.clone(),
@@ -171,7 +165,7 @@ impl Handle {
         };
         send_swarm!(self.sender, ev);
         let result = handle_callback!(rx);
-        if let Ok(true) = result {
+        if result {
             self.topic_store.unsubscribe_topic(&topic_hash);
         }
         result
@@ -608,20 +602,14 @@ pub mod cli {
                         hash_type: HashType::Sha256,
                     } => handle.unsubscribe_topic::<Sha256Hash>(topic_string).await,
                 };
-                match result {
-                    Ok(v) => {
-                        if v {
-                            println!(
-                                r#"Successfully unsubscribed from the topic "{}""#,
-                                command.inner(),
-                            )
-                        } else {
-                            println!(r#"Topic "{}" not subscribed previously."#, command.inner())
-                        }
-                    }
-                    Err(e) => {
-                        println!("Unable to unsubscribe to the topic: {:?}", e)
-                    }
+
+                if result {
+                    println!(
+                        r#"Successfully unsubscribed from the topic "{}""#,
+                        command.inner(),
+                    )
+                } else {
+                    println!(r#"Topic "{}" not subscribed previously."#, command.inner())
                 }
             }
             Gossipsub::Publish { topic, message } => {

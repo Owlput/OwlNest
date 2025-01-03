@@ -28,7 +28,6 @@ pub struct Config {
     kbucket_inserts: config::BucketInserts,
     caching: config::Caching,
     periodic_bootstrap_interval_sec: Option<u64>,
-    automatic_bootstrap_throttle_ms: Option<u64>,
 }
 impl Default for Config {
     fn default() -> Self {
@@ -44,7 +43,6 @@ impl Default for Config {
             kbucket_inserts: config::BucketInserts::OnConnected,
             caching: config::Caching::Enabled { max_peers: 1 },
             periodic_bootstrap_interval_sec: Some(5 * 60), // 5 min
-            automatic_bootstrap_throttle_ms: Some(10 * 1000), // 10 sec
         }
     }
 }
@@ -72,25 +70,21 @@ impl Config {
             kbucket_inserts,
             caching,
             periodic_bootstrap_interval_sec,
-            automatic_bootstrap_throttle_ms,
         } = self;
         let mut config = kad::Config::new(
             StreamProtocol::try_from_owned(protocol)
                 .expect("protocol string start with a slash('/')"),
-        )
-        .disjoint_query_paths(query_config.disjoint_query_paths)
-        .set_automatic_bootstrap_throttle(
-            automatic_bootstrap_throttle_ms.map(|ms| Duration::from_millis(ms)),
-        )
-        .set_parallelism(query_config.parallelism)
-        .set_periodic_bootstrap_interval(
-            periodic_bootstrap_interval_sec.map(|sec| Duration::from_secs(sec)),
-        )
-        .set_provider_record_ttl(provider_record_ttl_sec.map(|sec| Duration::from_secs(sec)))
-        .set_query_timeout(query_config.timeout)
-        .set_record_filtering(record_filtering.into())
-        .set_record_ttl(record_ttl_sec.map(|sec| Duration::from_secs(sec)));
+        );
         config
+            .disjoint_query_paths(query_config.disjoint_query_paths)
+            .set_parallelism(query_config.parallelism)
+            .set_periodic_bootstrap_interval(
+                periodic_bootstrap_interval_sec.map(|sec| Duration::from_secs(sec)),
+            )
+            .set_provider_record_ttl(provider_record_ttl_sec.map(|sec| Duration::from_secs(sec)))
+            .set_query_timeout(query_config.timeout)
+            .set_record_filtering(record_filtering.into())
+            .set_record_ttl(record_ttl_sec.map(|sec| Duration::from_secs(sec)))
             .set_replication_factor(query_config.replication_factor)
             .set_caching(caching.into())
             .set_kbucket_inserts(kbucket_inserts.into())
@@ -519,7 +513,7 @@ pub mod cli {
         /// Local node will actively provide records to other peers.
         /// Only peers in `Server` mode will be put into the routing table.
         Server,
-        /// The mode will be determined automatically: 
+        /// The mode will be determined automatically:
         /// - `Client` when local node is not publicly reachable.
         /// - `Server` when local node is publicly reachable.
         Default,
