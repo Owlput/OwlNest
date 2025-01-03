@@ -77,7 +77,7 @@ pub mod cli {
                 let addr: Multiaddr = address
                     .with(Protocol::P2p(peer_id))
                     .with(Protocol::P2pCircuit);
-                match manager.swarm().listen_blocking(&addr) {
+                match manager.swarm().listen_blocking(addr.clone()) {
                     Ok(listener_id) => println!(
                         "Successfully listening on {} with listener ID {:?}",
                         addr, listener_id
@@ -96,20 +96,21 @@ pub mod cli {
 
 #[cfg(test)]
 mod test {
-    use crate::net::p2p::{swarm::Manager, test_suit::setup_default};
+    use crate::{
+        net::p2p::{swarm::Manager, test_suit::setup_default},
+        sleep,
+    };
     use libp2p::{multiaddr::Protocol, Multiaddr};
     use owlnest_macro::listen_event;
     use serial_test::serial;
     use std::{
         io::stdout,
         sync::{atomic::AtomicU8, Arc},
-        thread,
-        time::Duration,
     };
 
     #[test]
     #[serial]
-    fn test() {
+    fn test() -> anyhow::Result<()> {
         let (peer1_m, _) = setup_default();
         let (peer2_m, _) = setup_default();
         let (peer3_m, _) = setup_default();
@@ -118,9 +119,9 @@ mod test {
         println!("dialer:{}", peer3_m.identity().get_peer_id());
         assert!(peer1_m
             .swarm()
-            .listen_blocking(&"/ip4/127.0.0.1/tcp/0".parse::<Multiaddr>().unwrap()) // Pick a random port that is available
+            .listen_blocking("/ip4/127.0.0.1/tcp/0".parse::<Multiaddr>()?) // Pick a random port that is available
             .is_ok());
-        thread::sleep(Duration::from_millis(100));
+        sleep!(100);
         let server_address = peer1_m.swarm().list_listeners_blocking();
         let mut addr_filtered = server_address
             .iter()
@@ -129,36 +130,40 @@ mod test {
         peer1_m
             .swarm()
             .add_external_address_blocking(server_address.clone()); // The address is on local network
-        thread::sleep(Duration::from_millis(200));
-        assert!(peer2_m.swarm().dial_blocking(&server_address).is_ok());
-        thread::sleep(Duration::from_millis(200));
+        sleep!(100);
+        assert!(peer2_m
+            .swarm()
+            .dial_blocking(server_address.clone())
+            .is_ok());
+        sleep!(100);
         assert!(peer2_m
             .swarm()
             .listen_blocking(
-                &server_address
+                server_address
                     .clone()
                     .with(Protocol::P2p(peer1_m.identity().get_peer_id()))
                     .with(Protocol::P2pCircuit)
             )
             .is_ok());
-        thread::sleep(Duration::from_millis(200));
+        sleep!(100);
         assert!(peer2_m.swarm().list_listeners_blocking().len() > 0);
         assert!(peer3_m
             .swarm()
             .dial_blocking(
-                &server_address
+                server_address
                     .clone()
                     .with(Protocol::P2p(peer1_m.identity().get_peer_id()))
                     .with(Protocol::P2pCircuit)
                     .with(Protocol::P2p(peer2_m.identity().get_peer_id()))
             )
             .is_ok());
-        thread::sleep(Duration::from_millis(1000));
+        sleep!(1000);
         assert!(peer3_m
             .swarm()
             .is_connected_blocking(peer2_m.identity().get_peer_id()));
         #[cfg(any(feature = "owlnest-protocols", feature = "owlnest-messaging"))]
         with_messaging(&peer1_m, &peer2_m, &peer3_m);
+        Ok(())
     }
 
     #[cfg(any(feature = "owlnest-protocols", feature = "owlnest-messaging"))]
@@ -220,7 +225,7 @@ mod test {
                     "Hi",
                 ),
             ));
-        thread::sleep(Duration::from_millis(1000));
+        sleep!(1000);
         assert_eq!(counter.fetch_add(0, Ordering::Relaxed), 5)
     }
 

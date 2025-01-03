@@ -76,6 +76,7 @@ pub fn generate_manager(_attr: TokenStream, item: TokenStream) -> TokenStream {
     let idents8 = idents.clone();
     let idents9 = idents.clone();
     let idents10 = idents.clone();
+    let idents11 = idents.clone();
     let variants = selective_struct.fields.iter().map(|field| {
         syn::parse::<syn::Variant>(field.ty.to_token_stream().into())
             .unwrap()
@@ -92,7 +93,7 @@ pub fn generate_manager(_attr: TokenStream, item: TokenStream) -> TokenStream {
         use crate::net::p2p::swarm::{self, EventSender};
         use super::handle::SwarmHandle;
         use std::sync::Arc;
-        use crate::net::p2p::IdentityUnion;
+        use crate::net::p2p::identity::IdentityUnion;
         use tracing::trace;
 
         pub(crate) struct RxBundle {
@@ -150,9 +151,9 @@ pub fn generate_manager(_attr: TokenStream, item: TokenStream) -> TokenStream {
             #(pub #idents3:#paths2::Handle,)*
         }
         impl HandleBundle{
-            pub(crate) fn new(buffer: usize,swarm_event_source:&EventSender)->(Self,RxBundle){
-                let swarm = SwarmHandle::new(buffer);
-                #(let #idents4 = #paths3::Handle::new(buffer,swarm_event_source);)*
+            pub(crate) fn new(config: &crate::net::p2p::SwarmConfig, swarm_event_source:&EventSender)->(Self,RxBundle){
+                let swarm = SwarmHandle::new(config.swarm.swarm_event_buffer_size);
+                #(let #idents4 = #paths3::Handle::new(&config.#idents11, config.swarm.swarm_event_buffer_size, swarm_event_source);)*
                 (Self{
                     swarm:swarm.0.clone(),
                     #(#idents5:#idents6.0.clone(),)*

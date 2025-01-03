@@ -9,7 +9,7 @@ use tracing::trace;
 pub enum FromBehaviour {
     QueryAdvertisedPeer,
     AnswerAdvertisedPeer(Option<Box<[PeerId]>>),
-    SetAdvertiseSelf(bool, u64),
+    SetAdvertiseSelf(bool),
 }
 #[derive(Debug)]
 pub enum ToBehaviour {
@@ -23,7 +23,7 @@ pub enum ToBehaviour {
 impl From<Packet> for ToBehaviour {
     fn from(value: Packet) -> Self {
         match value {
-            Packet::AdvertiseSelf(bool, _) => ToBehaviour::IncomingAdvertiseReq(bool),
+            Packet::AdvertiseSelf(bool) => ToBehaviour::IncomingAdvertiseReq(bool),
             Packet::QueryAdvertisedPeer => ToBehaviour::IncomingQuery,
             Packet::AnswerAdvertisedPeer(result) => ToBehaviour::QueryAnswered(result),
         }
@@ -42,7 +42,7 @@ impl Default for State {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 enum Packet {
-    AdvertiseSelf(bool, u64),
+    AdvertiseSelf(bool),
     QueryAdvertisedPeer,
     AnswerAdvertisedPeer(Option<Box<[PeerId]>>),
 }
@@ -263,9 +263,9 @@ impl Handler {
                                 Delay::new(self.timeout),
                             ))
                         }
-                        SetAdvertiseSelf(state, id) => {
+                        SetAdvertiseSelf(state) => {
                             self.outbound = Some(OutboundState::Busy(
-                                protocol::send(stream, Packet::AdvertiseSelf(state, id).as_bytes())
+                                protocol::send(stream, Packet::AdvertiseSelf(state).as_bytes())
                                     .boxed(),
                                 Delay::new(self.timeout),
                             ))

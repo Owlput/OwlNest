@@ -1,7 +1,4 @@
-use std::str::FromStr;
-use std::sync::Arc;
-
-use crate::net::p2p::swarm::EventSender;
+use super::*;
 use clap::ValueEnum;
 pub use config::Config;
 pub use libp2p::gossipsub::Behaviour;
@@ -10,15 +7,8 @@ pub use libp2p::gossipsub::Topic;
 pub use libp2p::gossipsub::{Hasher, IdentityHash, Sha256Hash, TopicHash};
 pub use libp2p::gossipsub::{Message, MessageAuthenticity, MessageId};
 pub use libp2p::gossipsub::{PublishError, SubscriptionError};
-use libp2p::PeerId;
-use mem_store::MemMessageStore;
-use mem_store::MemTopicStore;
-use owlnest_macro::generate_handler_method;
-use owlnest_macro::handle_callback_sender;
-use owlnest_macro::with_timeout;
-use serde::Deserialize;
-use serde::Serialize;
-use tokio::sync::{mpsc, oneshot};
+use std::str::FromStr;
+use std::sync::Arc;
 
 type TopicStore = Box<dyn store::TopicStore + Send + Sync>;
 type MessageStore = Box<dyn store::MessageStore + Send + Sync>;
@@ -29,30 +19,33 @@ pub(crate) enum InEvent {
     /// Returns `Ok(true)` if the subscription worked. Returns `Ok(false)` if we were already
     /// subscribed.
     SubscribeTopic {
-        topic_hash: TopicHash,
-        callback: oneshot::Sender<Result<bool, SubscriptionError>>,
+        topic: TopicHash,
+        callback: Callback<Result<bool, SubscriptionError>>,
     },
     /// Unsubscribe from the topic.  
     /// Returns [`Ok(true)`] if we were subscribed to this topic.
     UnsubscribeTopic {
-        topic_hash: TopicHash,
-        callback: oneshot::Sender<Result<bool, PublishError>>,
+        topic: TopicHash,
+        callback: Callback<bool>,
     },
     /// Publishes the message with the given topic to the network.  
     /// Duplicate messages will not be published, resulting in `PublishError::Duplicate`
     PublishMessage {
         topic: TopicHash,
         message: Box<[u8]>,
-        callback: oneshot::Sender<Result<MessageId, PublishError>>,
+        callback: Callback<Result<MessageId, PublishError>>,
     },
+    /// List all peers that interests in the topic.
+    MeshPeersOfTopic {
+        topic: TopicHash,
+        callback: Callback<Box<[PeerId]>>,
+    },
+    /// List all peers with their topics of interests.
+    AllPeersWithTopic(Callback<Box<[(PeerId, Box<[TopicHash]>)]>>),
     /// Reject all messages from this peer.
     BanPeer(PeerId),
     /// Remove the peer from ban list.
     UnbanPeer(PeerId),
-    /// List all peers that interests in the topic.
-    MeshPeersOfTopic(TopicHash, oneshot::Sender<Box<[PeerId]>>),
-    /// List all peers with their topics of interests.
-    AllPeersWithTopic(oneshot::Sender<Box<[(PeerId, Box<[TopicHash]>)]>>),
 }
 
 /// Types of different supported hashers for the topic.
@@ -101,16 +94,23 @@ pub struct Handle {
     message_store: Arc<MessageStore>,
 }
 impl Handle {
-    pub(crate) fn new_with_mem_store(
-        buffer: usize,
+    pub(crate) fn new(
+        config: &Config,
+        buffer_size: usize,
         swarm_event_source: &EventSender,
     ) -> (Self, mpsc::Receiver<InEvent>) {
-        let (tx, rx) = mpsc::channel(buffer);
+        let (tx, rx) = mpsc::channel(buffer_size);
+        let (topic_store, message_store) = match config.store {
+            config::Store::Volatile => (
+                Arc::new(Box::new(mem_store::MemTopicStore::default()) as TopicStore),
+                Arc::new(Box::new(mem_store::MemMessageStore::default()) as MessageStore),
+            ),
+        };
         let handle = Self {
             swarm_event_source: swarm_event_source.clone(),
             sender: tx,
-            topic_store: Arc::new(Box::new(MemTopicStore::default())),
-            message_store: Arc::new(Box::new(MemMessageStore::default())),
+            topic_store,
+            message_store,
         };
         (handle, rx)
     }
@@ -139,11 +139,11 @@ impl Handle {
     ) -> Result<bool, SubscriptionError> {
         let (tx, rx) = oneshot::channel();
         let ev = InEvent::SubscribeTopic {
-            topic_hash: topic_hash.clone(),
+            topic: topic_hash.clone(),
             callback: tx,
         };
-        self.sender.send(ev).await.expect("Send to succeed");
-        let result = rx.await.unwrap();
+        send_swarm!(self.sender, ev);
+        let result = handle_callback!(rx);
         if let Ok(true) = result {
             self.topic_store.subscribe_topic(topic_hash, None);
         }
@@ -151,54 +151,24 @@ impl Handle {
     }
     /// Use a topic string to unsubscribe from a topic.  
     /// Returns [`Ok(true)`] if we were subscribed to this topic.
-    pub async fn unsubscribe_topic<H: Hasher>(
-        &self,
-        topic_string: impl Into<String>,
-    ) -> Result<bool, PublishError> {
+    pub async fn unsubscribe_topic<H: Hasher>(&self, topic_string: impl Into<String>) -> bool {
         self.unsubscribe_topic_hash(H::hash(topic_string.into()))
             .await
     }
     /// Use a topic hash to unsubscribe from a topic. Any type of hash can be used here.  
-    /// Returns [`Ok(true)`] if we were subscribed to this topic.
-    pub async fn unsubscribe_topic_hash(
-        &self,
-        topic_hash: TopicHash,
-    ) -> Result<bool, PublishError> {
+    /// Returns [`true`] if we were subscribed to this topic.
+    pub async fn unsubscribe_topic_hash(&self, topic_hash: TopicHash) -> bool {
         let (tx, rx) = oneshot::channel();
         let ev = InEvent::UnsubscribeTopic {
-            topic_hash: topic_hash.clone(),
+            topic: topic_hash.clone(),
             callback: tx,
         };
-        self.sender.send(ev).await.expect("Send to succeed");
-        let result = rx.await.unwrap();
-        if let Ok(true) = result {
+        send_swarm!(self.sender, ev);
+        let result = handle_callback!(rx);
+        if result {
             self.topic_store.unsubscribe_topic(&topic_hash);
         }
         result
-    }
-    /// List all peers that interests in the topic. Any type of hash can be used here.  
-    pub async fn mesh_peers_of_topic(&self, topic_hash: TopicHash) -> Box<[PeerId]> {
-        let (tx, rx) = oneshot::channel();
-        let ev = InEvent::MeshPeersOfTopic(topic_hash, tx);
-        self.sender
-            .send(ev)
-            .await
-            .expect("Swarm receiver to stay alive the entire time");
-        with_timeout!(rx, 10)
-            .expect("future to complete within 10s")
-            .expect("callback to succeed")
-    }
-    /// List all peers with their topics of interests.
-    pub async fn all_peers_with_topic(&self) -> Box<[(PeerId, Box<[TopicHash]>)]> {
-        let (tx, rx) = oneshot::channel();
-        let ev = InEvent::AllPeersWithTopic(tx);
-        self.sender
-            .send(ev)
-            .await
-            .expect("Swarm receiver to stay alive the entire time");
-        with_timeout!(rx, 10)
-            .expect("future to complete within 10s")
-            .expect("callback to succeed")
     }
     /// Get a reference to the internal message store.
     pub fn message_store(&self) -> &MessageStore {
@@ -221,13 +191,8 @@ impl Handle {
             message: message.clone(),
             callback: tx,
         };
-        self.sender
-            .send(ev)
-            .await
-            .expect("Swarm receiver to stay alive the entire time");
-        let result = with_timeout!(rx, 10)
-            .expect("future to complete within 10s")
-            .expect("callback to succeed");
+        send_swarm!(self.sender, ev);
+        let result = handle_callback!(rx);
         if result.is_ok() {
             self.message_store
                 .insert_message(&topic_hash, store::MessageRecord::Local(message));
@@ -240,6 +205,14 @@ impl Handle {
         /// Remove the peer from ban list.
         UnbanPeer:unban_peer(peer:PeerId);
     );
+    generate_handler_method!(
+        /// List all peers that interests in the topic. Any type of hash can be used here.
+        MeshPeersOfTopic:mesh_peers_of_topic{topic: TopicHash} -> Box<[PeerId]>;
+    );
+    generate_handler_method!(
+        /// List all peers with their topics of interests.
+        AllPeersWithTopic:all_peers_with_topic() -> Box<[(PeerId, Box<[TopicHash]>)]>;
+    );
 }
 impl std::fmt::Debug for Handle {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -251,21 +224,21 @@ pub(crate) fn map_in_event(behav: &mut Behaviour, ev: InEvent) {
     use InEvent::*;
     match ev {
         SubscribeTopic {
-            topic_hash,
+            topic: topic_hash,
             callback,
         } => {
             let result = behav.subscribe(&topic_hash);
             handle_callback_sender!(result => callback);
         }
         UnsubscribeTopic {
-            topic_hash,
+            topic: topic_hash,
             callback,
         } => {
             let result = behav.unsubscribe(&topic_hash);
             handle_callback_sender!(result => callback)
         }
-        MeshPeersOfTopic(topic_hash, callback) => {
-            let list = behav.mesh_peers(&topic_hash).copied().collect();
+        MeshPeersOfTopic { topic, callback } => {
+            let list = behav.mesh_peers(&topic).copied().collect();
             handle_callback_sender!(list => callback);
         }
         AllPeersWithTopic(callback) => {
@@ -295,23 +268,64 @@ mod config {
     /// Configuration parameters that define the performance of the gossipsub network.
     #[derive(Debug, Clone, Serialize, Deserialize)]
     pub struct Config {
-        validation_mode: ValidationMode,
-        max_transmit_size: usize,
-        history_length: usize,
-        history_gossip: usize,
-        mesh_n: usize,
-        mesh_n_low: usize,
-        mesh_n_high: usize,
-        retain_scores: usize,
-        gossip_lazy: usize,
-        gossip_factor: f64,
-        heartbeat_interval: Duration,
-        duplicate_cache_time: Duration,
-        allow_self_origin: bool,
-        gossip_retransimission: u32,
-        max_messages_per_rpc: Option<usize>,
-        max_ihave_length: usize,
-        max_ihave_messages: usize,
+        /// The types of message validation that can be employed by gossipsub.
+        /// for the available types. The default is ValidationMode::Strict.
+        pub validation_mode: ValidationMode,
+        /// The maximum amount of bytes a message can carry without being rejected.
+        pub max_transmit_size: usize,
+        /// Number of heartbeats to keep in the `memcache` (default to 5).
+        pub history_length: usize,
+        /// Number of past heartbeats to gossip about (default to 3).
+        pub history_gossip: usize,
+        /// Target number of peers for the mesh network (D in the spec, default to 6).
+        pub mesh_n: usize,
+        /// Minimum number of peers in mesh network before adding more (D_lo in the spec, default to 4).
+        pub mesh_n_low: usize,
+        /// Maximum number of peers in mesh network before removing some (D_high in the spec, default
+        /// to 12).
+        pub mesh_n_high: usize,
+        /// Affects how peers are selected when pruning a mesh due to over subscription.
+        ///
+        /// At least [`Self::retain_scores`] of the retained peers will be high-scoring, while the remainder are
+        /// chosen randomly (D_score in the spec, default to 4).
+        pub retain_scores: usize,
+        /// Minimum number of peers to emit gossip to during a heartbeat (D_lazy in the spec,
+        /// default to 6).
+        pub gossip_lazy: usize,
+        /// Affects how many peers we will emit gossip to at each heartbeat.
+        ///
+        /// We will send gossip to `gossip_factor * (total number of non-mesh peers)`, or
+        /// `gossip_lazy`, whichever is greater. The default is 0.25.
+        pub gossip_factor: f64,
+        /// Time between each heartbeat (default to 1000 ms).
+        pub heartbeat_interval_ms: u64,
+        /// Duplicates are prevented by storing message id's of known messages in an LRU time cache.
+        /// This settings sets the time period that messages are stored in the cache. Duplicates can be
+        /// received if duplicate messages are sent at a time greater than this setting apart. The
+        /// default is 1 minute.
+        pub duplicate_cache_time_ms: u64,
+        /// By default, gossipsub will reject messages that are sent to us that have the same message
+        /// source as we have specified locally. Enabling this, allows these messages and prevents
+        /// penalizing the peer that sent us the message. Default is false.
+        pub allow_self_origin: bool,
+        /// Times we will allow a peer to request the same message id through IWANT
+        /// gossip before we start ignoring them. This is designed to prevent peers from spamming us
+        /// with requests and wasting our resources. The default is 3.
+        pub gossip_retransimission: u32,
+        /// The maximum number of messages we will process in a given RPC. If this is unset, there is
+        /// no limit. The default is None.
+        pub max_messages_per_rpc: Option<usize>,
+        /// The maximum number of messages to include in an IHAVE message.
+        /// Also controls the maximum number of IHAVE ids we will accept and request with IWANT from a
+        /// peer within a heartbeat, to protect from IHAVE floods. You should adjust this value from the
+        /// default if your system is pushing more than 5000 messages in GossipSubHistoryGossip
+        /// heartbeats; with the defaults this is 1666 messages/s. The default is 5000.
+        pub max_ihave_length: usize,
+        /// GossipSubMaxIHaveMessages is the maximum number of IHAVE messages to accept from a peer
+        /// within a heartbeat.
+        pub max_ihave_messages: usize,
+        /// External stores used for messages and topics.
+        pub store: Store,
     }
     impl Default for Config {
         fn default() -> Self {
@@ -326,13 +340,14 @@ mod config {
                 retain_scores: 4,
                 gossip_lazy: 6,
                 gossip_factor: 0.25,
-                heartbeat_interval: Duration::from_secs(1),
-                duplicate_cache_time: Duration::from_secs(60),
+                heartbeat_interval_ms: 1 * 1000,
+                duplicate_cache_time_ms: 60 * 1000,
                 allow_self_origin: false,
                 gossip_retransimission: 3,
                 max_messages_per_rpc: None,
                 max_ihave_length: 5000,
                 max_ihave_messages: 10,
+                store: Store::Volatile,
             }
         }
     }
@@ -349,13 +364,14 @@ mod config {
                 retain_scores,
                 gossip_lazy,
                 gossip_factor,
-                heartbeat_interval,
-                duplicate_cache_time,
+                heartbeat_interval_ms,
+                duplicate_cache_time_ms,
                 allow_self_origin,
                 gossip_retransimission,
                 max_messages_per_rpc,
                 max_ihave_length,
                 max_ihave_messages,
+                ..
             } = value;
             let mut builder = libp2p::gossipsub::ConfigBuilder::default();
             builder
@@ -367,8 +383,8 @@ mod config {
                 .retain_scores(retain_scores)
                 .gossip_lazy(gossip_lazy)
                 .gossip_factor(gossip_factor)
-                .heartbeat_interval(heartbeat_interval)
-                .duplicate_cache_time(duplicate_cache_time)
+                .heartbeat_interval(Duration::from_millis(heartbeat_interval_ms))
+                .duplicate_cache_time(Duration::from_millis(duplicate_cache_time_ms))
                 .allow_self_origin(allow_self_origin)
                 .gossip_retransimission(gossip_retransimission)
                 .max_messages_per_rpc(max_messages_per_rpc)
@@ -412,6 +428,11 @@ mod config {
                 ValidationMode::None => None,
             }
         }
+    }
+
+    #[derive(Debug, Clone, Serialize, Deserialize)]
+    pub enum Store {
+        Volatile,
     }
 }
 
@@ -581,20 +602,14 @@ pub mod cli {
                         hash_type: HashType::Sha256,
                     } => handle.unsubscribe_topic::<Sha256Hash>(topic_string).await,
                 };
-                match result {
-                    Ok(v) => {
-                        if v {
-                            println!(
-                                r#"Successfully unsubscribed from the topic "{}""#,
-                                command.inner(),
-                            )
-                        } else {
-                            println!(r#"Topic "{}" not subscribed previously."#, command.inner())
-                        }
-                    }
-                    Err(e) => {
-                        println!("Unable to unsubscribe to the topic: {:?}", e)
-                    }
+
+                if result {
+                    println!(
+                        r#"Successfully unsubscribed from the topic "{}""#,
+                        command.inner(),
+                    )
+                } else {
+                    println!(r#"Topic "{}" not subscribed previously."#, command.inner())
                 }
             }
             Gossipsub::Publish { topic, message } => {
@@ -676,9 +691,12 @@ pub mod store {
         fn subscribed_topics(&self) -> Box<[TopicHash]>;
     }
 
+    /// The kind of message.
     #[derive(Debug, Clone)]
     pub enum MessageRecord {
+        /// Message published by a remote node.
         Remote(super::Message),
+        /// Message published by local node.
         Local(Box<[u8]>),
     }
 
@@ -738,6 +756,7 @@ pub mod serde_types {
     }
 }
 
+/// Volatile in-memory stores
 pub mod mem_store {
     use dashmap::{DashMap, DashSet};
     use store::MessageRecord;

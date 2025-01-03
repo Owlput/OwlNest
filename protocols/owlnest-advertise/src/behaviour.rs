@@ -171,22 +171,33 @@ impl Behaviour {
                     self.pending_out_events
                         .push_back(OutEvent::Error(Error::NotProviding(relay)))
                 }
-                GetProviderState(id) => {
+                GetProviderState(callback) => {
+                    handle_callback_sender!(self.is_providing=>callback);
                     return Some(ToSwarm::GenerateEvent(OutEvent::ProviderState(
                         self.is_providing,
-                        id,
-                    )))
+                    )));
                 }
-                SetRemoteAdvertisement { remote, state, id } => {
+                SetRemoteAdvertisement {
+                    remote,
+                    state,
+                    callback,
+                } => {
+                    handle_callback_sender!(()=>callback);
                     return Some(ToSwarm::NotifyHandler {
                         peer_id: remote,
                         handler: NotifyHandler::Any,
-                        event: handler::FromBehaviour::SetAdvertiseSelf(state, id),
-                    })
+                        event: handler::FromBehaviour::SetAdvertiseSelf(state),
+                    });
                 }
-                SetProviderState(status, id) => {
-                    self.set_provider_status(status);
-                    return Some(ToSwarm::GenerateEvent(OutEvent::ProviderState(status, id)));
+                SetProviderState {
+                    target_state,
+                    callback,
+                } => {
+                    self.set_provider_status(target_state);
+                    handle_callback_sender!(target_state=>callback);
+                    return Some(ToSwarm::GenerateEvent(OutEvent::ProviderState(
+                        target_state,
+                    )));
                 }
                 RemoveAdvertised(peer_id) => {
                     let result = self.advertised_peers.remove(&peer_id);

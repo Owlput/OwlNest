@@ -1,12 +1,8 @@
-use crate::net::p2p::swarm::{behaviour::BehaviourEvent, EventSender, SwarmEvent};
-use libp2p::{Multiaddr, PeerId, StreamProtocol};
-use owlnest_macro::{generate_handler_method, handle_callback_sender, listen_event, with_timeout};
-use serde::{Deserialize, Serialize};
-use std::collections::BTreeMap;
+use super::*;
+use crate::net::p2p::swarm::{behaviour::BehaviourEvent, SwarmEvent};
+use libp2p::StreamProtocol;
+use owlnest_core::error::OperationError;
 use std::str::FromStr;
-use std::sync::{Arc, RwLock};
-use std::time::Duration;
-use tokio::sync::{mpsc, oneshot};
 use tracing::{debug, info, trace};
 
 pub use libp2p::kad;
@@ -16,21 +12,39 @@ pub type Behaviour = kad::Behaviour<kad::store::MemoryStore>;
 pub type OutEvent = kad::Event;
 pub use libp2p::kad::PROTOCOL_NAME;
 
+type PeerTreeMap = std::collections::BTreeMap<PeerId, kad::Addresses>;
+
 /// Equivalent to `libp2p::kad::Config` that supports `serde`.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Config {
     max_packet_size: usize,
     query_config: config::QueryConfig,
-    record_ttl: Option<Duration>,
-    record_replication_interval: Option<Duration>,
-    record_publication_interval: Option<Duration>,
+    record_ttl_sec: Option<u64>,
+    record_replication_interval_sec: Option<u64>,
+    record_publication_interval_sec: Option<u64>,
     record_filtering: config::StoreInserts,
-    provider_record_ttl: Option<Duration>,
-    provider_publication_interval: Option<Duration>,
+    provider_record_ttl_sec: Option<u64>,
+    provider_publication_interval_sec: Option<u64>,
     kbucket_inserts: config::BucketInserts,
     caching: config::Caching,
-    periodic_bootstrap_interval: Option<Duration>,
-    automatic_bootstrap_throttle: Option<Duration>,
+    periodic_bootstrap_interval_sec: Option<u64>,
+}
+impl Default for Config {
+    fn default() -> Self {
+        Self {
+            max_packet_size: 16 * 1024,
+            query_config: config::QueryConfig::default(),
+            record_ttl_sec: Some(48 * 60 * 60), // 2 days
+            record_replication_interval_sec: Some(60 * 60), // 1 hr
+            record_publication_interval_sec: Some(22 * 60 * 60), // 22 hr
+            record_filtering: config::StoreInserts::Unfiltered,
+            provider_publication_interval_sec: Some(12 * 60 * 60), // 12 hr
+            provider_record_ttl_sec: Some(48 * 60 * 60),           // 2 days
+            kbucket_inserts: config::BucketInserts::OnConnected,
+            caching: config::Caching::Enabled { max_peers: 1 },
+            periodic_bootstrap_interval_sec: Some(5 * 60), // 5 min
+        }
+    }
 }
 impl Config {
     /// Convert to `libp2p::kad::Config` with a ptotocol string.  
@@ -43,56 +57,48 @@ impl Config {
     /// Merging different kadlima networks will reduce effeciency of both
     /// networks due to extra peers that aren't of help.
     pub fn into_config(self, protocol: String) -> kad::Config {
+        use std::time::Duration;
         let Config {
             max_packet_size,
             query_config,
-            record_ttl,
-            record_replication_interval,
-            record_publication_interval,
+            record_ttl_sec,
+            record_replication_interval_sec,
+            record_publication_interval_sec,
             record_filtering,
-            provider_record_ttl,
-            provider_publication_interval,
+            provider_record_ttl_sec,
+            provider_publication_interval_sec,
             kbucket_inserts,
             caching,
-            periodic_bootstrap_interval,
-            automatic_bootstrap_throttle,
+            periodic_bootstrap_interval_sec,
         } = self;
-        let mut config = kad::Config::new(StreamProtocol::try_from_owned(protocol).unwrap())
+        let mut config = kad::Config::new(
+            StreamProtocol::try_from_owned(protocol)
+                .expect("protocol string start with a slash('/')"),
+        );
+        config
             .disjoint_query_paths(query_config.disjoint_query_paths)
-            .set_automatic_bootstrap_throttle(automatic_bootstrap_throttle)
             .set_parallelism(query_config.parallelism)
-            .set_periodic_bootstrap_interval(periodic_bootstrap_interval)
-            .set_provider_record_ttl(provider_record_ttl)
+            .set_periodic_bootstrap_interval(
+                periodic_bootstrap_interval_sec.map(|sec| Duration::from_secs(sec)),
+            )
+            .set_provider_record_ttl(provider_record_ttl_sec.map(|sec| Duration::from_secs(sec)))
             .set_query_timeout(query_config.timeout)
             .set_record_filtering(record_filtering.into())
-            .set_record_ttl(record_ttl);
-        config
+            .set_record_ttl(record_ttl_sec.map(|sec| Duration::from_secs(sec)))
             .set_replication_factor(query_config.replication_factor)
             .set_caching(caching.into())
             .set_kbucket_inserts(kbucket_inserts.into())
             .set_max_packet_size(max_packet_size)
-            .set_provider_publication_interval(provider_publication_interval)
-            .set_replication_interval(record_replication_interval)
-            .set_publication_interval(record_publication_interval);
+            .set_provider_publication_interval(
+                provider_publication_interval_sec.map(|sec| Duration::from_secs(sec)),
+            )
+            .set_replication_interval(
+                record_replication_interval_sec.map(|sec| Duration::from_secs(sec)),
+            )
+            .set_publication_interval(
+                record_publication_interval_sec.map(|sec| Duration::from_secs(sec)),
+            );
         config
-    }
-}
-impl Default for Config {
-    fn default() -> Self {
-        Self {
-            max_packet_size: 16 * 1024,
-            query_config: config::QueryConfig::default(),
-            record_ttl: Some(Duration::from_secs(48 * 60 * 60)),
-            record_replication_interval: Some(Duration::from_secs(60 * 60)),
-            record_publication_interval: Some(Duration::from_secs(22 * 60 * 60)),
-            record_filtering: config::StoreInserts::Unfiltered,
-            provider_publication_interval: Some(Duration::from_secs(12 * 60 * 60)),
-            provider_record_ttl: Some(Duration::from_secs(48 * 60 * 60)),
-            kbucket_inserts: config::BucketInserts::OnConnected,
-            caching: config::Caching::Enabled { max_peers: 1 },
-            periodic_bootstrap_interval: Some(Duration::from_secs(5 * 60)),
-            automatic_bootstrap_throttle: Some(Duration::from_secs(10)),
-        }
     }
 }
 
@@ -249,9 +255,16 @@ pub mod config {
 
 #[derive(Debug)]
 pub(crate) enum InEvent {
-    PeerLookup(PeerId, oneshot::Sender<kad::QueryId>),
-    BootStrap(oneshot::Sender<Result<kad::QueryId, kad::NoKnownPeers>>),
-    InsertNode(PeerId, Multiaddr, oneshot::Sender<kad::RoutingUpdate>),
+    PeerLookup {
+        peer_id: PeerId,
+        callback: Callback<kad::QueryId>,
+    },
+    BootStrap(Callback<Result<kad::QueryId, kad::NoKnownPeers>>),
+    InsertNode {
+        peer_id: PeerId,
+        address: Multiaddr,
+        callback: Callback<kad::RoutingUpdate>,
+    },
     SetMode(Option<kad::Mode>),
 }
 
@@ -260,15 +273,16 @@ pub(crate) enum InEvent {
 pub struct Handle {
     sender: mpsc::Sender<InEvent>,
     swarm_event_source: EventSender,
-    tree_map: Arc<RwLock<BTreeMap<PeerId, kad::Addresses>>>,
+    tree_map: std::sync::Arc<std::sync::RwLock<PeerTreeMap>>,
 }
 impl Handle {
     pub(crate) fn new(
-        buffer: usize,
+        _config: &Config,
+        buffer_size: usize,
         swarm_event_source: &EventSender,
     ) -> (Self, mpsc::Receiver<InEvent>) {
-        let (tx, rx) = mpsc::channel(buffer);
-        let tree_map = Arc::new(RwLock::new(BTreeMap::new()));
+        let (tx, rx) = mpsc::channel(buffer_size);
+        let tree_map: std::sync::Arc<std::sync::RwLock<PeerTreeMap>> = Default::default();
         let tree_map_clone = tree_map.clone();
         let mut listener = swarm_event_source.subscribe();
         tokio::spawn(async move {
@@ -295,41 +309,18 @@ impl Handle {
             rx,
         )
     }
-    generate_handler_method!(
-        /// Mannually insert a record to the store.
-        InsertNode:insert_node(peer_id:PeerId, address:Multiaddr)->kad::RoutingUpdate;
-        /// Start bootstrapping.
-        /// ## Bootstrapping in kadlima network
-        /// Bootstrapping means perform a walk-through of the network to gain
-        /// more information of the network. Between walk-throughs(bootstrappings),
-        /// some peer may join the network while others may leave, so regular
-        /// bootstrapping will help maintain a healthy network with up-to-date
-        /// information.
-        /// ## Bootstrapping on a newly started peer
-        /// For a newly started peer, its kadlima record store is empty, which means
-        /// the new peer have no idea of the network, hence unable to query for
-        /// information of the network(there is no one to talk to). So you should
-        /// manually insert some record(at least one known and reachable peer) for
-        /// bootstrapping.
-        /// ### Hijaking
-        /// If the node used for initial bootstrapping is malicious, the new peer
-        /// is vulnerable to [sybil attack](https://ssg.lancs.ac.uk/wp-content/uploads/ndss_preprint.pdf),
-        /// which means higher chances of encounting other malicious peers that
-        /// may breach trusts and consensus.
-        /// So it is VERY important to choose bootstrapping nodes carefully and
-        /// only use those peers you trust rather than a random node.
-        BootStrap:bootstrap()->Result<kad::QueryId,kad::NoKnownPeers>;
-    );
     /// Start a query that goes through the entire network.
     pub async fn query(&self, peer_id: PeerId) -> Vec<kad::QueryResult> {
         let mut listener = self.swarm_event_source.subscribe();
-        let (callback_tx, callback_rx) = oneshot::channel();
-
+        let (tx, rx) = tokio::sync::oneshot::channel();
         self.sender
-            .send(InEvent::PeerLookup(peer_id, callback_tx))
+            .send(InEvent::PeerLookup {
+                peer_id,
+                callback: tx,
+            })
             .await
             .expect("sending event to succeed");
-        let query_id = callback_rx.await.expect("callback to succeed");
+        let query_id = rx.await.expect("callback to succeed");
         let mut results = Vec::new();
         let handle = tokio::spawn(listen_event!(
             listener for Kad,
@@ -361,7 +352,7 @@ impl Handle {
             .cloned()
     }
     /// Get all records stored on local node.
-    pub async fn all_records(&self) -> BTreeMap<PeerId, kad::Addresses> {
+    pub async fn all_records(&self) -> PeerTreeMap {
         self.tree_map.read().expect("Lock not poisoned.").clone()
     }
     /// Set the current kadelima behaviour mode.
@@ -372,25 +363,49 @@ impl Handle {
     /// Actively publish records in the local store.
     /// ### Routing table
     /// Only peers in `server` mode will be added to routing tables.
-    pub async fn set_mode(&self, mode: Option<kad::Mode>) -> Result<kad::Mode, ()> {
+    pub async fn set_mode(&self, mode: Option<kad::Mode>) -> Result<kad::Mode, OperationError> {
         let ev = InEvent::SetMode(mode);
         let mut listener = self.swarm_event_source.subscribe();
         self.sender.send(ev).await.expect("send to succeed");
         let fut = listen_event!(listener for Kad, OutEvent::ModeChanged { new_mode }=>{
             return *new_mode;
         });
-        match with_timeout!(fut, 10) {
-            Ok(result) => Ok(result),
-            Err(_) => Err(()),
-        }
+        future_timeout!(fut, 1000)
     }
+    generate_handler_method!(
+        /// Start bootstrapping.
+        /// ## Bootstrapping in kadlima network
+        /// Bootstrapping means perform a walk-through of the network to gain
+        /// more information of the network. Between walk-throughs(bootstrappings),
+        /// some peer may join the network while others may leave, so regular
+        /// bootstrapping will help maintain a healthy network with up-to-date
+        /// information.
+        /// ## Bootstrapping on a newly started peer
+        /// For a newly started peer, its kadlima record store is empty, which means
+        /// the new peer have no idea of the network, hence unable to query for
+        /// information of the network(there is no one to talk to). So you should
+        /// manually insert some record(at least one known and reachable peer) for
+        /// bootstrapping.
+        /// ### Hijaking
+        /// If the node used for initial bootstrapping is malicious, the new peer
+        /// is vulnerable to [sybil attack](https://ssg.lancs.ac.uk/wp-content/uploads/ndss_preprint.pdf),
+        /// which means higher chances of encounting other malicious peers that
+        /// may breach trusts and consensus.
+        /// So it is VERY important to choose bootstrapping nodes carefully and
+        /// only use those peers you trust rather than a random node.
+        BootStrap:bootstrap()->Result<kad::QueryId,kad::NoKnownPeers>;
+    );
+    generate_handler_method!(
+        /// Mannually insert a record to the store.
+        InsertNode:insert_node{peer_id:PeerId, address:Multiaddr}->kad::RoutingUpdate;
+    );
 }
 
 pub(crate) fn map_in_event(ev: InEvent, behav: &mut Behaviour) {
     use InEvent::*;
 
     match ev {
-        PeerLookup(peer_id, callback) => {
+        PeerLookup { peer_id, callback } => {
             let query_id = behav.get_record(kad::RecordKey::new(&peer_id.to_bytes()));
             handle_callback_sender!(query_id=>callback);
         }
@@ -399,8 +414,12 @@ pub(crate) fn map_in_event(ev: InEvent, behav: &mut Behaviour) {
             handle_callback_sender!(result=>callback);
         }
         SetMode(mode) => behav.set_mode(mode),
-        InsertNode(peer, address, callback) => {
-            let result = behav.add_address(&peer, address);
+        InsertNode {
+            peer_id,
+            address,
+            callback,
+        } => {
+            let result = behav.add_address(&peer_id, address);
             handle_callback_sender!(result=>callback);
         }
     }
@@ -485,10 +504,18 @@ pub mod cli {
         InsertDefault,
     }
 
+    /// The mode kadelima is currently working at.
     #[derive(Debug, PartialEq, Eq, Copy, Clone, ValueEnum)]
     pub enum KadMode {
+        /// Local node only listens to other record providers and don't
+        /// publish records it has.
         Client,
+        /// Local node will actively provide records to other peers.
+        /// Only peers in `Server` mode will be put into the routing table.
         Server,
+        /// The mode will be determined automatically:
+        /// - `Client` when local node is not publicly reachable.
+        /// - `Server` when local node is publicly reachable.
         Default,
     }
     impl From<KadMode> for Option<kad::Mode> {
@@ -541,8 +568,11 @@ pub mod cli {
             InsertDefault => {
                 let result = handle
                     .insert_node(
-                        PeerId::from_str("QmNnooDu7bfjPFoTZYxMNLWUQJyrVwtbZg5gBMjTezGAJN").unwrap(),
-                        "/dnsaddr/bootstrap.libp2p.io".parse::<Multiaddr>().unwrap(),
+                        PeerId::from_str("QmNnooDu7bfjPFoTZYxMNLWUQJyrVwtbZg5gBMjTezGAJN")
+                            .expect("parsing to succeed"),
+                        "/dnsaddr/bootstrap.libp2p.io"
+                            .parse::<Multiaddr>()
+                            .expect("parsing to succeed"),
                     )
                     .await;
                 println!(
@@ -551,8 +581,11 @@ pub mod cli {
                 );
                 let result = handle
                     .insert_node(
-                        PeerId::from_str("QmQCU2EcMqAqQPR2i9bChDtGNJchTbq5TbXJJ16u19uLTa").unwrap(),
-                        "/dnsaddr/bootstrap.libp2p.io".parse::<Multiaddr>().unwrap(),
+                        PeerId::from_str("QmQCU2EcMqAqQPR2i9bChDtGNJchTbq5TbXJJ16u19uLTa")
+                            .expect("parsing to succeed"),
+                        "/dnsaddr/bootstrap.libp2p.io"
+                            .parse::<Multiaddr>()
+                            .expect("parsing to succeed"),
                     )
                     .await;
                 println!(
@@ -561,8 +594,11 @@ pub mod cli {
                 );
                 let result = handle
                     .insert_node(
-                        PeerId::from_str("QmbLHAnMoJPWSCR5Zhtx6BHJX9KiKNN6tpvbUcqanj75Nb").unwrap(),
-                        "/dnsaddr/bootstrap.libp2p.io".parse::<Multiaddr>().unwrap(),
+                        PeerId::from_str("QmbLHAnMoJPWSCR5Zhtx6BHJX9KiKNN6tpvbUcqanj75Nb")
+                            .expect("parsing to succeed"),
+                        "/dnsaddr/bootstrap.libp2p.io"
+                            .parse::<Multiaddr>()
+                            .expect("parsing to succeed"),
                     )
                     .await;
                 println!(
@@ -571,8 +607,11 @@ pub mod cli {
                 );
                 let result = handle
                     .insert_node(
-                        PeerId::from_str("QmcZf59bWwK5XFi76CZX8cbJ4BhTzzA3gU1ZjYZcYW3dwt").unwrap(),
-                        "/dnsaddr/bootstrap.libp2p.io".parse::<Multiaddr>().unwrap(),
+                        PeerId::from_str("QmcZf59bWwK5XFi76CZX8cbJ4BhTzzA3gU1ZjYZcYW3dwt")
+                            .expect("parsing to succeed"),
+                        "/dnsaddr/bootstrap.libp2p.io"
+                            .parse::<Multiaddr>()
+                            .expect("parsing to succeed"),
                     )
                     .await;
                 println!(
@@ -581,8 +620,11 @@ pub mod cli {
                 );
                 let result = handle
                     .insert_node(
-                        PeerId::from_str("QmaCpDMGvV2BGHeYERUEnRQAwe3N8SzbUtfsmvsqQLuvuJ").unwrap(),
-                        "/ip4/104.131.131.82/tcp/4001".parse::<Multiaddr>().unwrap(),
+                        PeerId::from_str("QmaCpDMGvV2BGHeYERUEnRQAwe3N8SzbUtfsmvsqQLuvuJ")
+                            .expect("parsing to succeed"),
+                        "/ip4/104.131.131.82/tcp/4001"
+                            .parse::<Multiaddr>()
+                            .expect("parsing to succeed"),
                     )
                     .await;
                 println!(

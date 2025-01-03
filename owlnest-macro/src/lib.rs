@@ -2,6 +2,7 @@ pub mod behaviour_select;
 pub mod connection_handler_select;
 
 pub mod utils {
+
     /// Less boilerplate for simple handler functions that use callback to return some data.
     ///
     /// Example:
@@ -22,13 +23,13 @@ pub mod utils {
         $(
             $(#[$metas])*
             pub fn $name(&self,$($params:$param_type)*)->$return_type{
-            use tokio::sync::oneshot::*;
-            let (tx,rx) = channel();
-            let ev = InEvent::$variant($($params,)*tx);
-            self.sender.blocking_send(ev).unwrap();
-            rx.blocking_recv().unwrap()
-        }
-    )*
+                use tokio::sync::oneshot::*;
+                let (tx,rx) = channel();
+                let ev = InEvent::$variant($($params,)*tx);
+                self.sender.blocking_send(ev).expect(owlnest_core::expect::SWARM_RECEIVER_KEPT_ALIVE);
+                rx.blocking_recv().expect(owlnest_core::expect::CALLBACK_CLEAR)
+            }
+        )*
     };
 }
 
@@ -54,10 +55,11 @@ pub mod utils {
             $(#[$metas])*
             pub async fn $name(&self,$($params:$param_type,)*){
                 let ev = InEvent::$variant($($params,)*);
-                self.sender.send(ev).await.expect("Sender to swarm to stay alive the entire lifetime of the app");
+                self.sender.send(ev).await.expect(owlnest_core::expect::SWARM_RECEIVER_KEPT_ALIVE)
             }
         )*
     };
+
     {$($(#[$metas:meta])*$variant:ident:$name:ident($($params:ident:$param_type:ty$(,)?)*)->$return_type:ty;)+} => {
         $(
             $(#[$metas])*
@@ -65,20 +67,47 @@ pub mod utils {
                 use tokio::sync::oneshot::*;
                 let (tx,rx) = channel();
                 let ev = InEvent::$variant($($params,)*tx);
-                self.sender.send(ev).await.expect("Sender to swarm to stay alive the entire lifetime of the app");
-                rx.await.unwrap()
+                self.sender.send(ev).await.expect(owlnest_core::expect::SWARM_RECEIVER_KEPT_ALIVE);
+                rx.await.expect(owlnest_core::expect::CALLBACK_CLEAR)
             }
         )*
     };
-    {$($(#[$metas:meta])*$variant:ident:$name:ident({$($params:ident:$param_type:ty$(,)?)*});)+} => {
+    {$($(#[$metas:meta])*$variant:ident:$name:ident{$($params:ident:$param_type:ty$(,)?)*};)+} => {
         $(
             $(#[$metas])*
             pub async fn $name(&self,$($params:$param_type,)*){
                 use tokio::sync::oneshot::*;
+                let ev = InEvent::$variant{
+                    $($params,)*
+                };
+                self.sender.send(ev).await.expect(owlnest_core::expect::SWARM_RECEIVER_KEPT_ALIVE);
+            }
+        )*
+    };
+    {$($(#[$metas:meta])*$variant:ident:$name:ident{$($params:ident:$param_type:ty$(,)?)*}->$return_type:ty;)+} => {
+        $(
+            $(#[$metas])*
+            pub async fn $name(&self,$($params:$param_type,)*)->$return_type{
+                use tokio::sync::oneshot::*;
+                let (tx,rx) = channel();
+                let ev = InEvent::$variant{
+                    $($params,)*
+                    callback: tx,
+                };
+                self.sender.send(ev).await.expect(owlnest_core::expect::SWARM_RECEIVER_KEPT_ALIVE);
+                rx.await.expect(owlnest_core::expect::CALLBACK_CLEAR)
+            }
+        )*
+   };
+    {$($(#[$metas:meta])*$variant:ident:$name:ident({$($params:ident:$param_type:ty$(,)?)*});)+} => {
+        $(
+            $(#[$metas])*
+            pub async fn $name(&self,$($params:$param_type,)*)->Result<(), crate::utils::ChannelError>{
+                use tokio::sync::oneshot::*;
                 let (tx,rx) = channel();
                 let ev = InEvent::$variant{$($params,)*callback:tx};
-                self.sender.send(ev).await.expect("Sender to swarm to stay alive the entire lifetime of the app");
-                rx.await.unwrap()
+                self.sender.send(ev).await.await.expect(owlnest_core::expect::SWARM_RECEIVER_KEPT_ALIVE);
+                rx.await.expect(owlnest_core::expect::CALLBACK_CLEAR)
             }
         )*
     };
@@ -116,17 +145,9 @@ pub mod utils {
         };
     }
     #[macro_export]
-    macro_rules! with_timeout {
-        ($future:ident,$timeout:literal) => {{
-            let timer = futures_timer::Delay::new(std::time::Duration::from_secs($timeout));
-            tokio::select! {
-                _ = timer =>{
-                    Err(())
-                }
-                v = $future => {
-                    Ok(v)
-                }
-            }
-        }};
+    macro_rules! send_to_swam {
+        ($ev:ident) => {
+            self.sender.send(ev)
+        };
     }
 }

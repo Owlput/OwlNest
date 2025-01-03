@@ -1,7 +1,8 @@
 #![feature(extract_if)]
 #![feature(hash_extract_if)]
 
-use error::FileSendError;
+use error::{CancellationError, FileSendError};
+use owlnest_core::alias::Callback;
 use owlnest_prelude::lib_prelude::*;
 use serde::{Deserialize, Serialize};
 use std::{fs::File, path::PathBuf, time::Duration};
@@ -31,7 +32,7 @@ pub enum InEvent {
         /// Full path to the file, including file name.
         file_path: PathBuf,
         to: PeerId,
-        callback: oneshot::Sender<Result<u64, FileSendError>>,
+        callback: Callback<Result<u64, FileSendError>>,
     },
     /// Local acceptes a pending recv.
     AcceptFile {
@@ -42,25 +43,25 @@ pub enum InEvent {
         /// but the order is not guaranteed.
         recv_id: u64,
         path: PathBuf,
-        callback: oneshot::Sender<Result<Duration, error::FileRecvError>>,
+        callback: Callback<Result<Duration, error::FileRecvError>>,
     },
     /// List all peers that are connected and support this protocol.
-    ListConnected(oneshot::Sender<Box<[PeerId]>>),
+    ListConnected(Callback<Box<[PeerId]>>),
     /// List all recv activities, including pending and ongoing.
-    ListRecv(oneshot::Sender<Box<[RecvInfo]>>),
+    ListRecv(Callback<Box<[RecvInfo]>>),
     /// List all send activities, including pending and ongoing.
-    ListSend(oneshot::Sender<Box<[SendInfo]>>),
+    ListSend(Callback<Box<[SendInfo]>>),
     /// Cancel a recv operation associated with the given ID.
     /// No more bytes will be written upon seen by the behaviour
     CancelRecv {
         local_recv_id: u64,
-        callback: oneshot::Sender<Result<(), ()>>,
+        callback: Callback<Result<(), CancellationError>>,
     },
     /// Cancel a send operation associated with the give ID.
     /// No more bytes will be read upon seen by the behaviour
     CancelSend {
         local_send_id: u64,
-        callback: oneshot::Sender<Result<(), ()>>,
+        callback: Callback<Result<(), CancellationError>>,
     },
 }
 

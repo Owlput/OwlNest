@@ -1,8 +1,9 @@
-pub use libp2p::relay::Behaviour;
-pub use libp2p::relay::{HOP_PROTOCOL_NAME, STOP_PROTOCOL_NAME};
-use serde::{Deserialize, Serialize};
 use std::time::Duration;
 use tracing::{debug, info};
+use super::*;
+
+pub use libp2p::relay::Behaviour;
+pub use libp2p::relay::{HOP_PROTOCOL_NAME, STOP_PROTOCOL_NAME};
 
 /// An ailas to `libp2p::relay::Event` for unified naming.
 pub type OutEvent = libp2p::relay::Event;
@@ -62,7 +63,7 @@ pub struct Config {
     /// Maximum amount of reservations that can be made by a single peer.
     pub max_reservations_per_peer: usize,
     /// Timeout for a sigle reservation in seconds, default to 1 hour.
-    pub reservation_duration: u64,
+    pub reservation_duration_sec: u64,
 
     /// Maximum amount of active circuits that can be established through
     /// this peer.
@@ -71,7 +72,7 @@ pub struct Config {
     /// source peer.
     pub max_circuits_per_peer: usize,
     /// Timeout for a single circuit in seconds, default to 12 hours.
-    pub max_circuit_duration: u64,
+    pub max_circuit_duration_sec: u64,
     /// Maximum amount of data a single circuit can handle in total,
     /// including both directions of all time since the circuit is established.
     /// Once exceeded, the circuit will be closed by the relay server
@@ -84,12 +85,12 @@ impl Default for Config {
         Self {
             max_reservations: 128,
             max_reservations_per_peer: 4,
-            reservation_duration: 60 * 60,
+            reservation_duration_sec: 60 * 60,
 
             max_circuits: 16,
             max_circuits_per_peer: 4,
-            max_circuit_duration: 12 * 60 * 60, // 12 Hours
-            max_circuit_bytes: 0,               // Unlimited
+            max_circuit_duration_sec: 12 * 60 * 60, // 12 Hours
+            max_circuit_bytes: 0,                   // Unlimited
         }
     }
 }
@@ -99,10 +100,10 @@ impl From<Config> for libp2p::relay::Config {
         let Config {
             max_reservations,
             max_reservations_per_peer,
-            reservation_duration,
+            reservation_duration_sec: reservation_duration,
             max_circuits,
             max_circuits_per_peer,
-            max_circuit_duration,
+            max_circuit_duration_sec: max_circuit_duration,
             max_circuit_bytes,
         } = value;
         libp2p::relay::Config {

@@ -141,7 +141,6 @@ impl Behaviour {
                 self.out_events.push_back(OutEvent::Unsupported(peer_id));
                 trace!("Peer {} doesn't support {}", peer_id, PROTOCOL_NAME)
             }
-            SendResult(result, id) => self.out_events.push_back(OutEvent::SendResult(result, id)),
         }
     }
     #[inline]
@@ -150,20 +149,21 @@ impl Behaviour {
             trace!("Received event {:#?}", ev);
             use InEvent::*;
             match ev {
-                SendMessage(target, msg, id) => {
-                    let ev = if self.connected_peers.contains(&target) {
-                        ToSwarm::NotifyHandler {
-                            peer_id: target,
+                SendMessage {
+                    peer,
+                    message,
+                    callback,
+                } => {
+                    if self.connected_peers.contains(&peer) {
+                        let ev = ToSwarm::NotifyHandler {
+                            peer_id: peer,
                             handler: NotifyHandler::Any,
-                            event: handler::FromBehaviourEvent::PostMessage(msg, id),
-                        }
+                            event: handler::FromBehaviourEvent::PostMessage(message, callback),
+                        };
+                        return Some(ev);
                     } else {
-                        ToSwarm::GenerateEvent(OutEvent::SendResult(
-                            Err(error::SendError::PeerNotFound(target)),
-                            id,
-                        ))
+                        handle_callback_sender!(Err(SendError::PeerNotFound(peer))=>callback);
                     };
-                    return Some(ev);
                 }
                 ListConnected(callback) => {
                     handle_callback_sender!(self.connected_peers.iter().copied().collect() => callback);

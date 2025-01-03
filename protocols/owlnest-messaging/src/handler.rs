@@ -1,6 +1,8 @@
 use super::error::SendError;
 use super::{protocol, Config, Error, Message, PROTOCOL_NAME};
 use futures_timer::Delay;
+use owlnest_core::alias::Callback;
+use owlnest_macro::handle_callback_sender;
 use owlnest_prelude::handler_prelude::*;
 use std::task::Context;
 use std::{collections::VecDeque, time::Duration};
@@ -8,12 +10,11 @@ use tracing::{debug, trace};
 
 #[derive(Debug)]
 pub enum FromBehaviourEvent {
-    PostMessage(Message, u64),
+    PostMessage(Message, Callback<Result<Duration, SendError>>),
 }
 #[derive(Debug)]
 pub enum ToBehaviourEvent {
     IncomingMessage(Vec<u8>),
-    SendResult(Result<Duration, SendError>, u64),
     Error(Error),
     InboundNegotiated,
     OutboundNegotiated,
@@ -40,7 +41,7 @@ impl Handler {
             state: State::Active,
             pending_in_events: VecDeque::new(),
             pending_out_events: VecDeque::new(),
-            timeout: config.timeout,
+            timeout: Duration::from_millis(config.timeout_ms),
             inbound: None,
             outbound: None,
         }
@@ -139,7 +140,7 @@ type PendingSend = BoxFuture<'static, Result<(Stream, Duration), io::Error>>;
 enum OutboundState {
     OpenStream,
     Idle(Stream),
-    Busy(PendingSend, u64, Delay),
+    Busy(PendingSend, Callback<Result<Duration, SendError>>, Delay),
 }
 
 type PollResult = ConnectionHandlerEvent<
@@ -197,17 +198,16 @@ impl Handler {
     fn poll_outbound(&mut self, cx: &mut Context<'_>) -> Option<PollResult> {
         loop {
             match self.outbound.take() {
-                Some(OutboundState::Busy(mut task, id, mut timer)) => {
+                Some(OutboundState::Busy(mut task, callback, mut timer)) => {
                     let poll_result = task.poll_unpin(cx);
                     if poll_result.is_pending() {
                         trace!("outbound pending");
                         if timer.poll_unpin(cx).is_ready() {
-                            return Some(ConnectionHandlerEvent::NotifyBehaviour(
-                                ToBehaviourEvent::SendResult(Err(SendError::Timeout), id),
-                            ));
+                            handle_callback_sender!(Err(SendError::Timeout)=>callback);
+                            break;
                             // exit and drop the task(with negotiated stream)
                         }
-                        self.outbound = Some(OutboundState::Busy(task, id, timer));
+                        self.outbound = Some(OutboundState::Busy(task, callback, timer));
                         break; // exit loop because of pending future, checking pending out events
                     }
                     if let Poll::Ready(Err(e)) = poll_result {
@@ -216,8 +216,7 @@ impl Handler {
                         )); // exit because of error
                     }
                     if let Poll::Ready(Ok((stream, rtt))) = poll_result {
-                        self.pending_out_events
-                            .push_back(ToBehaviourEvent::SendResult(Ok(rtt), id));
+                        handle_callback_sender!(Ok(rtt)=>callback);
                         // Free the outbound
                         self.outbound = Some(OutboundState::Idle(stream));
                         // continue to see if there is any pending activity

@@ -56,7 +56,7 @@ pub struct Config {
     pub swarm_event_buffer_size: usize,
     /// When swarm event buffer is almost full,
     /// the swarm won't be polled(backpressure).
-    /// This timeout make sure that the swarm will
+    /// This timeout(in milliseconds) make sure that the swarm will
     /// be polled again once buffer cleared.
     pub swarm_event_timeout: u64,
 }
@@ -92,8 +92,7 @@ impl Builder {
         let kad_store = libp2p::kad::store::MemoryStore::new(ident.get_peer_id());
         let (swarm_event_out, _) =
             tokio::sync::broadcast::channel(self.config.swarm.swarm_event_buffer_size);
-        let (handle_bundle, mut rx_bundle) =
-            HandleBundle::new(self.config.swarm.swarm_event_buffer_size, &swarm_event_out);
+        let (handle_bundle, mut rx_bundle) = HandleBundle::new(&self.config, &swarm_event_out);
         let manager = manager::Manager::new(
             Arc::new(handle_bundle),
             ident.clone(),
@@ -112,14 +111,14 @@ impl Builder {
                 .with_tokio()
                 .with_tcp(
                     Default::default(),
-                    libp2p_noise::Config::new,
-                    libp2p_yamux::Config::default,
+                    libp2p::noise::Config::new,
+                    libp2p::yamux::Config::default,
                 )
                 .expect("transport upgrade to succeed")
                 .with_quic()
                 .with_dns()
                 .expect("upgrade to succeed")
-                .with_relay_client(libp2p_noise::Config::new, libp2p_yamux::Config::default)
+                .with_relay_client(libp2p::noise::Config::new, libp2p::yamux::Config::default)
                 .expect("transport upgrade to succeed")
                 .with_behaviour(|_key, #[allow(unused)] relay| behaviour::Behaviour {
                     #[cfg(any(feature = "owlnest-protocols", feature = "owlnest-blob"))]
@@ -199,8 +198,8 @@ impl Builder {
     }
 }
 
+use libp2p::swarm::{derive_prelude::ListenerId, DialError};
 use libp2p::{Multiaddr, TransportError};
-use libp2p_swarm::{derive_prelude::ListenerId, DialError};
 use tokio::sync::oneshot::*;
 
 #[derive(Debug)]

@@ -1,16 +1,9 @@
-use std::time::Duration;
-
-use crate::net::p2p::swarm::EventSender;
+use super::*;
 use crate::net::p2p::swarm::Swarm;
+use std::time::Duration;
 
 pub use libp2p::mdns::tokio::Behaviour;
 pub use libp2p::mdns::Event as OutEvent;
-use libp2p::PeerId;
-use owlnest_macro::generate_handler_method;
-use owlnest_macro::handle_callback_sender;
-use serde::Deserialize;
-use serde::Serialize;
-use tokio::sync::{mpsc, oneshot::*};
 
 /// Configuration for mDNS.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -52,8 +45,8 @@ impl Default for Config {
 
 #[derive(Debug)]
 pub(crate) enum InEvent {
-    ListDiscoveredNodes(Sender<Box<[PeerId]>>),
-    HasNode(PeerId, Sender<bool>),
+    ListDiscoveredNodes(Callback<Box<[PeerId]>>),
+    HasNode(PeerId, Callback<bool>),
 }
 
 /// A handle that can communicate with the behaviour within the swarm.
@@ -65,10 +58,11 @@ pub struct Handle {
 }
 impl Handle {
     pub(crate) fn new(
-        buffer: usize,
+        _config: &Config,
+        buffer_size: usize,
         swarm_event_source: &EventSender,
     ) -> (Self, mpsc::Receiver<InEvent>) {
-        let (tx, rx) = mpsc::channel(buffer);
+        let (tx, rx) = mpsc::channel(buffer_size);
         (
             Self {
                 sender: tx,
@@ -78,7 +72,10 @@ impl Handle {
         )
     }
     generate_handler_method! {
+        /// List all discovered nodes from mDNS.
         ListDiscoveredNodes:list_discovered_node()->Box<[PeerId]>;
+        /// Check if the peer can be discovered through mDNS
+        /// e.g. accessible from your local network without internet.
         HasNode:has_node(peer_id:PeerId)->bool;
     }
 }
@@ -140,7 +137,7 @@ pub mod cli {
             ListDiscovered => println!("{:?}", handle.list_discovered_node().await),
             HasNode { peer_id } => {
                 let result = handle.has_node(peer_id).await;
-                println!("Peer {} discovered? {}", peer_id, result);
+                println!("Is peer {} discovered through mDNS: {}", peer_id, result);
             }
         }
     }

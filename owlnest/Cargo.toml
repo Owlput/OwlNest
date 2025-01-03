@@ -8,10 +8,7 @@ crate-type = ["lib"]
 
 [dependencies]
 tokio = { workspace = true, features = ["full"] }
-libp2p = { workspace = true, default-features = false}
-libp2p-swarm = { workspace = true }
-libp2p-noise = { workspace = true }
-libp2p-yamux = { workspace = true }
+libp2p = { workspace = true, default-features = false }
 tracing = { workspace = true }
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 tracing-log = "0.2"
@@ -20,7 +17,7 @@ serde_json = "1"
 rand = "*"
 futures-timer = "3"
 futures = { workspace = true }
-rustyline = "14"
+rustyline = "15"
 chrono = "0.4"
 owlnest-proc = { path = "../owlnest-proc" }
 void = "1"
@@ -30,22 +27,29 @@ either = "*"
 owlnest-blob = { path = "../protocols/owlnest-blob", optional = true }
 owlnest-messaging = { path = "../protocols/owlnest-messaging", optional = true }
 owlnest-advertise = { path = "../protocols/owlnest-advertise", optional = true }
+owlnest-core = { path = "../owlnest-core" }
 toml = "*"
-clap = {version = "4.5", features = ["derive"]}
+clap = { version = "4.5", features = ["derive"] }
 shlex = "1.3"
 dashmap = "*"
 prettytable = "*"
 printable = "*"
+derive_more = { workspace = true }
 
 [dev-dependencies]
 xxhash-rust = { version = "*", features = ["xxh3"] }
 serial_test = "3"
 temp-dir = "*"
+anyhow = "*"
 
 [features]
-full = ["owlnest-protocols","libp2p-protocols"]
+full = ["owlnest-protocols", "libp2p-protocols"]
 default = ["full", "volatile"]
-owlnest-protocols = ["dep:owlnest-blob","dep:owlnest-messaging","dep:owlnest-advertise"]
+owlnest-protocols = [
+    "dep:owlnest-blob",
+    "dep:owlnest-messaging",
+    "dep:owlnest-advertise",
+]
 libp2p-protocols = []
 test-suits = []
 owlnest-blob = ["dep:owlnest-blob"]

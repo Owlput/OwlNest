@@ -1,23 +1,24 @@
-use crate::net::p2p::swarm::EventSender;
-use libp2p::PeerId;
+use super::*;
+use config::Config;
 pub use owlnest_advertise::*;
-use owlnest_macro::{generate_handler_method, listen_event, with_timeout};
+use owlnest_core::error::OperationError;
 use std::sync::{atomic::AtomicU64, Arc};
-use tokio::sync::mpsc;
 
 /// A handle that can communicate with the behaviour within the swarm.
 #[derive(Debug, Clone)]
 pub struct Handle {
     sender: mpsc::Sender<InEvent>,
     swarm_event_source: EventSender,
+    #[allow(unused)]
     counter: Arc<AtomicU64>,
 }
 impl Handle {
     pub(crate) fn new(
-        buffer: usize,
+        _config: &Config,
+        buffer_size: usize,
         swarm_event_source: &EventSender,
     ) -> (Self, mpsc::Receiver<InEvent>) {
-        let (tx, rx) = mpsc::channel(buffer);
+        let (tx, rx) = mpsc::channel(buffer_size);
         (
             Self {
                 sender: tx,
@@ -47,60 +48,15 @@ impl Handle {
             }
         );
         let ev = InEvent::QueryAdvertisedPeer(relay);
-        self.sender.send(ev).await.unwrap();
-        match with_timeout!(fut, 10) {
+        self.sender.send(ev).await.expect("");
+        match future_timeout!(fut, 10) {
             Ok(v) => v,
             Err(_) => Err(Error::Timeout),
         }
     }
-    /// Set advertisement on a remote peer.
-    /// ## Silent failure
-    /// This function will return immediately, the effect is not guaranteed:
-    /// - peers that are not connected
-    /// - peers that don't support this protocol
-    /// - peers that are not providing
-    pub async fn set_remote_advertisement(&self, remote: PeerId, state: bool) {
-        let ev = InEvent::SetRemoteAdvertisement {
-            remote,
-            state,
-            id: self.next_id(),
-        };
-        self.sender.send(ev).await.unwrap();
-    }
-    /// Set provider state of local peer.
-    /// Will return a recent(not immediate) state change.
-    pub async fn set_provider_state(&self, state: bool) -> bool {
-        let op_id = self.next_id();
-        let mut listener = self.swarm_event_source.subscribe();
-        let fut = listen_event!(
-            listener for Advertise,
-            OutEvent::ProviderState(state, id)=> {
-                if *id == op_id {
-                    return *state;
-                }
-            }
-        );
-        let ev = InEvent::SetProviderState(state, op_id);
-        self.sender.send(ev).await.expect("send to succeed");
-        with_timeout!(fut, 10).expect("future to finish in 10s")
-    }
-    /// Get provider state of local peer.
-    /// Will return a immediate state report, e.g. only changes caused by this operation.
-    pub async fn provider_state(&self) -> bool {
-        let op_id = self.next_id();
-        let mut listener = self.swarm_event_source.subscribe();
-        let fut = listen_event!(listener for Advertise, OutEvent::ProviderState(state, id)=> {
-            if *id == op_id {
-                return *state;
-            }
-        });
-        let ev = InEvent::GetProviderState(op_id);
-        self.sender.send(ev).await.expect("send to succeed");
-        with_timeout!(fut, 10).expect("future to finish in 10s")
-    }
     /// Remove advertisement on local peer.
     /// Will return a recent(not immediate) state change.
-    pub async fn remove_advertised(&self, peer_id: &PeerId) -> bool {
+    pub async fn remove_advertised(&self, peer_id: &PeerId) -> Result<bool, OperationError> {
         let ev = InEvent::RemoveAdvertised(*peer_id);
         let mut listener = self.swarm_event_source.subscribe();
         let fut = listen_event!(listener for Advertise,
@@ -109,21 +65,35 @@ impl Handle {
                     return *state
                 }
         });
-        self.sender.send(ev).await.expect("Send to succeed");
-        with_timeout!(fut, 10).expect("Future to finish in 10s")
+        send_swarm!(self.sender, ev);
+        Ok(future_timeout!(fut, 10)?)
     }
     generate_handler_method!(
         /// List all peers that supports and connected to this peer.
-        /// This call cannot fail.
         ListConnected:list_connected()->Box<[PeerId]>;
         /// List all advertisement on local peer.
         ListAdvertised:list_advertised()->Box<[PeerId]>;
+        /// Get provider state of local peer.
+        /// Will return a immediate state report, e.g. only changes caused by this operation.
+        GetProviderState:provider_state()->bool;
+    );
+    generate_handler_method!(
+        /// Set provider state of local peer.
+        /// Will return a recent(not immediate) state change.
+        SetProviderState:set_provider_state{target_state: bool}->bool;
+        /// Set advertisement on a remote peer.
+        /// This function will return immediately, the effect is not guaranteed:
+        /// - peers that are not connected
+        /// - peers that don't support this protocol
+        /// - peers that are not providing
+        /// ## Silent failure
+        SetRemoteAdvertisement:set_remote_advertisement{remote: PeerId, state: bool} -> ();
     );
     generate_handler_method!(
         /// Clear all advertisements on local peer.
-        /// This call cannot fail.
         ClearAdvertised:clear_advertised();
     );
+    #[allow(unused)]
     fn next_id(&self) -> u64 {
         use std::sync::atomic::Ordering;
         self.counter.fetch_add(1, Ordering::SeqCst)
@@ -231,24 +201,24 @@ pub mod cli {
         pub async fn handle_provider(handle: &Handle, command: Provider) {
             use Provider::*;
             match command {
-                Start => {
-                    handle.set_provider_state(true).await;
-                    println!("Local provider is now providing advertisement");
-                }
-                Stop => {
-                    handle.set_provider_state(false).await;
-                    println!("Local provider has stopped providing advertisement")
-                }
-                State => {
-                    let state = handle.provider_state().await;
-                    println!("isProviding:{}", state)
-                }
+                Start => println!(
+                    "Local provider state is set to: {}",
+                    handle.set_provider_state(true).await
+                ),
+                Stop => println!(
+                    "Local provider state is set to: {}",
+                    handle.set_provider_state(false).await
+                ),
+                State => println!("isProviding:{}", handle.provider_state().await),
                 ListAdvertised => {
                     let list = handle.list_advertised().await;
                     println!("Advertising: \n{:?}", list);
                 }
                 RemoveAdvertise { peer } => {
-                    handle.remove_advertised(&peer).await;
+                    match handle.remove_advertised(&peer).await {
+                        Ok(v) => println!("Local provider state is set to: {}", v),
+                        Err(e) => println!("Cannot RemoveAdvertise: {}", e),
+                    }
                     println!("Advertisement for peer {} is removed", peer)
                 }
                 ClearAdvertised => {
@@ -262,59 +232,55 @@ pub mod cli {
 
 #[cfg(test)]
 mod test {
-    use crate::net::p2p::test_suit::setup_default;
+    use crate::{net::p2p::test_suit::setup_default, sleep};
+    use anyhow::Ok;
     use libp2p::Multiaddr;
     use serial_test::serial;
-    use std::{thread, time::Duration};
     use tracing_log::log::trace;
 
     #[test]
     #[serial]
-    fn test() {
+    fn test() -> anyhow::Result<()> {
         let (peer1_m, _) = setup_default();
         let (peer2_m, _) = setup_default();
         peer1_m
             .swarm()
-            .listen_blocking(&"/ip4/127.0.0.1/tcp/0".parse::<Multiaddr>().unwrap())
-            .unwrap();
+            .listen_blocking("/ip4/127.0.0.1/tcp/0".parse::<Multiaddr>()?)?;
         trace!("peer 1 is listening");
-        thread::sleep(Duration::from_millis(100));
+        sleep!(200);
         let peer1_id = peer1_m.identity().get_peer_id();
         let peer2_id = peer2_m.identity().get_peer_id();
         peer2_m
             .swarm()
-            .dial_blocking(&peer1_m.swarm().list_listeners_blocking()[0])
-            .unwrap();
+            .dial_blocking(peer1_m.swarm().list_listeners_blocking()[0].clone())?;
         trace!("peer 1 dialed");
-        thread::sleep(Duration::from_millis(200));
+        sleep!(200);
         assert!(peer1_m
             .executor()
             .block_on(peer1_m.advertise().set_provider_state(true)));
         trace!("provider state set");
-        thread::sleep(Duration::from_millis(200));
+        sleep!(200);
         peer2_m
             .executor()
             .block_on(peer2_m.advertise().set_remote_advertisement(peer1_id, true));
         assert!(peer2_m.swarm().is_connected_blocking(peer1_id));
         trace!("peer 1 connected and advertisement set");
-        thread::sleep(Duration::from_millis(200));
+        sleep!(200);
         assert!(peer2_m
             .executor()
-            .block_on(peer2_m.advertise().query_advertised_peer(peer1_id))
-            .unwrap()
-            .unwrap()
+            .block_on(peer2_m.advertise().query_advertised_peer(peer1_id))?
+            .expect("peer to exist")
             .contains(&peer2_id));
         trace!("found advertisement for peer2 on peer1");
         assert!(!peer1_m
             .executor()
             .block_on(peer1_m.advertise().set_provider_state(false)));
-        thread::sleep(Duration::from_millis(200));
+        sleep!(200);
         trace!("provider state of peer1 set to false");
         assert!(
             peer2_m
                 .executor()
-                .block_on(peer2_m.advertise().query_advertised_peer(peer1_id))
-                .unwrap()
+                .block_on(peer2_m.advertise().query_advertised_peer(peer1_id))?
                 == None
         );
         trace!("advertisement no longer available");
@@ -327,17 +293,17 @@ mod test {
         assert!(peer1_m
             .executor()
             .block_on(peer1_m.advertise().set_provider_state(true)));
-        thread::sleep(Duration::from_millis(200));
+        sleep!(200);
         trace!("turned peer1 provider back on");
         assert!(
             peer2_m
                 .executor()
-                .block_on(peer2_m.advertise().query_advertised_peer(peer1_id))
-                .unwrap()
-                .unwrap()
+                .block_on(peer2_m.advertise().query_advertised_peer(peer1_id))?
+                .expect("peer to exist")
                 .len()
                 == 0
         );
+        Ok(())
     }
 
     // Attach when necessary
@@ -360,6 +326,6 @@ mod test {
             .with_filter(filter);
         let reg = tracing_subscriber::registry().with(layer);
         tracing::subscriber::set_global_default(reg).expect(SUBSCRIBER_CONFLICT_ERROR_MESSAGE);
-        LogTracer::init().unwrap();
+        LogTracer::init().expect("log integration to be initialized correctly");
     }
 }

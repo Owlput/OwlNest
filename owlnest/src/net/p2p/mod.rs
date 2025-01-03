@@ -5,12 +5,8 @@ pub mod protocols;
 /// The libp2p swarm that manages all connections.
 pub mod swarm;
 
-use std::sync::Arc;
-
 use crate::net::p2p::protocols::*;
-use identity::IdentityUnion;
-use serde::Deserialize;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use swarm::manager::Manager;
 use tokio::sync::Notify;
 
@@ -22,6 +18,9 @@ pub use libp2p::PeerId;
 pub struct SwarmConfig {
     /// General config for the swarm. Please refer to the inner struct for more information.
     pub swarm: swarm::Config,
+    /// Config for `libp2p-autonat`.
+    #[cfg(any(feature = "libp2p-protocols", feature = "libp2p-autonat"))]
+    pub autonat: autonat::Config,
     /// Config for `libp2p-kad`.
     #[cfg(any(feature = "libp2p-protocols", feature = "libp2p-kad"))]
     pub kad: kad::Config,
@@ -48,34 +47,23 @@ pub struct SwarmConfig {
     pub gossipsub: gossipsub::Config,
 }
 
-#[allow(unused)]
-mod handler_prelude {
-    pub use futures::{future::BoxFuture, FutureExt};
-    pub use libp2p::swarm::{
-        handler::{
-            ConnectionEvent, DialUpgradeError, FullyNegotiatedInbound, FullyNegotiatedOutbound,
-        },
-        ConnectionHandler, ConnectionHandlerEvent, Stream, StreamUpgradeError, SubstreamProtocol,
-    };
-    pub use std::io;
-    pub use std::task::Poll;
-}
-
 /// Some utility functions for setting up tests
 pub mod test_suit {
 
     use super::*;
     /// Set up a swarm with default config and random identity
     /// on a dedicated `tokio` runtime.
-    pub fn setup_default() -> (Manager, Arc<Notify>) {
+    pub fn setup_default() -> (Manager, std::sync::Arc<Notify>) {
         let rt = tokio::runtime::Builder::new_multi_thread()
             .enable_all()
             .build()
-            .unwrap();
-        let ident = IdentityUnion::generate();
+            .expect("Tokio runtime to be created successfully");
+        let ident = identity::IdentityUnion::generate();
         let guard = rt.enter();
         let swarm_config = SwarmConfig {
             swarm: Default::default(),
+            #[cfg(any(feature = "libp2p-protocols", feature = "libp2p-autonat"))]
+            autonat: protocols::autonat::Config::default(),
             #[cfg(any(feature = "libp2p-protocols", feature = "libp2p-kad"))]
             kad: protocols::kad::Config::default(),
             #[cfg(any(feature = "libp2p-protocols", feature = "libp2p-identify"))]

@@ -3,10 +3,30 @@ identity_path = ""
 swarm_event_buffer_size = 16
 swarm_event_timeout = 200
 
+[autonat]
+timeout_sec = 30
+boot_delay_sec = 15
+refresh_interval_sec = 900
+retry_interval_sec = 90
+throttle_server_period_sec = 90
+use_connected = true
+confidence_max = 3
+max_peer_addresses = 16
+throttle_clients_global_max = 30
+throttle_clients_peer_max = 3
+throttle_clients_period_sec = 1
+only_global_ips = true
+
 [kad]
 max_packet_size = 16384
+record_ttl_sec = 172800
+record_replication_interval_sec = 3600
+record_publication_interval_sec = 79200
 record_filtering = "Unfiltered"
+provider_record_ttl_sec = 172800
+provider_publication_interval_sec = 43200
 kbucket_inserts = "OnConnected"
+periodic_bootstrap_interval_sec = 300
 
 [kad.query_config]
 replication_factor = 20
@@ -17,36 +37,8 @@ disjoint_query_paths = false
 secs = 60
 nanos = 0
 
-[kad.record_ttl]
-secs = 172800
-nanos = 0
-
-[kad.record_replication_interval]
-secs = 3600
-nanos = 0
-
-[kad.record_publication_interval]
-secs = 79200
-nanos = 0
-
-[kad.provider_record_ttl]
-secs = 172800
-nanos = 0
-
-[kad.provider_publication_interval]
-secs = 43200
-nanos = 0
-
 [kad.caching.Enabled]
 max_peers = 1
-
-[kad.periodic_bootstrap_interval]
-secs = 300
-nanos = 0
-
-[kad.automatic_bootstrap_throttle]
-secs = 10
-nanos = 0
 
 [identify]
 protocol_version = "owlnest/0.0.1"
@@ -66,35 +58,29 @@ nanos = 0
 secs = 300
 nanos = 0
 
-[messaging.timeout]
-secs = 30
-nanos = 0
+[messaging]
+timeout_ms = 30000
+store = "Volatile"
 
 [blob]
+timeout_ms = 60000
 max_pending_recv = 16
-pending_recv_timeout = 3600
-ongoing_recv_timeout = 60
-pending_send_timeout = 0
-ongoing_send_timeout = 180
-
-[blob.timeout]
-secs = 60
-nanos = 0
+pending_recv_timeout_sec = 3600
+ongoing_recv_timeout_sec = 60
+pending_send_timeout_sec = 0
+ongoing_send_timeout_sec = 180
 
 [advertise]
+timeout_ms = 30000
 max_advertise_capacity = 32
-
-[advertise.timeout]
-secs = 30
-nanos = 0
 
 [relay_server]
 max_reservations = 128
 max_reservations_per_peer = 4
-reservation_duration = 3600
+reservation_duration_sec = 3600
 max_circuits = 16
 max_circuits_per_peer = 4
-max_circuit_duration = 43200
+max_circuit_duration_sec = 43200
 max_circuit_bytes = 0
 
 [gossipsub]
@@ -108,15 +94,10 @@ mesh_n_high = 12
 retain_scores = 4
 gossip_lazy = 6
 gossip_factor = 0.25
+heartbeat_interval_ms = 1000
+duplicate_cache_time_ms = 60000
 allow_self_origin = false
 gossip_retransimission = 3
 max_ihave_length = 5000
 max_ihave_messages = 10
-
-[gossipsub.heartbeat_interval]
-secs = 1
-nanos = 0
-
-[gossipsub.duplicate_cache_time]
-secs = 60
-nanos = 0
+store = "Volatile"

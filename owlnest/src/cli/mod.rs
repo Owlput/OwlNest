@@ -22,17 +22,20 @@ pub fn setup_interactive_shell(
     shutdown_notifier: Arc<Notify>,
 ) {
     std::thread::spawn(move || {
-        stdout().execute(Clear(ClearType::All)).unwrap();
+        stdout()
+            .execute(Clear(ClearType::All))
+            .expect("clean up of terminal to succeed");
         println!("OwlNest is now running in interactive mode, type \"help\" for more information.");
         #[cfg(any(feature = "owlnest-protocols", feature = "owlnest-messaging"))]
         messaging::cli::setup(&manager);
-        let mut rl = DefaultEditor::new().unwrap();
+        let mut rl = DefaultEditor::new().expect("CLI editor to be created successfully");
         let mut retry_times = 0u32;
         loop {
             let line_read = rl.readline(">> ");
             match line_read {
                 Ok(line) => {
-                    rl.add_history_entry(line.as_str()).unwrap();
+                    rl.add_history_entry(line.as_str())
+                        .expect("append history to succeed");
                     handle_command(line, &manager, &ident, &shutdown_notifier)
                 }
                 Err(e) => {
@@ -77,13 +80,13 @@ fn handle_command(
         ))),
         Id => println!("Local peer ID: {}", ident.get_peer_id()),
         Dial { address } => {
-            if let Err(e) = handle.dial_blocking(&address) {
+            if let Err(e) = handle.dial_blocking(address.clone()) {
                 println!("Failed to initiate dial {} with error: {:?}", address, e);
             } else {
                 println!("Dialing {}", address);
             }
         }
-        Listen { address } => match handle.listen_blocking(&address) {
+        Listen { address } => match handle.listen_blocking(address.clone()) {
             Ok(listener_id) => println!(
                 "Successfully listening on {} with listener ID {:?}",
                 address, listener_id
@@ -124,10 +127,12 @@ fn handle_command(
         #[cfg(any(feature = "libp2p-protocols", feature = "libp2p-relay-client"))]
         RelayClient(command) => relay_client::cli::handle_relay_client(manager, command),
         #[cfg(any(feature = "libp2p-protocols", feature = "libp2p-gossipsub"))]
-        Gossipsub(command) => executor.block_on(gossipsub::cli::handle_gossipsub(
-            manager.gossipsub(),
-            command,
-        )),
+        Gossipsub(command) => {
+            executor.block_on(gossipsub::cli::handle_gossipsub(
+                manager.gossipsub(),
+                command,
+            ));
+        }
         Utils(command) => handle_utils(command),
     }
 }
