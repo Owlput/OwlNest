@@ -27,7 +27,6 @@ provider_record_ttl_sec = 172800
 provider_publication_interval_sec = 43200
 kbucket_inserts = "OnConnected"
 periodic_bootstrap_interval_sec = 300
-automatic_bootstrap_throttle_ms = 10000
 
 [kad.query_config]
 replication_factor = 20
