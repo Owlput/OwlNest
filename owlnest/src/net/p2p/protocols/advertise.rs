@@ -49,13 +49,12 @@ impl Handle {
         );
         let ev = InEvent::QueryAdvertisedPeer { peer: relay };
         self.sender.send(ev).await.expect("");
-        match future_timeout!(fut, 10) {
+        match future_timeout!(fut, 10000) {
             Ok(v) => v,
             Err(_) => Err(Error::Timeout),
         }
     }
     /// Remove advertisement on local peer.
-    /// Will return a recent(not immediate) state change.
     pub async fn remove_advertised(&self, peer_id: &PeerId) -> Result<bool, OperationError> {
         let ev = InEvent::RemoveAdvertised { peer: *peer_id };
         let mut listener = self.swarm_event_source.subscribe();
@@ -66,7 +65,7 @@ impl Handle {
                 }
         });
         send_swarm!(self.sender, ev);
-        Ok(future_timeout!(fut, 10)?)
+        Ok(future_timeout!(fut, 1000)?)
     }
     generate_handler_method!(
         /// List all peers that supports and connected to this peer.
