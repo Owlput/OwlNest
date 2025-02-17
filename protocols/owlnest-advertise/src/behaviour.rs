@@ -160,18 +160,18 @@ impl Behaviour {
         while let Some(ev) = self.in_events.pop_front() {
             use InEvent::*;
             match ev {
-                QueryAdvertisedPeer(relay) => {
-                    if self.connected_peers.contains(&relay) {
+                QueryAdvertisedPeer { peer } => {
+                    if self.connected_peers.contains(&peer) {
                         return Some(ToSwarm::NotifyHandler {
-                            peer_id: relay,
+                            peer_id: peer,
                             handler: NotifyHandler::Any,
                             event: handler::FromBehaviour::QueryAdvertisedPeer,
                         });
                     }
                     self.pending_out_events
-                        .push_back(OutEvent::Error(Error::NotProviding(relay)))
+                        .push_back(OutEvent::Error(Error::NotProviding(peer)))
                 }
-                GetProviderState(callback) => {
+                GetProviderState { callback } => {
                     handle_callback_sender!(self.is_providing=>callback);
                     return Some(ToSwarm::GenerateEvent(OutEvent::ProviderState(
                         self.is_providing,
@@ -199,17 +199,17 @@ impl Behaviour {
                         target_state,
                     )));
                 }
-                RemoveAdvertised(peer_id) => {
-                    let result = self.advertised_peers.remove(&peer_id);
+                RemoveAdvertised { peer } => {
+                    let result = self.advertised_peers.remove(&peer);
                     return Some(ToSwarm::GenerateEvent(OutEvent::AdvertisedPeerChanged(
-                        peer_id, result,
+                        peer, result,
                     )));
                 }
-                ListAdvertised(callback) => {
+                ListAdvertised { callback } => {
                     handle_callback_sender!(self.advertised_peers.iter().cloned().collect()=>callback);
                 }
-                ClearAdvertised() => self.advertised_peers.clear(),
-                ListConnected(callback) => {
+                ClearAdvertised {} => self.advertised_peers.clear(),
+                ListConnected { callback } => {
                     handle_callback_sender!(self.connected_peers.iter().copied().collect() => callback);
                 }
             }

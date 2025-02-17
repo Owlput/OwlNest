@@ -46,11 +46,11 @@ pub enum InEvent {
         callback: Callback<Result<Duration, error::FileRecvError>>,
     },
     /// List all peers that are connected and support this protocol.
-    ListConnected(Callback<Box<[PeerId]>>),
+    ListConnected { callback: Callback<Box<[PeerId]>> },
     /// List all recv activities, including pending and ongoing.
-    ListRecv(Callback<Box<[RecvInfo]>>),
+    ListRecv { callback: Callback<Box<[RecvInfo]>> },
     /// List all send activities, including pending and ongoing.
-    ListSend(Callback<Box<[SendInfo]>>),
+    ListSend { callback: Callback<Box<[SendInfo]>> },
     /// Cancel a recv operation associated with the given ID.
     /// No more bytes will be written upon seen by the behaviour
     CancelRecv {

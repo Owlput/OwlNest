@@ -67,9 +67,13 @@ pub enum InEvent {
         callback: Callback<bool>,
     },
     /// Get local provider state.
-    GetProviderState(Callback<bool>),
+    GetProviderState {
+        callback: Callback<bool>,
+    },
     /// Send a query to a remote peer for advertised peers.
-    QueryAdvertisedPeer(PeerId),
+    QueryAdvertisedPeer {
+        peer: PeerId,
+    },
     /// Set remote provider state to advertise or stop advertising local peer.
     SetRemoteAdvertisement {
         remote: PeerId,
@@ -77,9 +81,15 @@ pub enum InEvent {
         callback: Callback<()>,
     },
     /// Remove a advertised peer from local provider.
-    RemoveAdvertised(PeerId),
+    RemoveAdvertised {
+        peer: PeerId,
+    },
     /// Remove all advertised peers from local provider.
-    ClearAdvertised(),
-    ListAdvertised(Callback<Box<[PeerId]>>),
-    ListConnected(Callback<Box<[PeerId]>>),
+    ClearAdvertised {},
+    ListAdvertised {
+        callback: Callback<Box<[PeerId]>>,
+    },
+    ListConnected {
+        callback: Callback<Box<[PeerId]>>,
+    },
 }

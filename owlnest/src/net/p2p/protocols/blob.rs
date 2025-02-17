@@ -383,12 +383,12 @@ mod test {
         peer1_m.executor().block_on(
             peer1_m
                 .swarm()
-                .listen(Multiaddr::from_str("/ip4/127.0.0.1/tcp/0")?),
+                .listen(&Multiaddr::from_str("/ip4/127.0.0.1/tcp/0")?),
         )?;
         sleep!(100);
         let peer1_listen = &peer1_m.swarm().list_listeners_blocking()[0];
         sleep!(100);
-        peer2_m.swarm().dial_blocking(peer1_listen.clone())?;
+        peer2_m.swarm().dial_blocking(&peer1_listen)?;
         sleep!(100);
         Ok((peer1_m, peer2_m))
     }

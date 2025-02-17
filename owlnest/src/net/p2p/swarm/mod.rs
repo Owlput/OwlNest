@@ -1,6 +1,7 @@
 use crate::net::p2p::swarm::manager::HandleBundle;
 use futures::StreamExt;
 use libp2p::PeerId;
+use owlnest_core::alias::Callback;
 use serde::{Deserialize, Serialize};
 use std::{fmt::Debug, sync::Arc};
 use tokio::select;
@@ -200,19 +201,37 @@ impl Builder {
 
 use libp2p::swarm::{derive_prelude::ListenerId, DialError};
 use libp2p::{Multiaddr, TransportError};
-use tokio::sync::oneshot::*;
 
 #[derive(Debug)]
 pub(crate) enum InEvent {
-    Dial(Multiaddr, Sender<Result<(), DialError>>),
-    Listen(
-        Multiaddr,
-        Sender<Result<ListenerId, TransportError<std::io::Error>>>,
-    ),
-    AddExternalAddress(Multiaddr, Sender<()>),
-    RemoveExternalAddress(Multiaddr, Sender<()>),
-    DisconnectFromPeerId(PeerId, Sender<Result<(), ()>>),
-    ListExternalAddresses(Sender<Box<[Multiaddr]>>),
-    ListListeners(Sender<Box<[Multiaddr]>>),
-    IsConnectedToPeerId(PeerId, Sender<bool>),
+    Dial {
+        address: Multiaddr,
+        callback: Callback<Result<(), DialError>>,
+    },
+    Listen {
+        address: Multiaddr,
+        callback: Callback<Result<ListenerId, TransportError<std::io::Error>>>,
+    },
+    AddExternalAddress {
+        address: Multiaddr,
+        callback: Callback<()>,
+    },
+    RemoveExternalAddress {
+        address: Multiaddr,
+        callback: Callback<()>,
+    },
+    DisconnectFromPeerId {
+        peer_id: PeerId,
+        callback: Callback<Result<(), ()>>,
+    },
+    ListExternalAddresses {
+        callback: Callback<Box<[Multiaddr]>>,
+    },
+    ListListeners {
+        callback: Callback<Box<[Multiaddr]>>,
+    },
+    IsConnectedToPeerId {
+        peer_id: PeerId,
+        callback: Callback<bool>,
+    },
 }

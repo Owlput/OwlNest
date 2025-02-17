@@ -165,7 +165,7 @@ impl Behaviour {
                         handle_callback_sender!(Err(SendError::PeerNotFound(peer))=>callback);
                     };
                 }
-                ListConnected(callback) => {
+                ListConnected { callback } => {
                     handle_callback_sender!(self.connected_peers.iter().copied().collect() => callback);
                 }
             }

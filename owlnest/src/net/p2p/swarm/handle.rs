@@ -21,16 +21,16 @@ impl SwarmHandle {
     generate_handler_method_blocking!(
         /// Dial the address.
         /// Should be used in synchronous contexts.
-        Dial:dial_blocking(addr: Multiaddr) -> Result<(), DialError>;
+        Dial:dial_blocking(address: <&Multiaddr>) -> Result<(), DialError>;
         /// Listion on the address.
         /// Should be used in synchronous contexts.
-        Listen:listen_blocking(addr: Multiaddr) -> Result<ListenerId, TransportError<std::io::Error>>;
+        Listen:listen_blocking(address: <&Multiaddr>) -> Result<ListenerId, TransportError<std::io::Error>>;
         /// Manually confirm the address to be publicly reachable.
         /// Should be used in sychronous contexts
-        AddExternalAddress:add_external_address_blocking(addr:Multiaddr)->();
+        AddExternalAddress:add_external_address_blocking(address: <&Multiaddr>)->();
         /// Check if the local peer is connected to a remote peer.
         /// Should be used in sychronous contexts
-        IsConnectedToPeerId:is_connected_blocking(peer_id: PeerId) -> bool;
+        IsConnectedToPeerId:is_connected_blocking(peer_id: &PeerId) -> bool;
         /// List all active listeners.
         /// Should be used in sychronous contexts
         ListListeners:list_listeners_blocking()->Box<[Multiaddr]>;
@@ -39,35 +39,35 @@ impl SwarmHandle {
         ListExternalAddresses:list_external_addresses_blocking()->Box<[Multiaddr]>;
         /// Disconnect from the peer.
         /// Should be used in sychronous contexts
-        DisconnectFromPeerId:disconnect_peer_id_blocking(peer_id:PeerId)->Result<(),()>;
+        DisconnectFromPeerId:disconnect_peer_id_blocking(peer_id:&PeerId)->Result<(),()>;
         /// Remove an address from all known publicly reachable addresses.
         /// Should be used in sychronous contexts
-        RemoveExternalAddress:remove_external_address_blocking(addr:Multiaddr)->();
+        RemoveExternalAddress:remove_external_address_blocking(address:<&Multiaddr>)->();
     );
     generate_handler_method!(
         /// Dial the address.
         /// Should be used in asynchronous contexts.
-        Dial:dial(addr: Multiaddr) -> Result<(), DialError>;
+        Dial:dial(address: <&Multiaddr>) -> Result<(), DialError>;
         /// Listion on the address.
         /// Should be used in asynchronous contexts.
-        Listen:listen(addr: Multiaddr) -> Result<ListenerId, TransportError<std::io::Error>>;
+        Listen:listen(address: <&Multiaddr>) -> Result<ListenerId, TransportError<std::io::Error>>;
         /// Manually confirm the address to be publicly reachable.
         /// Should be used in asychronous contexts
-        AddExternalAddress:add_external_address(addr:Multiaddr)->();
-        /// Check if the local peer is connected to a remote peer.
-        /// Should be used in asychronous contexts
-        IsConnectedToPeerId:is_connected(peer_id: PeerId) -> bool;
+        AddExternalAddress:add_external_address(address:<&Multiaddr>)->();
         /// List all active listeners.
         /// Should be used in asychronous contexts
         ListListeners:list_listeners()->Box<[Multiaddr]>;
         /// List all publicly reachable listen addresses.
         /// Should be used in asychronous contexts
         ListExternalAddresses:list_external_addresses()->Box<[Multiaddr]>;
-        /// Disconnect from the peer.
-        /// Should be used in asychronous contexts
-        DisconnectFromPeerId:disconnect_peer_id(peer_id:PeerId)->Result<(),()>;
         /// Remove an address from all known publicly reachable addresses.
         /// Should be used in asychronous contexts
-        RemoveExternalAddress:remove_external_address(addr:Multiaddr)->();
+        RemoveExternalAddress:remove_external_address(address:<&Multiaddr>)->();
+        /// Check if the local peer is connected to a remote peer.
+        /// Should be used in asychronous contexts
+        IsConnectedToPeerId:is_connected(peer_id: &PeerId)->bool;
+        /// Disconnect from the peer.
+        /// Should be used in asychronous contexts
+        DisconnectFromPeerId:disconnect_peer_id(peer_id:&PeerId)->Result<(),()>;
     );
 }

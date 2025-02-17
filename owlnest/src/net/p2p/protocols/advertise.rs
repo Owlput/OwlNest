@@ -47,7 +47,7 @@ impl Handle {
                 }
             }
         );
-        let ev = InEvent::QueryAdvertisedPeer(relay);
+        let ev = InEvent::QueryAdvertisedPeer { peer: relay };
         self.sender.send(ev).await.expect("");
         match future_timeout!(fut, 10) {
             Ok(v) => v,
@@ -57,7 +57,7 @@ impl Handle {
     /// Remove advertisement on local peer.
     /// Will return a recent(not immediate) state change.
     pub async fn remove_advertised(&self, peer_id: &PeerId) -> Result<bool, OperationError> {
-        let ev = InEvent::RemoveAdvertised(*peer_id);
+        let ev = InEvent::RemoveAdvertised { peer: *peer_id };
         let mut listener = self.swarm_event_source.subscribe();
         let fut = listen_event!(listener for Advertise,
             OutEvent::AdvertisedPeerChanged(target,state)=>{
@@ -78,18 +78,6 @@ impl Handle {
         GetProviderState:provider_state()->bool;
     );
     generate_handler_method!(
-        /// Set provider state of local peer.
-        /// Will return a recent(not immediate) state change.
-        SetProviderState:set_provider_state{target_state: bool}->bool;
-        /// Set advertisement on a remote peer.
-        /// This function will return immediately, the effect is not guaranteed:
-        /// - peers that are not connected
-        /// - peers that don't support this protocol
-        /// - peers that are not providing
-        /// ## Silent failure
-        SetRemoteAdvertisement:set_remote_advertisement{remote: PeerId, state: bool} -> ();
-    );
-    generate_handler_method!(
         /// Clear all advertisements on local peer.
         ClearAdvertised:clear_advertised();
     );
@@ -98,6 +86,21 @@ impl Handle {
         use std::sync::atomic::Ordering;
         self.counter.fetch_add(1, Ordering::SeqCst)
     }
+}
+
+impl Handle {
+    generate_handler_method!(
+        /// Set provider state of local peer.
+        /// Will return a recent(not immediate) state change.
+        SetProviderState:set_provider_state(target_state: |bool|) -> bool;
+        /// Set advertisement on a remote peer.
+        /// This function will return immediately, the effect is not guaranteed:
+        /// - peers that are not connected
+        /// - peers that don't support this protocol
+        /// - peers that are not providing
+        /// ## Silent failure
+        SetRemoteAdvertisement:set_remote_advertisement(remote: &PeerId, state: |bool|) -> ();
+    );
 }
 
 pub mod cli {
@@ -142,7 +145,7 @@ pub mod cli {
         match command {
             Provider(command) => provider::handle_provider(handle, command).await,
             SetRemoteAdvertisement { remote, state } => {
-                handle.set_remote_advertisement(remote, state).await;
+                handle.set_remote_advertisement(&remote, state).await;
                 println!("OK")
             }
             QueryAdvertised { remote } => {
@@ -245,14 +248,14 @@ mod test {
         let (peer2_m, _) = setup_default();
         peer1_m
             .swarm()
-            .listen_blocking("/ip4/127.0.0.1/tcp/0".parse::<Multiaddr>()?)?;
+            .listen_blocking(&"/ip4/127.0.0.1/tcp/0".parse::<Multiaddr>()?)?;
         trace!("peer 1 is listening");
         sleep!(200);
         let peer1_id = peer1_m.identity().get_peer_id();
         let peer2_id = peer2_m.identity().get_peer_id();
         peer2_m
             .swarm()
-            .dial_blocking(peer1_m.swarm().list_listeners_blocking()[0].clone())?;
+            .dial_blocking(&peer1_m.swarm().list_listeners_blocking()[0])?;
         trace!("peer 1 dialed");
         sleep!(200);
         assert!(peer1_m
@@ -260,10 +263,12 @@ mod test {
             .block_on(peer1_m.advertise().set_provider_state(true)));
         trace!("provider state set");
         sleep!(200);
-        peer2_m
-            .executor()
-            .block_on(peer2_m.advertise().set_remote_advertisement(peer1_id, true));
-        assert!(peer2_m.swarm().is_connected_blocking(peer1_id));
+        peer2_m.executor().block_on(
+            peer2_m
+                .advertise()
+                .set_remote_advertisement(&peer1_id, true),
+        );
+        assert!(peer2_m.swarm().is_connected_blocking(&peer1_id));
         trace!("peer 1 connected and advertisement set");
         sleep!(200);
         assert!(peer2_m
@@ -287,7 +292,7 @@ mod test {
         peer2_m.executor().block_on(
             peer2_m
                 .advertise()
-                .set_remote_advertisement(peer1_id, false),
+                .set_remote_advertisement(&peer1_id, false),
         );
         trace!("removed advertisement on peer1(testing presistence)");
         assert!(peer1_m

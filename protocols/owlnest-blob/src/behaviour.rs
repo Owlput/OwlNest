@@ -259,15 +259,15 @@ impl Behaviour {
                 }
                 handle_callback_sender!(Err(CancellationError::IdNotFound)=>callback);
             }
-            ListConnected(callback) => {
+            ListConnected { callback } => {
                 handle_callback_sender!(self.connected_peers.iter().copied().collect() => callback)
             }
-            ListRecv(callback) => {
+            ListRecv { callback } => {
                 let ongoing = self.ongoing_recv.values().map(Into::into);
                 let pending = self.pending_recv.values().map(Into::into);
                 handle_callback_sender!(ongoing.chain(pending).collect()=>callback)
             }
-            ListSend(callback) => {
+            ListSend { callback } => {
                 let ongoing = self.ongoing_send.values().map(Into::into);
                 let pending = self.pending_send.values().map(Into::into);
                 handle_callback_sender!(ongoing.chain(pending).collect()=>callback)
