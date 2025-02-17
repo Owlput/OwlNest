@@ -3,7 +3,10 @@ pub use config::Config;
 pub use libp2p::autonat::Behaviour;
 pub use libp2p::autonat::Event as OutEvent;
 pub use libp2p::autonat::NatStatus;
+use owlnest_macro::generate_handler_method;
 use tracing::info;
+
+type NatStatusResult = (NatStatus, usize);
 
 #[derive(Debug)]
 pub(crate) enum InEvent {
@@ -11,9 +14,15 @@ pub(crate) enum InEvent {
         peer_id: PeerId,
         address: Option<Multiaddr>,
     },
-    RemoveServer(PeerId),
-    Probe(Multiaddr),
-    GetNatStatus(Callback<(NatStatus, usize)>),
+    RemoveServer {
+        peer_id: PeerId,
+    },
+    Probe {
+        candidate: Multiaddr,
+    },
+    GetNatStatus {
+        callback: Callback<(NatStatus, usize)>,
+    },
 }
 
 /// A handle that can communicate with the behaviour within the swarm.
@@ -40,36 +49,32 @@ impl Handle {
     }
     generate_handler_method!(
         /// Remove a server(peer) the behaviour can use.
-        RemoveServer:remove_server(peer:PeerId);
+        RemoveServer:remove_server(peer_id:&PeerId);
         /// Tell the behaivour to probe the endpoint now.
-        Probe:probe(candidate:Multiaddr);
-    );
-    generate_handler_method!(
-        /// Get current NAT(Network Address Translation) status: 
-        /// - `NatStatus::Private`: the IP address you currently have 
-        /// is a translated address, meaning that others cannot connect 
-        /// to you directly using the address you have for your self.  
+        Probe:probe(candidate:<&Multiaddr>);
+        /// Get current NAT(Network Address Translation) status:
+        /// - `NatStatus::Private`: the IP address you currently have
+        /// is a translated address, meaning that others cannot connect
+        /// to you directly using the address you have for your self.
         /// - `NatStatus::Public`: the IP address you currently have
         /// can be reached by others directly(no translation required).
         /// - `NatStatus::Unknown`: the status cannot be determined
         /// due to conflicting information.
-        GetNatStatus:get_nat_status()->(NatStatus,usize);
-    );
-    generate_handler_method!(
+        GetNatStatus:get_nat_status()->NatStatusResult;
         /// Add a server(peer) that the behaviour can use to probe
         /// for public reachability.
-        AddServer:add_server{peer_id:PeerId,address:Option<Multiaddr>};
+        AddServer:add_server(peer_id:&PeerId,address:|Option<Multiaddr>|);
     );
 }
 
 pub(crate) fn map_in_event(behaviour: &mut Behaviour, ev: InEvent) {
     match ev {
         InEvent::AddServer { peer_id, address } => behaviour.add_server(peer_id, address),
-        InEvent::RemoveServer(peer) => behaviour.remove_server(&peer),
-        InEvent::GetNatStatus(callback) => {
+        InEvent::RemoveServer { peer_id } => behaviour.remove_server(&peer_id),
+        InEvent::GetNatStatus { callback } => {
             handle_callback_sender!((behaviour.nat_status(),behaviour.confidence())=>callback)
         }
-        InEvent::Probe(candidate) => behaviour.probe_address(candidate),
+        InEvent::Probe { candidate } => behaviour.probe_address(candidate),
     }
 }
 
@@ -128,15 +133,15 @@ pub mod cli {
     pub async fn handle_autonat(handle: &Handle, command: AutoNat) {
         match command {
             AutoNat::AddServer { peer_id, address } => {
-                handle.add_server(peer_id, address).await;
+                handle.add_server(&peer_id, address).await;
                 println!("OK.");
             }
             AutoNat::RemoveServer { peer_id } => {
-                handle.remove_server(peer_id).await;
+                handle.remove_server(&peer_id).await;
                 println!("OK.");
             }
             AutoNat::Probe { address } => {
-                handle.probe(address).await;
+                handle.probe(&address).await;
                 println!("OK.");
             }
             AutoNat::GetNatStatus => {

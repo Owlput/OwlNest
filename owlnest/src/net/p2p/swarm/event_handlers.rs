@@ -123,30 +123,30 @@ pub fn handle_incoming_event(ev: Rx, swarm: &mut Swarm) {
 pub fn swarm_op_exec(swarm: &mut Swarm, ev: InEvent) {
     use InEvent::*;
     match ev {
-        Dial(addr, callback) => {
-            handle_callback_sender!(swarm.dial(addr) => callback)
+        Dial { address, callback } => {
+            handle_callback_sender!(swarm.dial(address) => callback)
         }
-        Listen(addr, callback) => {
-            handle_callback_sender!(swarm.listen_on(addr) => callback)
+        Listen { address, callback } => {
+            handle_callback_sender!(swarm.listen_on(address) => callback)
         }
-        AddExternalAddress(addr, callback) => {
-            handle_callback_sender!(swarm.add_external_address(addr) => callback)
+        AddExternalAddress { address, callback } => {
+            handle_callback_sender!(swarm.add_external_address(address) => callback)
         }
-        RemoveExternalAddress(addr, callback) => {
-            handle_callback_sender!(swarm.remove_external_address(&addr) => callback)
+        RemoveExternalAddress { address, callback } => {
+            handle_callback_sender!(swarm.remove_external_address(&address) => callback)
         }
-        DisconnectFromPeerId(peer_id, callback) => {
+        DisconnectFromPeerId { peer_id, callback } => {
             handle_callback_sender!(swarm.disconnect_peer_id(peer_id) => callback)
         }
-        ListExternalAddresses(callback) => {
+        ListExternalAddresses { callback } => {
             let addr_list = swarm.external_addresses().cloned().collect();
             handle_callback_sender!(addr_list => callback)
         }
-        ListListeners(callback) => {
+        ListListeners { callback } => {
             let listener_list = swarm.listeners().cloned().collect();
             handle_callback_sender!(listener_list => callback)
         }
-        IsConnectedToPeerId(peer_id, callback) => {
+        IsConnectedToPeerId { peer_id, callback } => {
             let result = swarm.is_connected(&peer_id);
             trace!("is conneted to {}: {}", peer_id, result);
             handle_callback_sender!( result => callback)

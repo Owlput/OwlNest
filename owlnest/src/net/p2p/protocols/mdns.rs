@@ -45,8 +45,13 @@ impl Default for Config {
 
 #[derive(Debug)]
 pub(crate) enum InEvent {
-    ListDiscoveredNodes(Callback<Box<[PeerId]>>),
-    HasNode(PeerId, Callback<bool>),
+    ListDiscoveredNodes {
+        callback: Callback<Box<[PeerId]>>,
+    },
+    HasNode {
+        peer: PeerId,
+        callback: Callback<bool>,
+    },
 }
 
 /// A handle that can communicate with the behaviour within the swarm.
@@ -76,19 +81,21 @@ impl Handle {
         ListDiscoveredNodes:list_discovered_node()->Box<[PeerId]>;
         /// Check if the peer can be discovered through mDNS
         /// e.g. accessible from your local network without internet.
-        HasNode:has_node(peer_id:PeerId)->bool;
+        HasNode:has_node(peer:&PeerId)->bool;
     }
 }
 
 pub(crate) fn map_in_event(ev: InEvent, behav: &mut Behaviour) {
     use InEvent::*;
     match ev {
-        ListDiscoveredNodes(callback) => {
+        ListDiscoveredNodes { callback } => {
             let node_list = behav.discovered_nodes().copied().collect();
             handle_callback_sender!(node_list => callback)
         }
-        HasNode(peer_id, callback) => {
-            let has_node = behav.discovered_nodes().any(|peer| *peer == peer_id);
+        HasNode { peer, callback } => {
+            let has_node = behav
+                .discovered_nodes()
+                .any(|discovered| *discovered == peer);
             handle_callback_sender!(has_node => callback)
         }
     }
@@ -136,7 +143,7 @@ pub mod cli {
         match command {
             ListDiscovered => println!("{:?}", handle.list_discovered_node().await),
             HasNode { peer_id } => {
-                let result = handle.has_node(peer_id).await;
+                let result = handle.has_node(&peer_id).await;
                 println!("Is peer {} discovered through mDNS: {}", peer_id, result);
             }
         }

@@ -259,7 +259,9 @@ pub(crate) enum InEvent {
         peer_id: PeerId,
         callback: Callback<kad::QueryId>,
     },
-    BootStrap(Callback<Result<kad::QueryId, kad::NoKnownPeers>>),
+    BootStrap {
+        callback: Callback<Result<kad::QueryId, kad::NoKnownPeers>>,
+    },
     InsertNode {
         peer_id: PeerId,
         address: Multiaddr,
@@ -394,10 +396,8 @@ impl Handle {
         /// So it is VERY important to choose bootstrapping nodes carefully and
         /// only use those peers you trust rather than a random node.
         BootStrap:bootstrap()->Result<kad::QueryId,kad::NoKnownPeers>;
-    );
-    generate_handler_method!(
         /// Mannually insert a record to the store.
-        InsertNode:insert_node{peer_id:PeerId, address:Multiaddr}->kad::RoutingUpdate;
+        InsertNode:insert_node(peer_id:&PeerId, address:<&Multiaddr>)->kad::RoutingUpdate;
     );
 }
 
@@ -409,7 +409,7 @@ pub(crate) fn map_in_event(ev: InEvent, behav: &mut Behaviour) {
             let query_id = behav.get_record(kad::RecordKey::new(&peer_id.to_bytes()));
             handle_callback_sender!(query_id=>callback);
         }
-        BootStrap(callback) => {
+        BootStrap { callback } => {
             let result = behav.bootstrap();
             handle_callback_sender!(result=>callback);
         }
@@ -568,9 +568,9 @@ pub mod cli {
             InsertDefault => {
                 let result = handle
                     .insert_node(
-                        PeerId::from_str("QmNnooDu7bfjPFoTZYxMNLWUQJyrVwtbZg5gBMjTezGAJN")
+                        &PeerId::from_str("QmNnooDu7bfjPFoTZYxMNLWUQJyrVwtbZg5gBMjTezGAJN")
                             .expect("parsing to succeed"),
-                        "/dnsaddr/bootstrap.libp2p.io"
+                        &"/dnsaddr/bootstrap.libp2p.io"
                             .parse::<Multiaddr>()
                             .expect("parsing to succeed"),
                     )
@@ -581,9 +581,9 @@ pub mod cli {
                 );
                 let result = handle
                     .insert_node(
-                        PeerId::from_str("QmQCU2EcMqAqQPR2i9bChDtGNJchTbq5TbXJJ16u19uLTa")
+                        &PeerId::from_str("QmQCU2EcMqAqQPR2i9bChDtGNJchTbq5TbXJJ16u19uLTa")
                             .expect("parsing to succeed"),
-                        "/dnsaddr/bootstrap.libp2p.io"
+                        &"/dnsaddr/bootstrap.libp2p.io"
                             .parse::<Multiaddr>()
                             .expect("parsing to succeed"),
                     )
@@ -594,9 +594,9 @@ pub mod cli {
                 );
                 let result = handle
                     .insert_node(
-                        PeerId::from_str("QmbLHAnMoJPWSCR5Zhtx6BHJX9KiKNN6tpvbUcqanj75Nb")
+                        &PeerId::from_str("QmbLHAnMoJPWSCR5Zhtx6BHJX9KiKNN6tpvbUcqanj75Nb")
                             .expect("parsing to succeed"),
-                        "/dnsaddr/bootstrap.libp2p.io"
+                        &"/dnsaddr/bootstrap.libp2p.io"
                             .parse::<Multiaddr>()
                             .expect("parsing to succeed"),
                     )
@@ -607,9 +607,9 @@ pub mod cli {
                 );
                 let result = handle
                     .insert_node(
-                        PeerId::from_str("QmcZf59bWwK5XFi76CZX8cbJ4BhTzzA3gU1ZjYZcYW3dwt")
+                        &PeerId::from_str("QmcZf59bWwK5XFi76CZX8cbJ4BhTzzA3gU1ZjYZcYW3dwt")
                             .expect("parsing to succeed"),
-                        "/dnsaddr/bootstrap.libp2p.io"
+                        &"/dnsaddr/bootstrap.libp2p.io"
                             .parse::<Multiaddr>()
                             .expect("parsing to succeed"),
                     )
@@ -620,9 +620,9 @@ pub mod cli {
                 );
                 let result = handle
                     .insert_node(
-                        PeerId::from_str("QmaCpDMGvV2BGHeYERUEnRQAwe3N8SzbUtfsmvsqQLuvuJ")
+                        &PeerId::from_str("QmaCpDMGvV2BGHeYERUEnRQAwe3N8SzbUtfsmvsqQLuvuJ")
                             .expect("parsing to succeed"),
-                        "/ip4/104.131.131.82/tcp/4001"
+                        &"/ip4/104.131.131.82/tcp/4001"
                             .parse::<Multiaddr>()
                             .expect("parsing to succeed"),
                     )

@@ -6,20 +6,7 @@ pub mod logging_prelude {
     pub use tracing_subscriber::prelude::__tracing_subscriber_SubscriberExt;
 }
 
-#[macro_export]
-macro_rules! with_timeout {
-    ($future:ident,$timeout:literal) => {{
-        let timer = futures_timer::Delay::new(std::time::Duration::from_secs($timeout));
-        tokio::select! {
-            _ = timer =>{
-                Err(owlnest_core::error::OperationError::Timeout)
-            }
-            v = $future => {
-                Ok(v)
-            }
-        }
-    }};
-}
+/// Wait for a future for a specific amount of time, in milliseconds.
 #[macro_export]
 macro_rules! future_timeout {
     ($future:ident,$timeout:literal) => {
@@ -28,6 +15,8 @@ macro_rules! future_timeout {
             .map_err(owlnest_core::error::OperationError::from)
     };
 }
+
+/// Wait for a oneshot callback channel for a specific amount of time, in milliseconds.
 #[macro_export]
 macro_rules! callback_timeout {
     ($callback:ident,$timeout:literal) => {
@@ -53,6 +42,8 @@ macro_rules! channel_timeout {
     }};
 }
 
+/// Send a event through a mpsc channel,
+/// expecting the receiver to always stay alive.
 #[macro_export]
 macro_rules! send_swarm {
     ($sender:expr,$ev:expr) => {
@@ -62,12 +53,16 @@ macro_rules! send_swarm {
             .expect(owlnest_core::expect::SWARM_RECEIVER_KEPT_ALIVE)
     };
 }
+
+/// Wait on a callback until it returns a value.
 #[macro_export]
 macro_rules! handle_callback {
     ($receiver:expr) => {
         $receiver.await.expect(owlnest_core::expect::CALLBACK_CLEAR)
     };
 }
+
+/// Sleep for some time using std::thread::sleep, in milliseconds.
 #[macro_export]
 macro_rules! sleep {
     ($sleep_ms:expr) => {

@@ -77,7 +77,7 @@ pub mod cli {
                 let addr: Multiaddr = address
                     .with(Protocol::P2p(peer_id))
                     .with(Protocol::P2pCircuit);
-                match manager.swarm().listen_blocking(addr.clone()) {
+                match manager.swarm().listen_blocking(&addr) {
                     Ok(listener_id) => println!(
                         "Successfully listening on {} with listener ID {:?}",
                         addr, listener_id
@@ -119,7 +119,7 @@ mod test {
         println!("dialer:{}", peer3_m.identity().get_peer_id());
         assert!(peer1_m
             .swarm()
-            .listen_blocking("/ip4/127.0.0.1/tcp/0".parse::<Multiaddr>()?) // Pick a random port that is available
+            .listen_blocking(&"/ip4/127.0.0.1/tcp/0".parse::<Multiaddr>()?) // Pick a random port that is available
             .is_ok());
         sleep!(100);
         let server_address = peer1_m.swarm().list_listeners_blocking();
@@ -129,17 +129,17 @@ mod test {
         let server_address: Multiaddr = addr_filtered.next().cloned().unwrap();
         peer1_m
             .swarm()
-            .add_external_address_blocking(server_address.clone()); // The address is on local network
+            .add_external_address_blocking(&server_address); // The address is on local network
         sleep!(100);
         assert!(peer2_m
             .swarm()
-            .dial_blocking(server_address.clone())
+            .dial_blocking(&server_address)
             .is_ok());
         sleep!(100);
         assert!(peer2_m
             .swarm()
             .listen_blocking(
-                server_address
+                &server_address
                     .clone()
                     .with(Protocol::P2p(peer1_m.identity().get_peer_id()))
                     .with(Protocol::P2pCircuit)
@@ -150,7 +150,7 @@ mod test {
         assert!(peer3_m
             .swarm()
             .dial_blocking(
-                server_address
+                &server_address
                     .clone()
                     .with(Protocol::P2p(peer1_m.identity().get_peer_id()))
                     .with(Protocol::P2pCircuit)
@@ -160,7 +160,7 @@ mod test {
         sleep!(1000);
         assert!(peer3_m
             .swarm()
-            .is_connected_blocking(peer2_m.identity().get_peer_id()));
+            .is_connected_blocking(&peer2_m.identity().get_peer_id()));
         #[cfg(any(feature = "owlnest-protocols", feature = "owlnest-messaging"))]
         with_messaging(&peer1_m, &peer2_m, &peer3_m);
         Ok(())

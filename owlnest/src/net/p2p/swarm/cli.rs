@@ -51,13 +51,13 @@ pub fn handle_swarm(handle: &SwarmHandle, command: Swarm) {
     use Swarm::*;
     match command {
         Dial { address } => {
-            if let Err(e) = handle.dial_blocking(address.clone()) {
+            if let Err(e) = handle.dial_blocking(&address) {
                 println!("Failed to initiate dial {} with error: {:?}", address, e);
             } else {
                 println!("Dialing {}", address);
             }
         }
-        Listen { address } => match handle.listen_blocking(address.clone()) {
+        Listen { address } => match handle.listen_blocking(&address) {
             Ok(listener_id) => println!(
                 "Successfully listening on {} with listener ID {:?}",
                 address, listener_id
@@ -71,7 +71,7 @@ pub fn handle_swarm(handle: &SwarmHandle, command: Swarm) {
         },
         Listener(command) => listener::handle_swarm_listener(handle, command),
         ExternalAddr(command) => external_address::handle_swarm_externaladdress(handle, command),
-        IsConnected { peer_id } => println!("{}", handle.is_connected_blocking(peer_id)),
+        IsConnected { peer_id } => println!("{}", handle.is_connected_blocking(&peer_id)),
     }
 }
 
@@ -137,11 +137,11 @@ pub mod external_address {
         use ExternalAddr::*;
         match command {
             Add { address } => {
-                handle.add_external_address_blocking(address.clone());
+                handle.add_external_address_blocking(&address);
                 println!("External address `{}` added", address)
             }
             Remove { address } => {
-                handle.remove_external_address_blocking(address.clone());
+                handle.remove_external_address_blocking(&address);
                 println!("External address `{}` removed", address)
             }
             Ls => {

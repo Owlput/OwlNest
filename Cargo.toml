@@ -50,4 +50,4 @@ futures = "0.3"
 futures-timer = "3"
 tracing = "0.1"
 serde = { version = "1", features = ["derive"] }
-derive_more = { version = "1", features = ["from"] }
+derive_more = { version = "2", features = ["from"] }

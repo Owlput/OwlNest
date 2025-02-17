@@ -80,13 +80,13 @@ fn handle_command(
         ))),
         Id => println!("Local peer ID: {}", ident.get_peer_id()),
         Dial { address } => {
-            if let Err(e) = handle.dial_blocking(address.clone()) {
+            if let Err(e) = handle.dial_blocking(&address) {
                 println!("Failed to initiate dial {} with error: {:?}", address, e);
             } else {
                 println!("Dialing {}", address);
             }
         }
-        Listen { address } => match handle.listen_blocking(address.clone()) {
+        Listen { address } => match handle.listen_blocking(&address) {
             Ok(listener_id) => println!(
                 "Successfully listening on {} with listener ID {:?}",
                 address, listener_id

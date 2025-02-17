@@ -235,19 +235,19 @@ mod test {
         let (peer2, _) = setup_default();
         peer1
             .swarm()
-            .listen_blocking("/ip4/127.0.0.1/tcp/0".parse::<Multiaddr>()?)?;
+            .listen_blocking(&"/ip4/127.0.0.1/tcp/0".parse::<Multiaddr>()?)?;
         let mut peer1_message_watcher = spawn_watcher(&peer1);
         let mut peer2_message_watcher = spawn_watcher(&peer2);
         sleep(Duration::from_millis(100));
         peer2
             .swarm()
-            .dial_blocking(peer1.swarm().list_listeners_blocking()[0].clone())?;
+            .dial_blocking(&peer1.swarm().list_listeners_blocking()[0])?;
         let peer1_id = peer1.identity().get_peer_id();
         let peer2_id = peer2.identity().get_peer_id();
         sleep(Duration::from_millis(1000));
         assert!(
-            peer2.swarm().is_connected_blocking(peer1_id)
-                && peer1.swarm().is_connected_blocking(peer2_id)
+            peer2.swarm().is_connected_blocking(&peer1_id)
+                && peer1.swarm().is_connected_blocking(&peer2_id)
         );
         single_send_recv(&peer1, &peer2, &mut peer2_message_watcher);
         single_send_recv(&peer2, &peer1, &mut peer1_message_watcher);

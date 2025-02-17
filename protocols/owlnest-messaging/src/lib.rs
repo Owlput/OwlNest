@@ -25,7 +25,9 @@ pub enum InEvent {
         message: Message,
         callback: Callback<Result<Duration, SendError>>,
     },
-    ListConnected(Callback<Box<[PeerId]>>),
+    ListConnected {
+        callback: Callback<Box<[PeerId]>>,
+    },
 }
 
 #[derive(Debug)]
