@@ -134,15 +134,15 @@ pub mod cli {
         match command {
             AutoNat::AddServer { peer_id, address } => {
                 handle.add_server(&peer_id, address).await;
-                println!("OK.");
+                println!("AutoNat::AddServer({})-> OK.", peer_id);
             }
             AutoNat::RemoveServer { peer_id } => {
                 handle.remove_server(&peer_id).await;
-                println!("OK.");
+                println!("AutoNat::RemoveServer({})-> OK.", peer_id);
             }
             AutoNat::Probe { address } => {
                 handle.probe(&address).await;
-                println!("OK.");
+                println!("AutoNat::Probe({})-> OK.", address);
             }
             AutoNat::GetNatStatus => {
                 let (status, confidence) = handle.get_nat_status().await;
