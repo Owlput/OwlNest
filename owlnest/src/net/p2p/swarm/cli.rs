@@ -2,6 +2,7 @@ use crate::net::p2p::swarm::handle::SwarmHandle;
 use clap::Subcommand;
 use libp2p::{Multiaddr, PeerId, TransportError};
 use prettytable::table;
+use printable::iter::PrintableIter;
 
 /// Subcommand for managing the swarm.  
 /// Swarm is libp2p way of managing raw connections(or transports, e.g. TCP, UDP, QUIC, WebSocket).
@@ -45,6 +46,7 @@ pub enum Swarm {
         #[arg(required = true)]
         peer_id: PeerId,
     },
+    ListConnected,
 }
 
 pub fn handle_swarm(handle: &SwarmHandle, command: Swarm) {
@@ -72,12 +74,26 @@ pub fn handle_swarm(handle: &SwarmHandle, command: Swarm) {
         Listener(command) => listener::handle_swarm_listener(handle, command),
         ExternalAddr(command) => external_address::handle_swarm_externaladdress(handle, command),
         IsConnected { peer_id } => println!("{}", handle.is_connected_blocking(&peer_id)),
+        ListConnected => {
+            let list = handle.list_connected_blocking();
+            if list.len() < 1 {
+                return println!("No peer is connected to local node.");
+            }
+            let table = table!(
+                [format!("Connected Peers")],
+                [list
+                    .iter()
+                    .printable()
+                    .with_left_bound("")
+                    .with_right_bound("")
+                    .with_separator("\n")]
+            );
+            table.printstd();
+        }
     }
 }
 
 pub mod listener {
-    use printable::iter::PrintableIter;
-
     use super::*;
 
     /// Subcommand for managing listeners.
@@ -85,6 +101,9 @@ pub mod listener {
     pub enum Listener {
         /// List all listeners
         Ls,
+        // Cannot remove a listener via cli because
+        // `ListenerId` cannot be constructed.
+        //Rm(),
     }
 
     pub fn handle_swarm_listener(handle: &SwarmHandle, command: Listener) {
@@ -106,14 +125,12 @@ pub mod listener {
 }
 
 pub mod external_address {
-    use printable::iter::PrintableIter;
-
     use super::*;
 
     /// Subcommand for managing external addresses.
     /// Note that some protocol will use this information
     /// to determine whether the address is publicly reachable.  
-    /// Local addresses(10.0.0.0,127.0.0.1,192.168.0.0) are not
+    /// Local addresses(10.0.0.0, 127.0.0.1, 192.168.0.0) are not
     /// considered external addresses by default, you can manually
     /// add them to the list.
     #[derive(Debug, Subcommand)]

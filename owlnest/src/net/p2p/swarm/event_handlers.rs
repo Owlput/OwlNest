@@ -129,6 +129,16 @@ pub fn swarm_op_exec(swarm: &mut Swarm, ev: InEvent) {
         Listen { address, callback } => {
             handle_callback_sender!(swarm.listen_on(address) => callback)
         }
+        ListListeners { callback } => {
+            let listener_list = swarm.listeners().cloned().collect();
+            handle_callback_sender!(listener_list => callback)
+        }
+        RemoveListeners {
+            listener_id,
+            callback,
+        } => {
+            handle_callback_sender!(swarm.remove_listener(listener_id)=> callback)
+        }
         AddExternalAddress { address, callback } => {
             handle_callback_sender!(swarm.add_external_address(address) => callback)
         }
@@ -142,9 +152,8 @@ pub fn swarm_op_exec(swarm: &mut Swarm, ev: InEvent) {
             let addr_list = swarm.external_addresses().cloned().collect();
             handle_callback_sender!(addr_list => callback)
         }
-        ListListeners { callback } => {
-            let listener_list = swarm.listeners().cloned().collect();
-            handle_callback_sender!(listener_list => callback)
+        ListConnected { callback } => {
+            handle_callback_sender!(swarm.connected_peers().copied().collect()=>callback)
         }
         IsConnectedToPeerId { peer_id, callback } => {
             let result = swarm.is_connected(&peer_id);

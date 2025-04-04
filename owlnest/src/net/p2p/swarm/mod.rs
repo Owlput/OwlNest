@@ -212,6 +212,13 @@ pub(crate) enum InEvent {
         address: Multiaddr,
         callback: Callback<Result<ListenerId, TransportError<std::io::Error>>>,
     },
+    ListListeners {
+        callback: Callback<Box<[Multiaddr]>>,
+    },
+    RemoveListeners {
+        listener_id: ListenerId,
+        callback: Callback<bool>,
+    },
     AddExternalAddress {
         address: Multiaddr,
         callback: Callback<()>,
@@ -220,18 +227,19 @@ pub(crate) enum InEvent {
         address: Multiaddr,
         callback: Callback<()>,
     },
-    DisconnectFromPeerId {
-        peer_id: PeerId,
-        callback: Callback<Result<(), ()>>,
-    },
+
     ListExternalAddresses {
         callback: Callback<Box<[Multiaddr]>>,
     },
-    ListListeners {
-        callback: Callback<Box<[Multiaddr]>>,
+    ListConnected {
+        callback: Callback<Box<[PeerId]>>,
     },
     IsConnectedToPeerId {
         peer_id: PeerId,
         callback: Callback<bool>,
+    },
+    DisconnectFromPeerId {
+        peer_id: PeerId,
+        callback: Callback<Result<(), ()>>,
     },
 }
