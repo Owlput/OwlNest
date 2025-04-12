@@ -3,11 +3,10 @@ use super::{error::Error, protocol, PROTOCOL_NAME};
 use futures_timer::Delay;
 use owlnest_macro::handle_callback_sender;
 use owlnest_prelude::handler_prelude::*;
-use prost::Message;
-use std::sync::Arc;
+use prost::{DecodeError, Message};
 use std::{collections::VecDeque, time::Duration};
 use tokio::sync::oneshot;
-use tracing::{debug, trace, trace_span};
+use tracing::{debug, trace, trace_span, Span};
 
 #[derive(Debug)]
 pub enum FromBehaviourEvent {
@@ -18,28 +17,27 @@ pub enum FromBehaviourEvent {
         bytes_total: u64,
     },
     /// A chunk of file
-    File {
+    FileChunk {
         local_send_id: u64,
-        bytes_to_send: Arc<[u8]>,
-        len: usize,
+        bytes_to_send: Vec<u8>,
     },
     AcceptFile {
         remote_send_id: u64,
         callback: oneshot::Sender<Result<Duration, FileRecvError>>,
     },
     /// Cancel command sent by file sender
-    CancelSend { local_send_id: u64 },
+    LocalCancelSend { local_send_id: u64, span: Span },
     /// Cancel command sent by file receiver
-    CancelRecv { remote_send_id: u64 },
+    LocalCancelRecv { remote_send_id: u64, span: Span },
 }
+
 #[derive(Debug)]
 pub enum ToBehaviourEvent {
     /// A chunk of file has reached this peer.  
     /// The state of receiving is managed on behaviour.
     RecvProgressed {
         remote_send_id: u64,
-        len: usize,
-        content: Arc<[u8]>,
+        content: Vec<u8>,
     },
     /// A chunk of file has been sent.
     SendProgressed {
@@ -62,11 +60,11 @@ pub enum ToBehaviourEvent {
         local_send_id: u64,
     },
     /// A send request has been cancelled by receiver.
-    CancelSend {
+    RemoteCancelSend {
         local_send_id: u64,
     },
     /// A recv request has been cancelled by sender.
-    CancelRecv {
+    RemoteCancelRecv {
         remote_send_id: u64,
     },
     Error(Error),
@@ -97,13 +95,25 @@ impl From<messages::AcceptFile> for ToBehaviourEvent {
 impl From<messages::CancelSend> for ToBehaviourEvent {
     fn from(value: messages::CancelSend) -> Self {
         let messages::CancelSend { remote_send_id } = value;
-        ToBehaviourEvent::CancelRecv { remote_send_id }
+        ToBehaviourEvent::RemoteCancelRecv { remote_send_id }
     }
 }
 impl From<messages::CancelRecv> for ToBehaviourEvent {
     fn from(value: messages::CancelRecv) -> Self {
         let messages::CancelRecv { local_send_id } = value;
-        ToBehaviourEvent::CancelSend { local_send_id }
+        ToBehaviourEvent::RemoteCancelSend { local_send_id }
+    }
+}
+impl From<messages::FileChunk> for ToBehaviourEvent {
+    fn from(value: messages::FileChunk) -> Self {
+        let messages::FileChunk {
+            remote_send_id,
+            content,
+        } = value;
+        ToBehaviourEvent::RecvProgressed {
+            remote_send_id,
+            content,
+        }
     }
 }
 pub mod messages {
@@ -137,12 +147,6 @@ impl Handler {
             inbound: None,
             outbound: None,
         }
-    }
-    /// Remove the send request from pending and ongoing, also dropping the file handle so no more bytes of the file will be sent.  
-    /// This also means the remote will no longer receive `Packet::File` with the corresponding send ID, so state sync is required.
-    fn cancell_send(&mut self, local_send_id: u64) {
-        self.pending_out_events
-            .push_back(ToBehaviourEvent::CancelSend { local_send_id });
     }
 }
 
@@ -230,7 +234,7 @@ impl ConnectionHandler for Handler {
     }
 }
 
-type PendingVerf = BoxFuture<'static, Result<(Stream, Arc<[u8]>, usize, u8), io::Error>>;
+type PendingVerf = BoxFuture<'static, Result<(Stream, Vec<u8>, u8), io::Error>>;
 type PendingSend = BoxFuture<'static, Result<(Stream, Duration), io::Error>>;
 
 enum OutboundState {
@@ -241,7 +245,7 @@ enum OutboundState {
 enum SendType {
     ControlSend(Option<oneshot::Sender<Result<u64, FileSendError>>>, u64),
     ControlRecv(Option<oneshot::Sender<Result<Duration, FileRecvError>>>),
-    Cancel,
+    Cancel(Span),
     FileSend(u64),
 }
 
@@ -257,16 +261,25 @@ impl Handler {
             trace!("Polling inbound");
             let poll_result = fut.poll_unpin(cx);
             if let Poll::Ready(Err(e)) = poll_result {
-                trace!("Inbound error");
+                trace!("Inbound error: {}", e);
                 self.inbound.take();
                 let error = Error::IO(format!("IO Error: {:?}", e));
                 return Some(ConnectionHandlerEvent::NotifyBehaviour(
                     ToBehaviourEvent::Error(error),
                 ));
             }
-            if let Poll::Ready(Ok((stream, bytes, len, msg_type))) = poll_result {
+            if let Poll::Ready(Ok((stream, bytes, message_type))) = poll_result {
                 self.inbound = Some(super::protocol::recv(stream).boxed());
-                self.on_message(bytes, len, msg_type);
+                if let Err(e) = self.on_message(bytes.as_ref(), message_type) {
+                    self.pending_out_events.push_back(ToBehaviourEvent::Error(
+                        Error::UnrecognizedMessage(format!(
+                            "Unrecognized message({}): {:20}, {}",
+                            message_type,
+                            e,
+                            String::from_utf8_lossy(&bytes[..20])
+                        )),
+                    ));
+                }
                 trace!("Inbound handled");
             }
         }
@@ -290,7 +303,7 @@ impl Handler {
                     }
                     // Ready but resolved to an error
                     if let Poll::Ready(Err(e)) = poll_result {
-                        debug!("Outbound error");
+                        debug!("Outbound error: {}", e);
                         return Some(ConnectionHandlerEvent::NotifyBehaviour(
                             ToBehaviourEvent::Error(Error::IO(e.to_string())),
                         )); // return with `self.outbound` == None
@@ -314,7 +327,9 @@ impl Handler {
                                     },
                                 );
                             }
-                            SendType::Cancel => {}
+                            SendType::Cancel(span) => {
+                                span.in_scope(||debug!("Cancellation message has been sent successfully. Lifecycle ended."))
+                            }
                         }
                         self.outbound = Some(OutboundState::Idle(stream));
                     }
@@ -346,58 +361,26 @@ impl Handler {
         }
         None
     }
-    fn on_message(&mut self, bytes: Arc<[u8]>, len: usize, msg_type: u8) {
+    fn on_message(&mut self, bytes: &[u8], message_type: u8) -> Result<(), DecodeError> {
         use messages::*;
         trace!("Inbound ready");
-        let err_def = |_e| {
-            ToBehaviourEvent::Error(Error::UnrecognizedMessage(format!(
-                "Unrecognized message: {:20}",
-                String::from_utf8_lossy(&bytes[..20])
-            )))
-        };
-        let ev = match msg_type {
-            0 => IncomingFile::decode(&bytes[..len])
-                .map(Into::into)
-                .unwrap_or_else(err_def),
-            1 => AcceptFile::decode(&bytes[..len])
-                .map(Into::into)
-                .unwrap_or_else(err_def),
-            2 => {
-                let mut num_be = [0u8; 8];
-                num_be.copy_from_slice(&bytes[0..8]);
-                ToBehaviourEvent::RecvProgressed {
-                    remote_send_id: u64::from_be_bytes(num_be),
-                    len,
-                    content: bytes,
-                }
-            }
-            3 => CancelSend::decode(&bytes[..len])
-                .map(Into::into)
-                .unwrap_or_else(err_def),
-            4 => CancelRecv::decode(&bytes[..len])
-                .map(Into::into)
-                .unwrap_or_else(err_def),
-            _ => ToBehaviourEvent::Error(Error::UnrecognizedMessage(format!(
-                "Unrecognized message: {:20}",
-                String::from_utf8_lossy(&bytes[..20])
-            ))),
+        let ev = match message_type {
+            0 => IncomingFile::decode(bytes)?.into(),
+            1 => AcceptFile::decode(bytes)?.into(),
+            2 => CancelSend::decode(bytes)?.into(),
+            3 => CancelRecv::decode(bytes)?.into(),
+            4 => FileChunk::decode(bytes)?.into(),
+            _ => ToBehaviourEvent::Error(Error::IO("Unexpected header value".into())),
         };
         self.pending_out_events.push_back(ev);
+        Ok(())
     }
     fn progress_outbound(&mut self, ev: FromBehaviourEvent, stream: Stream) {
         use FromBehaviourEvent::*;
+        let send_type;
+        let bytes;
+        let message_type;
         match ev {
-            File {
-                local_send_id,
-                bytes_to_send,
-                len,
-            } => {
-                self.outbound = Some(OutboundState::Busy(
-                    protocol::send(stream, bytes_to_send, len).boxed(),
-                    SendType::FileSend(local_send_id),
-                    Delay::new(self.timeout),
-                ));
-            }
             NewFileSend {
                 file_name,
                 local_send_id,
@@ -409,17 +392,9 @@ impl Handler {
                     bytes_total,
                     file_name,
                 };
-                let mut buf = [0u8; 1 << 6];
-                let len = message.encoded_len();
-                let mut header = len.to_be_bytes();
-                header[0] = 0;
-                buf[0..8].copy_from_slice(&header);
-                message.encode(&mut &mut buf[8..]).expect("result to fit");
-                self.outbound = Some(OutboundState::Busy(
-                    protocol::send(stream, Arc::new(buf), len + 8).boxed(),
-                    SendType::ControlSend(Some(callback), local_send_id),
-                    Delay::new(self.timeout),
-                ))
+                send_type = SendType::ControlSend(Some(callback), local_send_id);
+                bytes = message.encode_to_vec();
+                message_type = 0;
             }
             AcceptFile {
                 remote_send_id,
@@ -428,53 +403,50 @@ impl Handler {
                 let message = messages::AcceptFile {
                     local_send_id: remote_send_id,
                 };
-                let mut buf = [0u8; 1 << 5];
-                let len = message.encoded_len();
-                let mut header = len.to_be_bytes();
-                header[0] = 1;
-                buf[0..8].copy_from_slice(&header);
-                message.encode(&mut &mut buf[8..]).expect("result to fit");
-                self.outbound = Some(OutboundState::Busy(
-                    protocol::send(stream, Arc::new(buf), len + 8).boxed(),
-                    SendType::ControlRecv(Some(callback)),
-                    Delay::new(self.timeout),
-                ))
+                bytes = message.encode_to_vec();
+                send_type = SendType::ControlRecv(Some(callback));
+                message_type = 1;
             }
-            CancelSend { local_send_id } => {
-                self.cancell_send(local_send_id);
-
+            LocalCancelSend {
+                local_send_id,
+                span,
+            } => {
                 let message = messages::CancelSend {
                     remote_send_id: local_send_id,
                 };
-                let mut buf = [0u8; 1 << 5];
-                let len = message.encoded_len();
-                let mut header = len.to_be_bytes();
-                header[0] = 3;
-                buf[0..8].copy_from_slice(&header);
-                message.encode(&mut &mut buf[8..]).expect("result to fit");
-                self.outbound = Some(OutboundState::Busy(
-                    protocol::send(stream, Arc::new(buf), len + 8).boxed(),
-                    SendType::Cancel,
-                    Delay::new(self.timeout),
-                ))
+                bytes = message.encode_to_vec();
+                send_type = SendType::Cancel(span);
+                message_type = 2;
             }
-            CancelRecv { remote_send_id } => {
+            LocalCancelRecv {
+                remote_send_id,
+                span,
+            } => {
                 let message = messages::CancelRecv {
                     local_send_id: remote_send_id,
                 };
-                let mut buf = [0u8; 1 << 5];
-                let len = message.encoded_len();
-                let mut header = len.to_be_bytes();
-                header[0] = 4;
-                buf[0..8].copy_from_slice(&header);
-                message.encode(&mut &mut buf[8..]).expect("result to fit");
-                self.outbound = Some(OutboundState::Busy(
-                    protocol::send(stream, Arc::new(buf), len + 8).boxed(),
-                    SendType::Cancel,
-                    Delay::new(self.timeout),
-                ))
+                bytes = message.encode_to_vec();
+                send_type = SendType::Cancel(span);
+                message_type = 3;
+            }
+            FileChunk {
+                local_send_id,
+                bytes_to_send,
+            } => {
+                let message = messages::FileChunk {
+                    remote_send_id: local_send_id,
+                    content: bytes_to_send,
+                };
+                bytes = message.encode_to_vec();
+                send_type = SendType::FileSend(local_send_id);
+                message_type = 4;
             }
         }
+        self.outbound = Some(OutboundState::Busy(
+            protocol::send(stream, bytes, message_type).boxed(),
+            send_type,
+            Delay::new(self.timeout),
+        ));
     }
     #[inline]
     fn on_dial_upgrade_error(

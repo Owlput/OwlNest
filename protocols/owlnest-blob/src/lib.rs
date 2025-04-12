@@ -1,6 +1,3 @@
-#![feature(extract_if)]
-#![feature(hash_extract_if)]
-
 use error::{CancellationError, FileSendError};
 use owlnest_core::alias::Callback;
 use owlnest_prelude::lib_prelude::*;

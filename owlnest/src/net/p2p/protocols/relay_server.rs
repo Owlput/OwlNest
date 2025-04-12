@@ -1,6 +1,6 @@
+use super::*;
 use std::time::Duration;
 use tracing::{debug, info};
-use super::*;
 
 pub use libp2p::relay::Behaviour;
 pub use libp2p::relay::{HOP_PROTOCOL_NAME, STOP_PROTOCOL_NAME};

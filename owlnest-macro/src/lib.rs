@@ -23,7 +23,7 @@ pub mod utils {
     // entry
     ($($(#[$metas:meta])*$variant:ident:$name:ident($($tokens:tt)*)$(->$return_type:ty)*;)+) => {
         $(generate_handler_method!(()($($tokens)*,)($(#[$metas])*$variant:$name)()()()($($return_type)*));)+
-    };    
+    };
 
     // clone parameter continue
     (($($param_order:tt)*)($param_name:ident:<$param_type:ty>,$($tokens:tt)*)($($metadata:tt)+)($($copy_params:tt)*)($($clone_params:tt)*)($($owned_params:tt)*)($($return_type:tt)*)) => {
@@ -41,7 +41,7 @@ pub mod utils {
     // exit
     (($($param_order:tt)*)($(,)*)($($metadata:tt)+)($($copy_params:tt)*)($($clone_params:tt)*)($($owned_params:tt)*)($($return_type:tt)*)) => {
         generate_handler_method!(($($param_order)*)($($metadata)+)($($copy_params)*)($($clone_params)*)($($owned_params)*)($($return_type)*));
-    };    
+    };
     (($($param_order:tt)*)($(#[$metas:meta])*$variant:ident:$name:ident)($($copy_param_name:ident:$copy_param_type:ty,)*)($($clone_param_name:ident:$clone_param_type:ty,)*)($($owned_param_name:ident:$owned_param_type:ty,)*)($return_type:ty))=>{
         $(#[$metas])*
         pub async fn $name(&self,$($param_order)*)->$return_type{
@@ -70,7 +70,6 @@ pub mod utils {
 
 }
 
-
     /// Less boilerplate for simple handler functions that use callback to return some data.
     ///
     /// Example:
@@ -85,9 +84,8 @@ pub mod utils {
     /// Supplied parameters must be in the same type and order with EventVariant.
     /// `&self` is automatically filled in, but EventVariant must be a tuple.   
     /// Variant can hold no data(except callback), which means leaving the function parameter blank.  
-
-#[macro_export]
-macro_rules! generate_handler_method_blocking {
+    #[macro_export]
+    macro_rules! generate_handler_method_blocking {
 // entry
 ($($(#[$metas:meta])*$variant:ident:$name:ident($($tokens:tt)*)$(->$return_type:ty)?;)+) => {
     $(generate_handler_method_blocking!(()($($tokens)*,)($(#[$metas])*$variant:$name)()()()$($return_type)?);)+

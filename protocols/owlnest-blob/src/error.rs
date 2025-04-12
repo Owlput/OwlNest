@@ -53,7 +53,7 @@ impl Display for FileSendError {
             FileNotFound => write!(f, "The target file is not found"),
             PermissionDenied => write!(f, "Permission denied"),
             OtherFsError(error_kind) => {
-                write!(f, "Other file system error: {}", error_kind.to_string())
+                write!(f, "Other file system error: {}", error_kind)
             }
             PeerNotFound => write!(f, "Target peer is not found"),
             Channel(e) => e.fmt(f),

@@ -9,7 +9,8 @@ members = [
     "protocols/owlnest-hyper",
     "protocols/owlnest-messaging",
     "protocols/owlnest-advertise",
-    "protocols/template", "owlnest-core",
+    "protocols/template",
+    "owlnest-core",
 ]
 default_member = ["owlnest"]
 resolver = "2"
@@ -20,6 +21,7 @@ libp2p = { path = "../../Owlput/rust-libp2p/libp2p", features = [
     "autonat",
     "dcutr",
     "dns",
+    "rsa",
     "ecdsa",
     "ed25519",
     "gossipsub",

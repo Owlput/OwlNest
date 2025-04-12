@@ -76,7 +76,7 @@ pub fn handle_swarm(handle: &SwarmHandle, command: Swarm) {
         IsConnected { peer_id } => println!("{}", handle.is_connected_blocking(&peer_id)),
         ListConnected => {
             let list = handle.list_connected_blocking();
-            if list.len() < 1 {
+            if list.is_empty() {
                 return println!("No peer is connected to local node.");
             }
             let table = table!(
