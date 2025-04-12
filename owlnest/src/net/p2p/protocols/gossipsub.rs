@@ -147,7 +147,7 @@ impl Handle {
         send_swarm!(self.sender, ev);
         let result = handle_callback!(rx);
         if let Ok(true) = result {
-            self.topic_store.subscribe_topic(&topic_hash, None);
+            self.topic_store.subscribe_topic(topic_hash, None);
         }
         result
     }
@@ -168,7 +168,7 @@ impl Handle {
         send_swarm!(self.sender, ev);
         let result = handle_callback!(rx);
         if result {
-            self.topic_store.unsubscribe_topic(&topic_hash);
+            self.topic_store.unsubscribe_topic(topic_hash);
         }
         result
     }
@@ -338,7 +338,7 @@ mod config {
                 retain_scores: 4,
                 gossip_lazy: 6,
                 gossip_factor: 0.25,
-                heartbeat_interval_ms: 1 * 1000,
+                heartbeat_interval_ms: 1000,
                 duplicate_cache_time_ms: 60 * 1000,
                 allow_self_origin: false,
                 gossip_retransimission: 3,
@@ -733,7 +733,7 @@ pub mod mem_store {
     }
     impl TopicStore for MemTopicStore {
         fn insert_topic(&self, topic_string: String, topic_hash: &TopicHash) -> bool {
-            if let Some((hash, list)) = self.vacant.remove(&topic_hash) {
+            if let Some((hash, list)) = self.vacant.remove(topic_hash) {
                 self.populated.insert(hash, (topic_string, list));
                 return false; // move the entry from vacant to populated if present.
             };
@@ -802,9 +802,9 @@ pub mod mem_store {
         /// This will add to existing store if not presnet.
         fn subscribe_topic(&self, topic: &TopicHash, topic_string: Option<String>) -> bool {
             if let Some(topic_string) = topic_string {
-                self.insert_topic(topic_string, &topic);
+                self.insert_topic(topic_string, topic);
             } else {
-                self.insert_hash(&topic);
+                self.insert_hash(topic);
             }
             if !self.subscribed.contains(topic) {
                 self.subscribed.insert(topic.clone());

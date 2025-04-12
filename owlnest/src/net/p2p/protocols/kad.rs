@@ -79,25 +79,21 @@ impl Config {
             .disjoint_query_paths(query_config.disjoint_query_paths)
             .set_parallelism(query_config.parallelism)
             .set_periodic_bootstrap_interval(
-                periodic_bootstrap_interval_sec.map(|sec| Duration::from_secs(sec)),
+                periodic_bootstrap_interval_sec.map(Duration::from_secs),
             )
-            .set_provider_record_ttl(provider_record_ttl_sec.map(|sec| Duration::from_secs(sec)))
+            .set_provider_record_ttl(provider_record_ttl_sec.map(Duration::from_secs))
             .set_query_timeout(query_config.timeout)
             .set_record_filtering(record_filtering.into())
-            .set_record_ttl(record_ttl_sec.map(|sec| Duration::from_secs(sec)))
+            .set_record_ttl(record_ttl_sec.map(Duration::from_secs))
             .set_replication_factor(query_config.replication_factor)
             .set_caching(caching.into())
             .set_kbucket_inserts(kbucket_inserts.into())
             .set_max_packet_size(max_packet_size)
             .set_provider_publication_interval(
-                provider_publication_interval_sec.map(|sec| Duration::from_secs(sec)),
+                provider_publication_interval_sec.map(Duration::from_secs),
             )
-            .set_replication_interval(
-                record_replication_interval_sec.map(|sec| Duration::from_secs(sec)),
-            )
-            .set_publication_interval(
-                record_publication_interval_sec.map(|sec| Duration::from_secs(sec)),
-            );
+            .set_replication_interval(record_replication_interval_sec.map(Duration::from_secs))
+            .set_publication_interval(record_publication_interval_sec.map(Duration::from_secs));
         config
     }
 }
@@ -110,15 +106,15 @@ pub mod config {
     ///
     ///   1) The (fixed) maximum number of nodes in a bucket.
     ///   2) The (default) replication factor, which in turn determines:
-    ///       a) The number of closer peers returned in response to a request.
-    ///       b) The number of closest peers to a key to search for in an iterative query.
+    ///      a) The number of closer peers returned in response to a request.
+    ///      b) The number of closest peers to a key to search for in an iterative query.
     ///
     /// The choice of (1) is fixed to this constant. The replication factor is configurable
     /// but should generally be no greater than `K_VALUE`. All nodes in a Kademlia
     /// DHT should agree on the choices made for (1) and (2).
     ///
     /// The current value is `20`.
-    pub const K_VALUE: NonZeroUsize = unsafe { NonZeroUsize::new_unchecked(20) };
+    pub const K_VALUE: NonZeroUsize = NonZeroUsize::new(20).expect("20 > 0");
 
     /// The `α` parameter of the Kademlia specification.
     ///
@@ -128,7 +124,7 @@ pub mod config {
     /// locating the closest peers to a key.
     ///
     /// The current value is `3`.
-    pub const ALPHA_VALUE: NonZeroUsize = unsafe { NonZeroUsize::new_unchecked(3) };
+    pub const ALPHA_VALUE: NonZeroUsize = NonZeroUsize::new(3).expect("3 > 0");
 
     use std::{num::NonZeroUsize, time::Duration};
 

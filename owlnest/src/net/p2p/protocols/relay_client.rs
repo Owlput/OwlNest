@@ -131,10 +131,7 @@ mod test {
             .swarm()
             .add_external_address_blocking(&server_address); // The address is on local network
         sleep!(100);
-        assert!(peer2_m
-            .swarm()
-            .dial_blocking(&server_address)
-            .is_ok());
+        assert!(peer2_m.swarm().dial_blocking(&server_address).is_ok());
         sleep!(100);
         assert!(peer2_m
             .swarm()

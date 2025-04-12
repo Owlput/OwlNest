@@ -38,7 +38,7 @@ pub mod error {
     }
     impl Display for OperationError {
         fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-            <Self as std::fmt::Debug>::fmt(&self, f)
+            <Self as std::fmt::Debug>::fmt(self, f)
         }
     }
     impl std::error::Error for OperationError {}

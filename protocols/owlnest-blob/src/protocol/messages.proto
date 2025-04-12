@@ -12,15 +12,15 @@ message AcceptFile{
     uint64 local_send_id = 1; // Local when observed by sender
 }
 
-message FileChunk{
-    uint64 remote_send_id = 1; // Remote when observed by receiver
-    bytes content = 2;
-}
-
 message CancelSend{
     uint64 remote_send_id = 1; // Remote when observed by receiver, message sent when sender cancelled sending
 }
 
 message CancelRecv{
     uint64 local_send_id = 1; // Local when obvserved by sender, message sent when receiver cancelled receiving
+}
+
+message FileChunk{
+    uint64 remote_send_id = 1; // Remote when observed by receiver
+    bytes content = 2;
 }
