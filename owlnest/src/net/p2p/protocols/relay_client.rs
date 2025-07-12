@@ -44,25 +44,21 @@ pub mod cli {
                         } => {
                             if !renewal {
                                 println!(
-                                    "Reservation sent to relay {} has been accepted. Limit:{:?}",
-                                    relay_peer_id, limit
+                                    "Reservation sent to relay {relay_peer_id} has been accepted. Limit:{limit:?}"
                                 );
                             }
                             debug!(
-                                "Reservation on relay {} has been renewed. limit:{:?}",
-                                relay_peer_id, limit
+                                "Reservation on relay {relay_peer_id} has been renewed. limit:{limit:?}",
                             )
                         }
                         OutboundCircuitEstablished {
                             relay_peer_id,
                             limit,
                         } => debug!(
-                            "Outbound circuit to relay {} established, limit:{:?}",
-                            relay_peer_id, limit
+                            "Outbound circuit to relay {relay_peer_id} established, limit:{limit:?}",
                         ),
                         InboundCircuitEstablished { src_peer_id, limit } => debug!(
-                            "Inbound circuit from source peer {} established, limit:{:?}",
-                            src_peer_id, limit
+                            "Inbound circuit from source peer {src_peer_id} established, limit:{limit:?}",
                         ),
                     }
                 }
@@ -79,13 +75,11 @@ pub mod cli {
                     .with(Protocol::P2pCircuit);
                 match manager.swarm().listen_blocking(&addr) {
                     Ok(listener_id) => println!(
-                        "Successfully listening on {} with listener ID {:?}",
-                        addr, listener_id
+                        "Successfully listening on {addr} with listener ID {listener_id:?}"
                     ),
 
                     Err(e) => println!(
-                        "Failed to listen on {} with error: {}",
-                        addr,
+                        "Failed to listen on {addr} with error: {}",
                         format_transport_error(e)
                     ),
                 }

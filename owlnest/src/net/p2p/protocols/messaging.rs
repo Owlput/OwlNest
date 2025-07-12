@@ -33,15 +33,12 @@ impl Handle {
         tokio::spawn(async move {
             while let Ok(ev) = listener.recv().await {
                 if let SwarmEvent::Behaviour(BehaviourEvent::Messaging(ev)) = ev.as_ref() {
-                    match ev {
-                        OutEvent::IncomingMessage { from, msg } => {
-                            store::MessageStore::push_message(
-                                store.as_ref().as_ref(),
-                                from,
-                                msg.clone(),
-                            );
-                        }
-                        _ => {}
+                    if let OutEvent::IncomingMessage { from, msg } = ev {
+                        store::MessageStore::push_message(
+                            store.as_ref().as_ref(),
+                            from,
+                            msg.clone(),
+                        );
                     }
                 }
             }
@@ -121,7 +118,7 @@ pub mod cli {
                     OutEvent::IncomingMessage { from, msg },
                 )) = ev.as_ref()
                 {
-                    println!("Incoming message from {}: {}", from, msg.msg)
+                    println!("Incoming message from {from}: {}", msg.msg)
                 }
             }
         });
@@ -135,7 +132,7 @@ pub mod cli {
                 let result = handle.send_message(peer_id, msg).await;
                 match result {
                     Ok(_) => println!("Message has been successfully sent"),
-                    Err(e) => println!("Error occurred when sending message: {}", e),
+                    Err(e) => println!("Error occurred when sending message: {e}"),
                 }
             }
         }

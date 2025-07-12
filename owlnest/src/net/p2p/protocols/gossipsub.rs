@@ -553,13 +553,13 @@ pub mod cli {
                 match result {
                     Ok(v) => {
                         if v {
-                            println!(r#"Successfully subscribed to the topic "{}""#, topic_hash,)
+                            println!(r#"Successfully subscribed to the topic "{topic_hash}""#,)
                         } else {
-                            println!(r#"Already subscribed to the topic "{}""#, topic_hash,)
+                            println!(r#"Already subscribed to the topic "{topic_hash}""#,)
                         }
                     }
                     Err(e) => {
-                        println!("Unable to subscribe to the topic: {:?}", e)
+                        println!("Unable to subscribe to the topic: {e:?}")
                     }
                 }
             }
@@ -568,12 +568,9 @@ pub mod cli {
                 let result = handle.unsubscribe_topic_hash(&topic_hash).await;
 
                 if result {
-                    println!(
-                        r#"Successfully unsubscribed from the topic "{}""#,
-                        topic_hash,
-                    )
+                    println!(r#"Successfully unsubscribed from the topic "{topic_hash}""#,)
                 } else {
-                    println!(r#"Topic "{}" not subscribed previously."#, topic_hash)
+                    println!(r#"Topic "{topic_hash}" not subscribed previously."#)
                 }
             }
             Gossipsub::Publish(command) => {
@@ -581,10 +578,10 @@ pub mod cli {
                 let result = handle.publish_message(&topic_hash, message).await;
                 match result {
                     Ok(v) => {
-                        println!("Message published with Id {}", v)
+                        println!("Message published with Id {v}")
                     }
                     Err(e) => {
-                        println!("Unable to publish to the topic: {:?}", e)
+                        println!("Unable to publish to the topic: {e:?}")
                     }
                 }
             }
@@ -610,7 +607,7 @@ pub mod cli {
                 let list = handle.mesh_peers_of_topic(&topic_hash).await;
                 let mut table = Table::new();
                 table.add_row(row![
-                    format!("Peers associated with topic\n{}", topic_hash),
+                    format!("Peers associated with topic\n{topic_hash}"),
                     format!("{}", list.iter().printable())
                 ]);
                 table.printstd()

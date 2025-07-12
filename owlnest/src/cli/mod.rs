@@ -56,18 +56,18 @@ fn handle_command(
     ident: &IdentityUnion,
     shutdown_notifier: &Arc<Notify>,
 ) {
-    let line_with_owlnest = format!("owlnest {}", line);
+    let line_with_owlnest = format!("owlnest {line}");
     let commands = match shlex::split(line_with_owlnest.trim()) {
         Some(v) => v,
         None => {
-            println!(r#"Cannot properly split "{}": unclosed delimiters"#, line);
+            println!(r#"Cannot properly split "{line}": unclosed delimiters"#);
             return;
         }
     };
     let command = match Cli::try_parse_from(commands.iter()) {
         Ok(v) => v,
         Err(e) => {
-            println!("{}", e);
+            println!("{e}");
             return;
         }
     };
@@ -81,20 +81,18 @@ fn handle_command(
         Id => println!("Local peer ID: {}", ident.get_peer_id()),
         Dial { address } => {
             if let Err(e) = handle.dial_blocking(&address) {
-                println!("Failed to initiate dial {} with error: {:?}", address, e);
+                println!("Failed to initiate dial {address} with error: {e:?}");
             } else {
-                println!("Dialing {}", address);
+                println!("Dialing {address}");
             }
         }
         Listen { address } => match handle.listen_blocking(&address) {
-            Ok(listener_id) => println!(
-                "Successfully listening on {} with listener ID {:?}",
-                address, listener_id
-            ),
+            Ok(listener_id) => {
+                println!("Successfully listening on {address} with listener ID {listener_id:?}",)
+            }
 
             Err(e) => println!(
-                "Failed to listen on {} with error: {}",
-                address,
+                "Failed to listen on {address} with error: {}",
                 format_transport_error(e)
             ),
         },
@@ -140,7 +138,7 @@ fn handle_command(
 fn handle_err(e: ReadlineError, retry_times: &mut u32) -> bool {
     match e {
         ReadlineError::Io(e) => {
-            println!("Failed to read input with IO error: {:?}", e);
+            println!("Failed to read input with IO error: {e:?}");
             should_exit(retry_times, 5)
         }
         ReadlineError::Eof => {
@@ -151,9 +149,8 @@ fn handle_err(e: ReadlineError, retry_times: &mut u32) -> bool {
             println!("Interrupt signal received.");
             true
         }
-        ReadlineError::WindowResized => false,
         e => {
-            println!("Mysterious error {:?} occurred", e);
+            println!("rustyline: {e:?}");
             should_exit(retry_times, 5)
         }
     }

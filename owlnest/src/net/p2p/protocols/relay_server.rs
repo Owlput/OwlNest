@@ -15,39 +15,33 @@ pub(crate) fn ev_dispatch(ev: &OutEvent) {
         ReservationReqAccepted {
             src_peer_id,
             renewed,
-        } => debug!(
-            "Reservation from {} accepted, IsRenew:{}",
-            src_peer_id, renewed
-        ),
-        ReservationReqDenied { src_peer_id } => {
-            info!("Denied reservation from {}", src_peer_id)
+        } => debug!("Reservation from {src_peer_id} accepted, IsRenew:{renewed}"),
+        ReservationReqDenied {
+            src_peer_id,
+            status,
+        } => {
+            info!("Denied reservation from {src_peer_id}, reason: {status:?}",)
         }
         ReservationTimedOut { src_peer_id } => {
-            info!("Reservation expired for source peer {}", src_peer_id)
+            info!("Reservation expired for source peer {src_peer_id}")
         }
         CircuitReqDenied {
             src_peer_id,
             dst_peer_id,
+            status,
         } => info!(
-            "Circuit request from {} to peer {} denied",
-            src_peer_id, dst_peer_id
+            "Circuit request from {src_peer_id} to peer {dst_peer_id} denied, reason: {status:?}",
         ),
         CircuitReqAccepted {
             src_peer_id,
             dst_peer_id,
-        } => debug!(
-            "Circuit request from {} to peer {} accepted",
-            src_peer_id, dst_peer_id
-        ),
+        } => debug!("Circuit request from {src_peer_id} to peer {dst_peer_id} accepted",),
         CircuitClosed {
             src_peer_id,
             dst_peer_id,
             error,
-        } => info!(
-            "Circuit from {} to {} closed, error?: {:?}",
-            src_peer_id, dst_peer_id, error
-        ),
-        ev => info!("{:?}", ev),
+        } => info!("Circuit from {src_peer_id} to {dst_peer_id} closed, error?: {error:?}",),
+        ev => info!("{ev:?}"),
     }
 }
 

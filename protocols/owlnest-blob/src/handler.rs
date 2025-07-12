@@ -261,9 +261,9 @@ impl Handler {
             trace!("Polling inbound");
             let poll_result = fut.poll_unpin(cx);
             if let Poll::Ready(Err(e)) = poll_result {
-                trace!("Inbound error: {}", e);
+                trace!("Inbound error: {e}");
                 self.inbound.take();
-                let error = Error::IO(format!("IO Error: {:?}", e));
+                let error = Error::IO(format!("IO Error: {e:?}"));
                 return Some(ConnectionHandlerEvent::NotifyBehaviour(
                     ToBehaviourEvent::Error(error),
                 ));
@@ -273,9 +273,7 @@ impl Handler {
                 if let Err(e) = self.on_message(bytes.as_ref(), message_type) {
                     self.pending_out_events.push_back(ToBehaviourEvent::Error(
                         Error::UnrecognizedMessage(format!(
-                            "Unrecognized message({}): {:20}, {}",
-                            message_type,
-                            e,
+                            "Unrecognized message({message_type}): {e:20}, {}",
                             String::from_utf8_lossy(&bytes[..20])
                         )),
                     ));
@@ -303,7 +301,7 @@ impl Handler {
                     }
                     // Ready but resolved to an error
                     if let Poll::Ready(Err(e)) = poll_result {
-                        debug!("Outbound error: {}", e);
+                        debug!("Outbound error: {e}");
                         return Some(ConnectionHandlerEvent::NotifyBehaviour(
                             ToBehaviourEvent::Error(Error::IO(e.to_string())),
                         )); // return with `self.outbound` == None
@@ -462,12 +460,10 @@ impl Handler {
                 self.state = State::Inactive { reported: false };
             }
             e => {
-                let e = format!("{:?}", e);
+                let e = format!("{e:?}");
                 if !e.contains("Timeout") {
                     tracing::debug!(
-                        "Error occurred when negotiating protocol {}: {:?}",
-                        PROTOCOL_NAME,
-                        e
+                        "Error occurred when negotiating protocol {PROTOCOL_NAME}: {e:?}",
                     )
                 }
             }

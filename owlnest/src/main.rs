@@ -27,7 +27,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .enable_all()
         .build()?;
     if let Err(e) = setup_logging() {
-        println!("Cannot log to file: {}", e);
+        println!("Cannot log to file: {e}");
     };
     let ident = if !config.swarm.identity_path.is_empty() {
         get_ident(&config.swarm.identity_path)?
@@ -53,13 +53,13 @@ pub fn setup_peer(
 pub(crate) fn setup_logging() -> Result<(), std::io::Error> {
     let time = chrono::Local::now().timestamp_micros();
     let log_file_handle = match std::fs::create_dir("./logs") {
-        Ok(_) => std::fs::File::create(format!("./logs/{}.log", time))?,
+        Ok(_) => std::fs::File::create(format!("./logs/{time}.log"))?,
         Err(e) => {
-            let error = format!("{:?}", e);
+            let error = format!("{e:?}");
             if error.contains("AlreadyExists") {
-                std::fs::File::create(format!("./logs/{}.log", time))?
+                std::fs::File::create(format!("./logs/{time}.log"))?
             } else {
-                std::fs::File::create(format!("{}.log", time))?
+                std::fs::File::create(format!("{time}.log"))?
             }
         }
     };
@@ -71,7 +71,7 @@ pub(crate) fn setup_logging() -> Result<(), std::io::Error> {
     let reg = tracing_subscriber::registry().with(layer);
     tracing::subscriber::set_global_default(reg).expect("you can only set global default once");
     if let Err(e) = LogTracer::init() {
-        println!("Cannot read logs from `log` source: {}", e)
+        println!("Cannot read logs from `log` source: {e}")
     };
     Ok(())
 }
@@ -81,7 +81,7 @@ fn get_ident(path: &String) -> Result<IdentityUnion, std::io::Error> {
     match IdentityUnion::from_file_protobuf_encoding(path) {
         Ok(ident) => Ok(ident),
         Err(e) => {
-            warn!("Failed to read keypair: {:?}", e);
+            warn!("Failed to read keypair: {e:?}");
             let ident = IdentityUnion::generate();
             ident.export_keypair(path)?;
             Ok(ident)
@@ -96,11 +96,11 @@ fn read_config(path: impl AsRef<Path>) -> Result<SwarmConfig, std::io::Error> {
     {
         let mut config_text = String::new();
         if let Err(e) = f.read_to_string(&mut config_text) {
-            println!("Cannot read config file: {}", e)
+            println!("Cannot read config file: {e}")
         };
         match toml::from_str(&config_text) {
             Ok(v) => return Ok(v),
-            Err(e) => println!("Cannot parse config file: {}", e),
+            Err(e) => println!("Cannot parse config file: {e}"),
         }
     }
     println!("Cannot load config, trying to generate example config file...");
@@ -116,7 +116,7 @@ fn read_config(path: impl AsRef<Path>) -> Result<SwarmConfig, std::io::Error> {
                 .expect("Serialization to succeed")
                 .as_bytes(),
         ) {
-            println!("Cannot write example config: {}", e);
+            println!("Cannot write example config: {e}");
         }
         let _ = f.flush();
         drop(f);

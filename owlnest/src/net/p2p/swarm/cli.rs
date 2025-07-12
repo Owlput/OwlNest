@@ -54,16 +54,15 @@ pub fn handle_swarm(handle: &SwarmHandle, command: Swarm) {
     match command {
         Dial { address } => {
             if let Err(e) = handle.dial_blocking(&address) {
-                println!("Failed to initiate dial {} with error: {:?}", address, e);
+                println!("Failed to initiate dial {address} with error: {e:?}");
             } else {
-                println!("Dialing {}", address);
+                println!("Dialing {address}");
             }
         }
         Listen { address } => match handle.listen_blocking(&address) {
-            Ok(listener_id) => println!(
-                "Successfully listening on {} with listener ID {:?}",
-                address, listener_id
-            ),
+            Ok(listener_id) => {
+                println!("Successfully listening on {address} with listener ID {listener_id:?}")
+            }
 
             Err(e) => println!(
                 "Failed to listen on {} with error: {}",
@@ -155,11 +154,11 @@ pub mod external_address {
         match command {
             Add { address } => {
                 handle.add_external_address_blocking(&address);
-                println!("External address `{}` added", address)
+                println!("External address `{address}` added")
             }
             Remove { address } => {
                 handle.remove_external_address_blocking(&address);
-                println!("External address `{}` removed", address)
+                println!("External address `{address}` removed")
             }
             Ls => {
                 let list = handle.list_external_addresses_blocking();
@@ -173,10 +172,10 @@ pub mod external_address {
 pub fn format_transport_error(e: TransportError<std::io::Error>) -> String {
     match e {
         TransportError::MultiaddrNotSupported(addr) => {
-            format!("Requested address {} is not supported.", addr)
+            format!("Requested address {addr} is not supported.")
         }
         TransportError::Other(e) => {
-            let error_string = format!("{:?}", e);
+            let error_string = format!("{e:?}");
             if error_string.contains("AddrNotAvailable") {
                 return "Local interface associated with the given address does not exist".into();
             }

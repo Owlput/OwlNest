@@ -17,11 +17,11 @@ serde_json = "1"
 rand = "*"
 futures-timer = "3"
 futures = { workspace = true }
-rustyline = "15"
+rustyline = "16"
 chrono = "0.4"
 owlnest-proc = { path = "../owlnest-proc" }
 void = "1"
-crossterm = "0.28"
+crossterm = "0.29"
 owlnest-macro = { path = "../owlnest-macro" }
 either = "*"
 owlnest-blob = { path = "../protocols/owlnest-blob", optional = true }

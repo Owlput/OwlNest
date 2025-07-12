@@ -152,7 +152,7 @@ pub mod cli {
                 match result {
                     Ok(v) => {
                         if v.is_none() {
-                            return println!("Remote {} is not providing", remote);
+                            return println!("Remote {remote} is not providing");
                         }
                         let list = v.expect("Already handled");
                         let table = table!(
@@ -167,8 +167,7 @@ pub mod cli {
                         table.printstd();
                     }
                     Err(_) => println!(
-                        "Remote {} is not connected or doesn't support `owlput-advertise`.",
-                        remote
+                        "Remote {remote} is not connected or doesn't support `owlput-advertise`."
                     ),
                 }
             }
@@ -214,14 +213,14 @@ pub mod cli {
                 State => println!("isProviding:{}", handle.provider_state().await),
                 ListAdvertised => {
                     let list = handle.list_advertised().await;
-                    println!("Advertising: \n{:?}", list);
+                    println!("Advertising: \n{list:?}");
                 }
                 RemoveAdvertise { peer } => {
                     match handle.remove_advertised(&peer).await {
-                        Ok(v) => println!("Local provider state is set to: {}", v),
-                        Err(e) => println!("Cannot RemoveAdvertise: {}", e),
+                        Ok(v) => println!("Local provider state is set to: {v}"),
+                        Err(e) => println!("Cannot RemoveAdvertise: {e}"),
                     }
-                    println!("Advertisement for peer {} is removed", peer)
+                    println!("Advertisement for peer {peer} is removed")
                 }
                 ClearAdvertised => {
                     handle.clear_advertised().await;

@@ -424,10 +424,10 @@ pub(crate) fn map_in_event(ev: InEvent, behav: &mut Behaviour) {
 pub(crate) fn ev_dispatch(ev: &OutEvent) {
     use kad::Event::*;
     match ev{
-        InboundRequest { request } => info!("Incoming request: {:?}",request),
-        OutboundQueryProgressed { id, result, stats, step } => debug!("Outbound query {:?} progressed, stats: {:?}, step: {:?}, result: {:?}",id,stats,step,result),
-        RoutingUpdated { peer, is_new_peer, addresses, bucket_range, old_peer } => trace!("Peer {} updated the table, is new peer: {}, addresses: {:?}, bucket range: {:?}, old peer?: {:?}",peer, is_new_peer,addresses,bucket_range,old_peer),
-        ModeChanged { new_mode } => info!("The mode of this peer has been changed to {}",new_mode),
+        InboundRequest { request } => info!("Incoming request: {request:?}"),
+        OutboundQueryProgressed { id, result, stats, step } => debug!("Outbound query {id:?} progressed, stats: {stats:?}, step: {step:?}, result: {result:?}"),
+        RoutingUpdated { peer, is_new_peer, addresses, bucket_range, old_peer } => trace!("Peer {peer} updated the table, is new peer: {is_new_peer}, addresses: {addresses:?}, bucket range: {bucket_range:?}, old peer?: {old_peer:?}"),
+        ModeChanged { new_mode } => info!("The mode of this peer has been changed to {new_mode}"),
         _=>{}
     }
 }
@@ -539,11 +539,11 @@ pub mod cli {
         match command {
             Query { peer_id } => {
                 let result = handle.query(peer_id).await;
-                println!("{:?}", result)
+                println!("{result:?}")
             }
             Lookup { peer_id } => {
                 let result = handle.lookup(&peer_id).await;
-                println!("{:?}", result)
+                println!("{result:?}")
             }
             Bootstrap => {
                 let result = handle.bootstrap().await;
@@ -558,7 +558,7 @@ pub mod cli {
                     println!("Timeout reached for setting kad mode");
                     return;
                 }
-                println!("Mode for kad has been set to {}", mode)
+                println!("Mode for kad has been set to {mode}")
             }
             Insert { .. } => {}
             InsertDefault => {
@@ -571,10 +571,7 @@ pub mod cli {
                             .expect("parsing to succeed"),
                     )
                     .await;
-                println!(
-                    "QmNnooDu7bfjPFoTZYxMNLWUQJyrVwtbZg5gBMjTezGAJN:{:?}",
-                    result
-                );
+                println!("Insert peer QmNnooDu7bfjPFoTZYxMNLWUQJyrVwtbZg5gBMjTezGAJN:{result:?}");
                 let result = handle
                     .insert_node(
                         &PeerId::from_str("QmQCU2EcMqAqQPR2i9bChDtGNJchTbq5TbXJJ16u19uLTa")
@@ -584,10 +581,7 @@ pub mod cli {
                             .expect("parsing to succeed"),
                     )
                     .await;
-                println!(
-                    "QmQCU2EcMqAqQPR2i9bChDtGNJchTbq5TbXJJ16u19uLTa:{:?}",
-                    result
-                );
+                println!("Insert peer QmQCU2EcMqAqQPR2i9bChDtGNJchTbq5TbXJJ16u19uLTa:{result:?}");
                 let result = handle
                     .insert_node(
                         &PeerId::from_str("QmbLHAnMoJPWSCR5Zhtx6BHJX9KiKNN6tpvbUcqanj75Nb")
@@ -597,10 +591,7 @@ pub mod cli {
                             .expect("parsing to succeed"),
                     )
                     .await;
-                println!(
-                    "QmbLHAnMoJPWSCR5Zhtx6BHJX9KiKNN6tpvbUcqanj75Nb:{:?}",
-                    result
-                );
+                println!("Insert peer QmbLHAnMoJPWSCR5Zhtx6BHJX9KiKNN6tpvbUcqanj75Nb:{result:?}");
                 let result = handle
                     .insert_node(
                         &PeerId::from_str("QmcZf59bWwK5XFi76CZX8cbJ4BhTzzA3gU1ZjYZcYW3dwt")
@@ -610,10 +601,7 @@ pub mod cli {
                             .expect("parsing to succeed"),
                     )
                     .await;
-                println!(
-                    "QmcZf59bWwK5XFi76CZX8cbJ4BhTzzA3gU1ZjYZcYW3dwt:{:?}",
-                    result
-                );
+                println!("Insert peer QmcZf59bWwK5XFi76CZX8cbJ4BhTzzA3gU1ZjYZcYW3dwt:{result:?}");
                 let result = handle
                     .insert_node(
                         &PeerId::from_str("QmaCpDMGvV2BGHeYERUEnRQAwe3N8SzbUtfsmvsqQLuvuJ")
@@ -623,10 +611,7 @@ pub mod cli {
                             .expect("parsing to succeed"),
                     )
                     .await;
-                println!(
-                    "QmaCpDMGvV2BGHeYERUEnRQAwe3N8SzbUtfsmvsqQLuvuJ:{:?}",
-                    result
-                );
+                println!("Insert peer QmaCpDMGvV2BGHeYERUEnRQAwe3N8SzbUtfsmvsqQLuvuJ:{result:?}");
             }
         }
     }

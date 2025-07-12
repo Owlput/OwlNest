@@ -164,12 +164,9 @@ impl Handler {
                 self.state = State::Inactive { reported: false };
             }
             e => {
-                let e = format!("{:?}", e);
+                let e = format!("{e:?}");
                 if !e.contains("Timeout") {
-                    debug!(
-                        "Error occurred when negotiating protocol {}: {:?}",
-                        PROTOCOL_NAME, e
-                    )
+                    debug!("Error occurred when negotiating protocol {PROTOCOL_NAME}: {e:?}",)
                 }
             }
         }
@@ -186,7 +183,7 @@ impl Handler {
                 return Some(event);
             }
             if let Poll::Ready(Err(e)) = poll_result {
-                let error = Error::IO(format!("IO Error: {:?}", e));
+                let error = Error::IO(format!("IO Error: {e:?}"));
                 self.pending_out_events
                     .push_back(ToBehaviourEvent::Error(error));
                 self.inbound = None;

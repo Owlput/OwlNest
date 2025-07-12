@@ -80,10 +80,10 @@ pub(crate) fn map_in_event(behaviour: &mut Behaviour, ev: InEvent) {
 
 pub(crate) fn ev_dispatch(ev: &OutEvent) {
     match ev {
-        OutEvent::InboundProbe(probe) => info!("Incoming probe: {:?}", probe),
-        OutEvent::OutboundProbe(probe) => info!("Probe sent: {:?}", probe),
+        OutEvent::InboundProbe(probe) => info!("Incoming probe: {probe:?}"),
+        OutEvent::OutboundProbe(probe) => info!("Probe sent: {probe:?}",),
         OutEvent::StatusChanged { old, new } => {
-            info!("Nat statue changed from {:?} to {:?}", old, new)
+            info!("Nat statue changed from {old:?} to {new:?}")
         }
     }
 }
@@ -134,24 +134,23 @@ pub mod cli {
         match command {
             AutoNat::AddServer { peer_id, address } => {
                 handle.add_server(&peer_id, address).await;
-                println!("AutoNat::AddServer({})-> OK.", peer_id);
+                println!("AutoNat::AddServer({peer_id})-> OK.");
             }
             AutoNat::RemoveServer { peer_id } => {
                 handle.remove_server(&peer_id).await;
-                println!("AutoNat::RemoveServer({})-> OK.", peer_id);
+                println!("AutoNat::RemoveServer({peer_id})-> OK.");
             }
             AutoNat::Probe { address } => {
                 handle.probe(&address).await;
-                println!("AutoNat::Probe({})-> OK.", address);
+                println!("AutoNat::Probe({address})-> OK.");
             }
             AutoNat::GetNatStatus => {
                 let (status, confidence) = handle.get_nat_status().await;
                 use super::NatStatus::*;
                 match status {
-                    Private => println!("NAT status: Private; Confidence: {}", confidence),
+                    Private => println!("NAT status: Private; Confidence: {confidence}"),
                     Public(addr) => println!(
-                        "NAT status: Public; Public address: {}, Confidence: {}",
-                        addr, confidence
+                        "NAT status: Public; Public address: {addr}, Confidence: {confidence}"
                     ),
                     Unknown => println!("NAT status: Unknown"),
                 }
