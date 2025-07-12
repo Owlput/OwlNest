@@ -17,15 +17,15 @@ pub fn handle_utils(command: Utils) {
     use Utils::*;
     match command {
         DnsLookup { domian_name } => {
-            let domian_name_with_port = format!("{}:0", domian_name);
+            let domian_name_with_port = format!("{domian_name}:0");
             let addresses = match domian_name_with_port.to_socket_addrs() {
                 Ok(addr) => addr.collect::<Box<[SocketAddr]>>(),
                 Err(e) => {
-                    println!("Failed to perform lookup with {}: {:?}", domian_name, e);
+                    println!("Failed to perform lookup with {domian_name}: {e:?}");
                     return;
                 }
             };
-            println!(r"Lookup result: {:?}", addresses);
+            println!(r"Lookup result: {addresses:?}");
         }
     }
 }

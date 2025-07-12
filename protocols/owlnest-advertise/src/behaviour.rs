@@ -122,14 +122,11 @@ impl NetworkBehaviour for Behaviour {
     }
 
     fn on_swarm_event(&mut self, event: FromSwarm) {
-        match event {
-            FromSwarm::ConnectionClosed(closed) => {
-                if closed.remaining_established < 1 {
-                    self.advertised_peers.remove(&closed.peer_id);
-                    self.connected_peers.remove(&closed.peer_id);
-                }
+        if let FromSwarm::ConnectionClosed(closed) = event {
+            if closed.remaining_established < 1 {
+                self.advertised_peers.remove(&closed.peer_id);
+                self.connected_peers.remove(&closed.peer_id);
             }
-            _ => {}
         }
     }
 

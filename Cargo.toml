@@ -30,7 +30,6 @@ libp2p = { path = "../../Owlput/rust-libp2p/libp2p", features = [
     "kad",
     "macros",
     "mdns",
-    "memory-connection-limits",
     "metrics",
     "noise",
     "ping",

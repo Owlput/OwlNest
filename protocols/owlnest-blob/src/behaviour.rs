@@ -191,8 +191,7 @@ impl Behaviour {
                         .send(Err(FileSendError::PeerNotFound))
                         .expect("callback to succeed");
                     trace!(
-                        "Send request {} is dropped because the target is not found.",
-                        local_send_id
+                        "Send request {local_send_id} is dropped because the target is not found.",
                     );
                     return;
                 }
@@ -491,8 +490,7 @@ impl Behaviour {
         };
         ongoing_send.bytes_sent += bytes_read as u64;
         trace!(
-            "Reading {} bytes, total bytes sent {}",
-            bytes_read,
+            "Reading {bytes_read} bytes, total bytes sent {}",
             ongoing_send.bytes_sent
         );
         buf.truncate(bytes_read);
@@ -529,7 +527,7 @@ impl Behaviour {
         ongoing_recv.last_active = time_now!();
         let entered = ongoing_recv.span.enter();
         let len = content.len();
-        trace!("Received {} bytes", len);
+        trace!("Received {len} bytes");
         if len == 0 && ongoing_recv.bytes_received != ongoing_recv.bytes_total {
             warn!("Unexpected EOF met, expecting {} bytes but total received is {}, terminating the transmission.", ongoing_recv.bytes_total, ongoing_recv.bytes_received);
             self.out_events
@@ -545,7 +543,7 @@ impl Behaviour {
                 bytes_total: ongoing_recv.bytes_total,
             });
             if let Err(e) = ongoing_recv.file_handle.flush() {
-                tracing::error!("Unsuccessful file flushing: {:?}", e)
+                tracing::error!("Unsuccessful file flushing: {e:?}")
             };
             debug!("All bytes received, lifecycle ended.");
             return; // EOF and all bytes written, transmission complete.
@@ -555,7 +553,7 @@ impl Behaviour {
             println!("attempt to write file");
             match ongoing_recv.file_handle.write(&content[cursor..]) {
                 Ok(bytes_written) => {
-                    trace!("Writing {} bytes to file", bytes_written);
+                    trace!("Writing {bytes_written} bytes to file");
                     cursor += bytes_written;
                     if cursor >= len {
                         break;
@@ -564,7 +562,7 @@ impl Behaviour {
                 Err(e) => {
                     let ev = OutEvent::OngoingRecvError {
                         local_recv_id: ongoing_recv.local_recv_id,
-                        error: format!("{:?}", e),
+                        error: format!("{e:?}"),
                     };
                     debug!(
                         "Failed to write data to file {:?}, terminating.",
@@ -705,10 +703,7 @@ impl NetworkBehaviour for Behaviour {
                 bytes_total,
             } => self.on_new_pending_recv(peer_id, file_name, remote_send_id, bytes_total),
             Error(e) => {
-                debug!(
-                    "Error occurred on peer {}:{:?}: {:#?}",
-                    peer_id, connection_id, e
-                );
+                debug!("Error occurred on peer {peer_id}:{connection_id:?}: {e:#?}",);
                 self.out_events.push_back(OutEvent::Error(e));
             }
             InboundNegotiated => {
@@ -722,7 +717,7 @@ impl NetworkBehaviour for Behaviour {
             }
             Unsupported => {
                 self.out_events.push_back(OutEvent::Unsupported(peer_id));
-                trace!("Peer {} doesn't support {}", peer_id, PROTOCOL_NAME)
+                trace!("Peer {peer_id} doesn't support {PROTOCOL_NAME}")
             }
             FileSendPending { local_send_id } => {
                 if let Some(r) = self.pending_send.get(&local_send_id) {
@@ -730,10 +725,7 @@ impl NetworkBehaviour for Behaviour {
                     debug!("Send acknowledged by remote");
                     return;
                 }
-                warn!(
-                    "A pending send is not found but acknowledged by remote, ID {}",
-                    local_send_id
-                );
+                warn!("A pending send is not found but acknowledged by remote, ID {local_send_id}",);
             }
             FileSendAccepted { local_send_id } => {
                 if let Ok(bytes_total) = self.pending_send_accepted(local_send_id) {
@@ -771,10 +763,7 @@ impl NetworkBehaviour for Behaviour {
                 if self.remove_send_record(local_send_id).is_some() {
                     return;
                 }
-                warn!(
-                    "A pending send is not found but acknowledged by remote, ID {}",
-                    local_send_id
-                );
+                warn!("A pending send is not found but acknowledged by remote, ID {local_send_id}",);
             }
             RemoteCancelRecv { remote_send_id } => {
                 if let Some((_, local_recv_id, span)) =

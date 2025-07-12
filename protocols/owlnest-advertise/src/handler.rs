@@ -177,7 +177,7 @@ impl Handler {
             match fut.poll_unpin(cx) {
                 Poll::Pending => {}
                 Poll::Ready(Err(e)) => {
-                    let error = Error::IO(format!("IO Error: {:?}", e));
+                    let error = Error::IO(format!("IO Error: {e:?}"));
                     self.pending_out_events.push_back(ToBehaviour::Error(error));
                     self.inbound = None;
                 }
@@ -185,17 +185,11 @@ impl Handler {
                     self.inbound = Some(super::protocol::recv(stream).boxed());
                     match serde_json::from_slice::<Packet>(&bytes) {
                         Ok(packet) => {
-                            trace!(
-                                "reading packet {:?} and convert to {:?}",
-                                packet,
-                                <Packet as Into<ToBehaviour>>::into(packet.clone())
-                            );
                             self.pending_out_events.push_back(packet.into());
                         }
                         Err(e) => self.pending_out_events.push_back(ToBehaviour::Error(
                             Error::UnrecognizedMessage(format!(
-                                "Unrecognized message: {}, raw data: {}",
-                                e,
+                                "Unrecognized message: {e}, raw data: {}",
                                 String::from_utf8_lossy(&bytes)
                             )),
                         )),
@@ -230,8 +224,7 @@ impl Handler {
                         Poll::Ready(Err(e)) => {
                             self.pending_out_events
                                 .push_back(ToBehaviour::Error(Error::IO(format!(
-                                    "IO Error: {:?}",
-                                    e
+                                    "IO Error: {e:?}"
                                 ))));
                         }
                     }

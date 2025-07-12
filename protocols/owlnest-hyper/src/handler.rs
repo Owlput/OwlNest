@@ -75,7 +75,7 @@ impl Handler {
                 self.state = State::Inactive { reported: false };
             }
             e => {
-                let e = format!("{:?}", e);
+                let e = format!("{e:?}");
                 if !e.contains("Timeout") {
                     debug!(
                         "Error occurred when negotiating protocol {}: {:?}",
@@ -98,7 +98,7 @@ impl ConnectionHandler for Handler {
         SubstreamProtocol::new(ReadyUpgrade::new(PROTOCOL_NAME), ())
     }
     fn on_behaviour_event(&mut self, event: Self::FromBehaviour) {
-        trace!("Received event {:#?}", event);
+        trace!("Received event {event:#?}");
         self.pending_in_events.push_back(event)
     }
     fn connection_keep_alive(&self) -> bool {
@@ -229,7 +229,7 @@ impl ConnectionHandler for Handler {
                 match ev_tap.poll_recv(cx) {
                     Poll::Ready(maybe_message) => {
                         if let Some(msg) = maybe_message {
-                            println!("{}", msg)
+                            println!("{msg}")
                         } else {
                             self.server_event_tap = None;
                             self.inbound_stream = None;
@@ -245,7 +245,7 @@ impl ConnectionHandler for Handler {
                 match ev_tap.poll_recv(cx) {
                     Poll::Ready(maybe_message) => {
                         if let Some(msg) = maybe_message {
-                            println!("{}", msg)
+                            println!("{msg}")
                         } else {
                             self.server_event_tap = None;
                             self.outbound_stream = None;

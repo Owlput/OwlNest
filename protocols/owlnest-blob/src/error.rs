@@ -20,7 +20,7 @@ impl std::fmt::Display for Error {
             IO(msg) => f.write_str(msg),
             Channel => f.write_str("Callback channel closed unexpectedly"),
             UnexpectedEOF(recv_id) => {
-                write!(f, "The file of recv ID {} meets an unexpected EOF", recv_id)
+                write!(f, "The file of recv ID {recv_id} meets an unexpected EOF")
             }
         }
     }
@@ -53,7 +53,7 @@ impl Display for FileSendError {
             FileNotFound => write!(f, "The target file is not found"),
             PermissionDenied => write!(f, "Permission denied"),
             OtherFsError(error_kind) => {
-                write!(f, "Other file system error: {}", error_kind)
+                write!(f, "Other file system error: {error_kind}")
             }
             PeerNotFound => write!(f, "Target peer is not found"),
             Channel(e) => e.fmt(f),
@@ -81,13 +81,13 @@ impl Display for FileRecvError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         use FileRecvError::*;
         match self{
-            PendingRecvNotFound(id) => write!(f,"Cannot find operation associated with recv ID {}, is the request already accepted or cancaled?", id),
+            PendingRecvNotFound(id) => write!(f,"Cannot find operation associated with recv ID {id}, is the request already accepted or cancaled?"),
             Timeout => write!(f,"Timeout when waiting response from remote."),
             FsError{path,error} => {
                 match error {
-                    ErrorKind::AlreadyExists => write!(f,"File(or folder) {} already exists. Overwritting is not allowed. Please delete the file before accepting the request.", path),
-                    ErrorKind::PermissionDenied => write!(f, "Cannot write to file(or folder) {}: Permission denied. Please make sure you have properly set the permission.", path),
-                    e => write!(f,"OS reported OtherError {}", e)
+                    ErrorKind::AlreadyExists => write!(f,"File(or folder) {path} already exists. Overwritting is not allowed. Please delete the file before accepting the request."),
+                    ErrorKind::PermissionDenied => write!(f, "Cannot write to file(or folder) {path}: Permission denied. Please make sure you have properly set the permission."),
+                    e => write!(f,"OS reported OtherError {e}")
                 }
             },
             Channel(e) => e.fmt(f),

@@ -46,7 +46,7 @@ impl std::fmt::Display for Error {
             ConnectionClosed => f.write_str("Connection Closed"),
             VerifierMismatch => f.write_str("Message verifier mismatch"),
             Timeout => f.write_str("Message timed out"),
-            NotProviding(peer) => write!(f, "Peer {} is not providing", peer),
+            NotProviding(peer) => write!(f, "Peer {peer} is not providing"),
             UnrecognizedMessage(msg) => f.write_str(msg),
             IO(msg) => f.write_str(msg),
             Channel => f.write_str("Callback channel closed unexpectedly"),

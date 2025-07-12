@@ -68,6 +68,8 @@ pub enum SwarmEvent {
         send_back_addr: Multiaddr,
         /// The error that happened.
         error: String,
+        /// If known, [`PeerId`] of the peer that tried to connect to us.
+        peer_id: Option<PeerId>,
     },
     /// An error happened on an outbound connection.
     OutgoingConnectionError {
@@ -164,7 +166,7 @@ impl SwarmEvent {
                 peer_id: *peer_id,
                 endpoint: endpoint.clone(),
                 num_established: *num_established,
-                concurrent_dial_errors: format!("{:?}", concurrent_dial_errors),
+                concurrent_dial_errors: format!("{concurrent_dial_errors:?}"),
                 established_in: *established_in,
                 connection_id: *connection_id,
             },
@@ -178,7 +180,7 @@ impl SwarmEvent {
                 peer_id: *peer_id,
                 endpoint: endpoint.clone(),
                 num_established: *num_established,
-                cause: format!("{:?}", cause),
+                cause: format!("{cause:?}"),
                 connection_id: *connection_id,
             },
             libp2p::swarm::SwarmEvent::IncomingConnection {
@@ -195,11 +197,13 @@ impl SwarmEvent {
                 send_back_addr,
                 error,
                 connection_id,
+                peer_id,
             } => Self::IncomingConnectionError {
                 local_addr: local_addr.clone(),
                 send_back_addr: send_back_addr.clone(),
-                error: format!("{:?}", error),
+                error: format!("{error:?}"),
                 connection_id: *connection_id,
+                peer_id: *peer_id,
             },
             libp2p::swarm::SwarmEvent::OutgoingConnectionError {
                 peer_id,
@@ -207,7 +211,7 @@ impl SwarmEvent {
                 connection_id,
             } => Self::OutgoingConnectionError {
                 peer_id: *peer_id,
-                error: format!("{:?}", error),
+                error: format!("{error:?}"),
                 connection_id: *connection_id,
             },
             libp2p::swarm::SwarmEvent::NewListenAddr {
@@ -231,12 +235,12 @@ impl SwarmEvent {
             } => Self::ListenerClosed {
                 listener_id: *listener_id,
                 addresses: addresses.clone().into(),
-                reason: format!("{:?}", reason),
+                reason: format!("{reason:?}"),
             },
             libp2p::swarm::SwarmEvent::ListenerError { listener_id, error } => {
                 Self::ListenerError {
                     listener_id: *listener_id,
-                    error: format!("{:?}", error),
+                    error: format!("{error:?}"),
                 }
             }
             libp2p::swarm::SwarmEvent::Dialing {
@@ -252,7 +256,7 @@ impl SwarmEvent {
                     address: address.clone(),
                 }
             }
-            uncovered => unimplemented!("New branch {:?} not covered", uncovered),
+            uncovered => unimplemented!("New branch {uncovered:?} not covered"),
         };
         Ok(ev)
     }
@@ -274,7 +278,7 @@ impl TryFrom<super::SwarmEvent> for SwarmEvent {
                 peer_id,
                 endpoint,
                 num_established,
-                concurrent_dial_errors: format!("{:?}", concurrent_dial_errors),
+                concurrent_dial_errors: format!("{concurrent_dial_errors:?}"),
                 established_in,
                 connection_id,
             },
@@ -288,7 +292,7 @@ impl TryFrom<super::SwarmEvent> for SwarmEvent {
                 peer_id,
                 endpoint,
                 num_established,
-                cause: format!("{:?}", cause),
+                cause: format!("{cause:?}"),
                 connection_id,
             },
             libp2p::swarm::SwarmEvent::IncomingConnection {
@@ -305,11 +309,13 @@ impl TryFrom<super::SwarmEvent> for SwarmEvent {
                 send_back_addr,
                 error,
                 connection_id,
+                peer_id,
             } => Self::IncomingConnectionError {
                 local_addr,
                 send_back_addr,
-                error: format!("{:?}", error),
+                error: format!("{error:?}",),
                 connection_id,
+                peer_id,
             },
             libp2p::swarm::SwarmEvent::OutgoingConnectionError {
                 peer_id,
@@ -317,7 +323,7 @@ impl TryFrom<super::SwarmEvent> for SwarmEvent {
                 connection_id,
             } => Self::OutgoingConnectionError {
                 peer_id,
-                error: format!("{:?}", error),
+                error: format!("{error:?}",),
                 connection_id,
             },
             libp2p::swarm::SwarmEvent::NewListenAddr {
@@ -341,12 +347,12 @@ impl TryFrom<super::SwarmEvent> for SwarmEvent {
             } => Self::ListenerClosed {
                 listener_id,
                 addresses: addresses.into(),
-                reason: format!("{:?}", reason),
+                reason: format!("{reason:?}",),
             },
             libp2p::swarm::SwarmEvent::ListenerError { listener_id, error } => {
                 Self::ListenerError {
                     listener_id,
-                    error: format!("{:?}", error),
+                    error: format!("{error:?}"),
                 }
             }
             libp2p::swarm::SwarmEvent::Dialing {

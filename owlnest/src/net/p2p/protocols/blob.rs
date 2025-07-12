@@ -74,7 +74,7 @@ impl Handle {
         recv_id: u64,
         path_to_write: impl AsRef<Path>,
     ) -> Result<Duration, FileRecvError> {
-        trace!("Accepting recv id {}", recv_id);
+        trace!("Accepting recv id {recv_id}");
         let path_to_write = path_to_write.as_ref();
         let file = std::fs::OpenOptions::new()
             .create_new(true)
@@ -214,8 +214,8 @@ pub mod cli {
             Send { remote, file_path } => {
                 let result = handle.send_file(remote, file_path).await;
                 match result {
-                    Ok(id) => println!("Send initated with ID {}", id),
-                    Err(e) => println!("Send failed with error {:?}", e),
+                    Ok(id) => println!("Send initated with ID {id}"),
+                    Err(e) => println!("Send failed with error {e:?}"),
                 }
             }
             Recv {
@@ -224,8 +224,8 @@ pub mod cli {
             } => {
                 let result = handle.recv_file(local_recv_id, path_to_write).await;
                 match result {
-                    Ok(_rtt) => println!("Recv ID {} accepted", local_recv_id),
-                    Err(e) => println!("Send failed with error {:?}", e),
+                    Ok(_rtt) => println!("Recv ID {local_recv_id} accepted"),
+                    Err(e) => println!("Send failed with error {e:?}"),
                 }
             }
             _ => todo!(),

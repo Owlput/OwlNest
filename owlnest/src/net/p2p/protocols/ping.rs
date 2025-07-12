@@ -10,8 +10,8 @@ pub(crate) fn ev_dispatch(ev: &OutEvent) {
         Err(e) => match e {
             libp2p::ping::Failure::Timeout => "timed out".into(),
             libp2p::ping::Failure::Unsupported => "unsupported".into(),
-            libp2p::ping::Failure::Other { error } => format!("error {:?}", error),
+            libp2p::ping::Failure::Other { error } => format!("error {error:?}"),
         },
     };
-    trace!("Ping to {} returned {}", ev.peer, result);
+    trace!("Ping to {} returned {result}", ev.peer);
 }
